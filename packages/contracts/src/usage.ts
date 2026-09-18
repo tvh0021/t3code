@@ -42,6 +42,16 @@ export const UsageProviderKind = Schema.Literals([
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 
 /**
+ * Normalizes model names for usage accounting.
+ *
+ * For example, Gemini 3.8 Flash tiers (high, medium, low, tiered) share the same pricing
+ * and capabilities, so their accounting in the usage window is unified under `gemini-3.8-flash`.
+ */
+export function normalizeUsageModel(model: string): string {
+  return model.replace(/(gemini-[^-/]+-flash)-(high|medium|low|tiered)\b/i, "$1");
+}
+
+/**
  * A calendar day in the reporting time zone, formatted `YYYY-MM-DD`.
  *
  * Days are bucketed server-side so that a turn always lands on the day the user

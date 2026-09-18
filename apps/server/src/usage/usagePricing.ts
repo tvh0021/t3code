@@ -7,10 +7,11 @@
  *
  * @module usagePricing
  */
-import type {
-  UsageCostSource,
-  UsageModelPriceOverride,
-  UsageTokenTotals,
+import {
+  normalizeUsageModel,
+  type UsageCostSource,
+  type UsageModelPriceOverride,
+  type UsageTokenTotals,
 } from "@t3tools/contracts";
 
 /**
@@ -123,19 +124,23 @@ export const STATIC_FALLBACK_RATES: ReadonlyMap<string, ModelRate> = new Map([
 export function createOverrideRateTable(
   overrides: Readonly<Record<string, UsageModelPriceOverride>>,
 ): RateTable {
-  return new Map(
-    Object.entries(overrides).map(([model, prices]) => [
-      model.trim(),
-      {
-        inputCostPerToken: prices.inputCostPerMillionTokens / 1_000_000,
-        outputCostPerToken: prices.outputCostPerMillionTokens / 1_000_000,
-        cacheReadCostPerToken:
-          (prices.cacheReadCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
-        cacheCreationCostPerToken:
-          (prices.cacheWriteCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
-      },
-    ]),
-  );
+  const table = new Map<string, ModelRate>();
+  for (const [model, prices] of Object.entries(overrides)) {
+    const rate: ModelRate = {
+      inputCostPerToken: prices.inputCostPerMillionTokens / 1_000_000,
+      outputCostPerToken: prices.outputCostPerMillionTokens / 1_000_000,
+      cacheReadCostPerToken:
+        (prices.cacheReadCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
+      cacheCreationCostPerToken:
+        (prices.cacheWriteCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
+    };
+    table.set(model.trim(), rate);
+    const normalized = normalizeUsageModel(model.trim());
+    if (!table.has(normalized)) {
+      table.set(normalized, rate);
+    }
+  }
+  return table;
 }
 
 /** Raw shape of one LiteLLM entry, narrowed to the fields we read. */
@@ -251,7 +256,7 @@ function candidateRateKeys(key: string): readonly string[] {
   const candidates: string[] = [key];
 
   // Strip reasoning effort or tier suffix: gemini-3.8-flash-(high|medium|low|tiered) -> gemini-3.8-flash
-  const strippedGemini = key.replace(/^(gemini-[^-]+-flash)-(high|medium|low|tiered)$/, "$1");
+  const strippedGemini = normalizeUsageModel(key);
   if (strippedGemini !== key) {
     candidates.push(strippedGemini);
   }

@@ -67,6 +67,13 @@ During this session, we established, implemented, and verified customizations fo
     - Broadened `preprocessMarkdownMath` boundary sets to include `*`, `_`, `~`, `|`, `[`, `]`, `—`, `–`, and `-`.
     - Enhanced `looksLikeMath` to recognize LaTeX command macros with single and escaped backslashes (e.g. `$\Lambda$`).
     - Added unit test coverage in `ChatMarkdown.test.tsx` verifying bold table math rendering (54/54 tests passing).
+25. **Unified Gemini 3.8 Flash Usage Accounting**:
+    - Addressed requirement to merge accounting across all Gemini 3.8 Flash tiers (`high`, `medium`, `low`, `tiered`) in the Usage window into a single unified row (`gemini-3.8-flash`), since they all cost the exact same rates ($0.15/M uncached input, $0.0375/M cached input, $0.60/M output).
+    - Exported `normalizeUsageModel(model: string): string` from `packages/contracts/src/usage.ts` that strips `-(high|medium|low|tiered)` suffixes from `gemini-*-flash` model identifiers.
+    - Updated `UsageAggregator.add(record)` in `apps/server/src/usage/usageAggregation.ts` to bucket records under `normalizeUsageModel(record.model)`, aggregating tokens, costs, cache savings, and unique session IDs under `gemini-3.8-flash`.
+    - Updated multi-environment aggregation in `packages/shared/src/usageMerge.ts` (`modelAccumulator`) to fold buckets by normalized model name.
+    - Updated `createOverrideRateTable` in `apps/server/src/usage/usagePricing.ts` so custom price overrides apply automatically to the normalized model key.
+    - Added unit tests in `apps/server/src/usage/usageAggregation.test.ts` (90/90 passing) and `packages/shared/src/usageMerge.test.ts` (15/15 passing).
 
 ---
 

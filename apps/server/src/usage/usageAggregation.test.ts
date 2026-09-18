@@ -201,4 +201,59 @@ describe("UsageAggregator", () => {
 
     expect(result.buckets).toHaveLength(3);
   });
+
+  it("merges gemini-3.8-flash tiers (high, medium, low, tiered) into unified gemini-3.8-flash accounting", () => {
+    const result = aggregate([
+      record({
+        provider: "antigravity",
+        model: "gemini-3.8-flash-high",
+        totals: {
+          uncachedInputTokens: 100,
+          cachedInputTokens: 0,
+          cacheCreationTokens: 0,
+          outputTokens: 50,
+          reasoningTokens: 0,
+        },
+      }),
+      record({
+        provider: "antigravity",
+        model: "gemini-3.8-flash-medium",
+        totals: {
+          uncachedInputTokens: 200,
+          cachedInputTokens: 0,
+          cacheCreationTokens: 0,
+          outputTokens: 100,
+          reasoningTokens: 0,
+        },
+      }),
+      record({
+        provider: "antigravity",
+        model: "gemini-3.8-flash-tiered",
+        totals: {
+          uncachedInputTokens: 300,
+          cachedInputTokens: 0,
+          cacheCreationTokens: 0,
+          outputTokens: 150,
+          reasoningTokens: 0,
+        },
+      }),
+      record({
+        provider: "antigravity",
+        model: "gemini-3.8-flash-low",
+        totals: {
+          uncachedInputTokens: 400,
+          cachedInputTokens: 0,
+          cacheCreationTokens: 0,
+          outputTokens: 200,
+          reasoningTokens: 0,
+        },
+      }),
+    ]);
+
+    expect(result.buckets).toHaveLength(1);
+    expect(result.buckets[0]?.model).toBe("gemini-3.8-flash");
+    expect(result.buckets[0]?.totals.uncachedInputTokens).toBe(1000);
+    expect(result.buckets[0]?.totals.outputTokens).toBe(500);
+    expect(result.buckets[0]?.records).toBe(4);
+  });
 });

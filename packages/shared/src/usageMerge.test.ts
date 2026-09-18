@@ -391,4 +391,75 @@ describe("mergeUsage", () => {
     expect(merged.daily).toHaveLength(1);
     expect(merged.daily[0]?.costUsd).toBe(10);
   });
+
+  it("merges gemini-3.8-flash tiers across buckets into one unified model total", () => {
+    const source = { provider: "antigravity" as const, hostId: "mac", homePath: "/a" };
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              bucket({
+                provider: "antigravity",
+                model: "gemini-3.8-flash-high",
+                costUsd: 1,
+                totals: {
+                  uncachedInputTokens: 100,
+                  cachedInputTokens: 0,
+                  cacheCreationTokens: 0,
+                  outputTokens: 50,
+                  reasoningTokens: 0,
+                },
+              }),
+              bucket({
+                provider: "antigravity",
+                model: "gemini-3.8-flash-medium",
+                costUsd: 2,
+                totals: {
+                  uncachedInputTokens: 200,
+                  cachedInputTokens: 0,
+                  cacheCreationTokens: 0,
+                  outputTokens: 100,
+                  reasoningTokens: 0,
+                },
+              }),
+              bucket({
+                provider: "antigravity",
+                model: "gemini-3.8-flash-tiered",
+                costUsd: 3,
+                totals: {
+                  uncachedInputTokens: 300,
+                  cachedInputTokens: 0,
+                  cacheCreationTokens: 0,
+                  outputTokens: 150,
+                  reasoningTokens: 0,
+                },
+              }),
+              bucket({
+                provider: "antigravity",
+                model: "gemini-3.8-flash-low",
+                costUsd: 4,
+                totals: {
+                  uncachedInputTokens: 400,
+                  cachedInputTokens: 0,
+                  cacheCreationTokens: 0,
+                  outputTokens: 200,
+                  reasoningTokens: 0,
+                },
+              }),
+            ],
+            [source],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    const antigravityModels = merged.models.filter((m) => m.provider === "antigravity");
+    expect(antigravityModels).toHaveLength(1);
+    expect(antigravityModels[0]?.model).toBe("gemini-3.8-flash");
+    expect(antigravityModels[0]?.costUsd).toBe(10);
+    expect(antigravityModels[0]?.totalTokens).toBe(1500);
+  });
 });

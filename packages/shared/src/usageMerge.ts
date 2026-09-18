@@ -7,6 +7,7 @@
  * @module usageMerge
  */
 import {
+  normalizeUsageModel,
   USAGE_MERGE_COMPATIBLE_SINCE,
   type EnvironmentId,
   type UsageBucket,
@@ -336,7 +337,8 @@ export function mergeUsage(
       provider.records += bucket.records;
       providerAccumulator.set(bucket.provider, provider);
 
-      const modelKey = `${bucket.provider} ${bucket.model}`;
+      const modelName = normalizeUsageModel(bucket.model);
+      const modelKey = `${bucket.provider} ${modelName}`;
       const model = modelAccumulator.get(modelKey) ?? {
         provider: bucket.provider,
         costUsd: 0,

@@ -6,6 +6,7 @@ A concise, chronological record of custom code changes made to this personal for
 
 ### 2026-09-18
 
+- **Unified Gemini 3.8 Flash Usage Accounting**: Unified accounting across all Gemini 3.8 Flash tiers (`high`, `medium`, `low`, `tiered`) into a single canonical model (`gemini-3.8-flash`) in the Usage window. Implemented `normalizeUsageModel` in `packages/contracts/src/usage.ts`, integrated normalization in `UsageAggregator` (`usageAggregation.ts`), multi-environment aggregation (`usageMerge.ts`), and pricing table lookups (`usagePricing.ts`). Added unit test coverage across server aggregation and shared merge suites.
 - **LaTeX Math Support in Tables & Formatting Wrappers**: Enhanced `preprocessMarkdownMath` in `ChatMarkdown.tsx` to recognize single-dollar math enclosed in markdown bold/italic wrappers (`**$...$**`, `*$...$*`) and table cells (`| $...$ |`), and relaxed LaTeX macro pattern matching to support single and escaped slashes (e.g. `$\Lambda$`, `$G_{\mu\nu}$`). Added comprehensive unit test coverage.
 - **Sidebar Header Layout**: Restructured sidebar title in `SidebarChrome.tsx` into a two-line layout (`T3 Code` / `personal`) with descender padding to prevent letter clipping.
 - **Appearance & Font Defaults**: Raised default typography sizes in `packages/contracts/src/settings.ts` (UI 20px, Prompt 18px, Code 18px, Terminal 17px) for comfortable readability out of the box.
