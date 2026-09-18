@@ -55,25 +55,10 @@ During this session, we established, implemented, and verified customizations fo
     - Extended `UsageService.ts` to discover and aggregate transcripts from `.t3/userdata/usage/antigravity/sessions` and `.t3/userdata/usage/abacus/sessions`.
 21. **Protobuf Token Precision Historical Backfill**:
     - Decoded binary protobuf payloads in Antigravity's local SQLite database (`steps` table, step 15) to extract exact uncached input, cached input, output, and internal reasoning/thinking tokens across 42 historical sessions (~659.5M total tokens).
-22. **Unpriced Model Normalization & Pricing Rate Fixes**:
-    - `claude-opus-4-6-thinking`: Stripped `-thinking` suffix in `candidateRateKeys` to match LiteLLM's `claude-opus-4-6` ($5.00/M in, $0.50/M cache read, $25.00/M out), and added fallback rates.
-    - `codex-auto-review`: Added fallback pricing card for OpenAI's automated PR review bot ($1.00/M in, $0.25/M cache read, $4.00/M out) in `STATIC_FALLBACK_RATES`.
-    - `gemini-3.8-flash-tiered`: Updated candidate normalization regex from `/^(gemini-[^-]+-flash)-(high|medium|low)$/` to `/^(gemini-[^-]+-flash)-(high|medium|low|tiered)$/` to resolve to `gemini-3.8-flash`.
-23. **ChatLLM / Abacus Token & Point Audit**:
-    - Audited all disk files (`~/.abacusai/projects/*/*.json`, logs, history) and confirmed no tokens are exposed locally.
-    - Confirmed compute point conversion rate: 10,000 points = $10.00 ($0.001 per compute point).
-24. **LaTeX Math Support in Markdown Table Cells & Formatting Wrappers**:
-    - Identified and fixed single-dollar math expressions failing to render when placed inside bold tags (e.g. `**$G_{\mu\nu}$**`) or bounded by table cell pipes (`| $...$ |`).
-    - Broadened `preprocessMarkdownMath` boundary sets to include `*`, `_`, `~`, `|`, `[`, `]`, `—`, `–`, and `-`.
-    - Enhanced `looksLikeMath` to recognize LaTeX command macros with single and escaped backslashes (e.g. `$\Lambda$`).
-    - Added unit test coverage in `ChatMarkdown.test.tsx` verifying bold table math rendering (54/54 tests passing).
-25. **Unified Gemini 3.8 Flash Usage Accounting**:
-    - Addressed requirement to merge accounting across all Gemini 3.8 Flash tiers (`high`, `medium`, `low`, `tiered`) in the Usage window into a single unified row (`gemini-3.8-flash`), since they all cost the exact same rates ($0.15/M uncached input, $0.0375/M cached input, $0.60/M output).
-    - Exported `normalizeUsageModel(model: string): string` from `packages/contracts/src/usage.ts` that strips `-(high|medium|low|tiered)` suffixes from `gemini-*-flash` model identifiers.
-    - Updated `UsageAggregator.add(record)` in `apps/server/src/usage/usageAggregation.ts` to bucket records under `normalizeUsageModel(record.model)`, aggregating tokens, costs, cache savings, and unique session IDs under `gemini-3.8-flash`.
-    - Updated multi-environment aggregation in `packages/shared/src/usageMerge.ts` (`modelAccumulator`) to fold buckets by normalized model name.
-    - Updated `createOverrideRateTable` in `apps/server/src/usage/usagePricing.ts` so custom price overrides apply automatically to the normalized model key.
-    - Added unit tests in `apps/server/src/usage/usageAggregation.test.ts` (90/90 passing) and `packages/shared/src/usageMerge.test.ts` (15/15 passing).
+22. **Pricing Rate Catalog**: Updated the model API rate catalog and fallback pricing for unpriced models.
+23. **ChatLLM Compute Pricing**: Verified compute point conversion rate and local disk logging behavior.
+24. **Table & Inline Math**: Added LaTeX math rendering support inside markdown table cells and bold/italic wrappers (`**$...$**`).
+25. **Unified Gemini 3.8 Flash Usage Accounting**: Unified accounting across all Gemini 3.8 Flash tiers (`high`, `medium`, `low`, `tiered`) into a single canonical model (`gemini-3.8-flash`) in the Usage window.
 
 ---
 
