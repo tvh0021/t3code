@@ -3,7 +3,7 @@
 **Date**: September 18, 2026  
 **Repository**: [`tvh0021/t3code`](file:///Users/tvh0021/git_repos/t3code-dev) (Personal fork of `pingdotgg/t3code`)  
 **Branch**: `integration/zed-abacus`  
-**Latest Checkpoint Commit**: [`69bbd365f`](https://github.com/tvh0021/t3code/commit/69bbd365f) (pushed to `origin/integration/zed-abacus`)  
+**Latest Checkpoint Commit**: [`e9dad948e`](https://github.com/tvh0021/t3code/commit/e9dad948e) (pushed to `origin/integration/zed-abacus`)  
 **Active Harness**: Antigravity harness running in T3 Code
 
 ---
@@ -18,7 +18,7 @@ During this session, we established, implemented, and verified customizations fo
 4. **Monthly Usage Limits & Billing Reset Schedule**: Integrated dual API queries (`_getOrganizationComputePoints` and `_getBillingInfo`) to display remaining monthly compute points and accurate billing reset countdowns (`resetsAt`) in the native Usage Limits panel.
 5. **Official Vector SVG Brand Asset**: Replaced fallback "AB" text initials with the official Abacus AI vector icon (`AbacusIcon`) across all UI surfaces (Usage panel, model picker, provider settings, sidebar).
 6. **Cosmetic Display Rebranding to "ChatLLM" & Legacy Snapshot Migration**: Rebranded all user-facing presentation labels to "ChatLLM" matching T3 Code conventions (such as "Codex" for OpenAI) while maintaining internal compatibility. Added runtime normalization in `resolveProviderInstanceDisplayName` and server driver sanitization in `AbacusDriver.ts` so legacy persisted snapshots reading `"Abacus"` automatically normalize to `"ChatLLM"` in the model picker, subtitles, and tooltips.
-7. **LaTeX Math Rendering & Markdown Sanitization**: Integrated `remark-math` and `rehype-katex` in `ChatMarkdown.tsx` with math preprocessing for `\[ ... \]`, `\( ... \)`, and disambiguated `$math$`. Structured the rehype pipeline to sanitize user HTML while safely preserving KaTeX MathML and styled markup.
+7. **LaTeX Math Rendering & Markdown Sanitization**: Integrated `remark-math` and `rehype-katex` in `ChatMarkdown.tsx` with math preprocessing for `\\[ ... \\]`, `\\( ... \\)`, and disambiguated `$math$`. Structured the rehype pipeline to sanitize user HTML while safely preserving KaTeX MathML and styled markup.
 8. **KaTeX Square Root & Fraction Clearance**:
    - **Square Root Height**: Raised radical vinculum overlines (`transform: translateY(-0.22em)` + `padding-top: 0.22em`) so exponents like $\sqrt{x^2}$ and $\sqrt{a^2 + b^2}$ never get cut through.
    - **Fraction Denominator Powers**: Increased clearance for fraction denominators (`transform: translateY(0.22em)` default), with extra spacing (`transform: translateY(0.38em)`) on denominators containing superscripts/powers (`:has(.msupsub)`) so exponents never touch or clip the fraction bar (e.g. $\Delta = r^2 - \frac{2GMr}{c^2} + a^2$).
@@ -40,6 +40,14 @@ During this session, we established, implemented, and verified customizations fo
     - Handled lockfile conflict via `pnpm install`, preserving all LaTeX equation packages (`katex`, `rehype-katex`, `remark-math`, `@types/katex`) alongside upstream's Effect rc.115 and Electron 44.4.2 upgrades.
     - Ran all test suites (53/53 math tests, 33/33 Antigravity tests, 21/21 Abacus tests).
     - Built the 8.49 MB server bundle and triggered Electron restart.
+17. **Multi-Environment & Remote Access Architecture Verification**:
+    - Verified T3 Connect cloud relay (Clerk OAuth + Cloudflare tunnel) and Direct LAN / Tailscale pairing compatibility with stock mobile client.
+    - Confirmed multi-environment capabilities: mobile apps can run stock sessions and this personal fork concurrently side-by-side without signing out.
+18. **Build Diagnostics & Keychain Access Clearance**:
+    - Investigated build-time bundler warnings (`dbus-next` optional `x11` fallback and Effect rc.115 `import.meta.env` CJS replacement) and verified both are benign.
+    - Clarified macOS Keychain "Electron Safe Storage" security prompt triggered by upstream Electron 44.1.0 -> 44.4.2 binary hash update.
+19. **Concise Chronological Changelog**:
+    - Created and published `docs/personal/CHANGELOG.md` recording all fork customizations from oldest to newest with date stamps.
 
 ---
 
@@ -63,7 +71,7 @@ During this session, we established, implemented, and verified customizations fo
 - **Origin**: `https://github.com/tvh0021/t3code.git`
 - **Upstream**: `https://github.com/pingdotgg/t3code.git`
 - **Working Tree**: Clean (all changes committed and pushed to `origin/integration/zed-abacus`).
-- **Latest Commit**: `69bbd365f` (`Merge branch 'upstream/main' into integration/zed-abacus`)
+- **Latest Commit**: `e9dad948e` (`docs: order personal changelog chronologically from oldest to newest`)
 
 ---
 
