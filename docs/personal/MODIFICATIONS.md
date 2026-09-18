@@ -165,8 +165,7 @@ Rather than tracking micro-credits consumed per individual chat message, the use
     - Reads points balance: `totalComputePoints` and `computePointsLeft` (or fallback `curr_month_avail_points`).
     - Reads billing cycle from `_getBillingInfo`: `nextBillingDate` (e.g. `2026-10-12T03:59:37+00:00`) and `subscriptionStartTime`.
     - Computes `windowDurationMins` from the difference between `nextBillingDate` and `subscriptionStartTime` (defaults to 43,200 mins / 30 days).
-    - If `nextBillingDate` is missing or unparseable, automatically computes the fallback reset date as the 1st of the next UTC month at 00:00:00Z.
-    - Calculates `usedPercent = Math.max(0, Math.min(100, Math.round(((total - left) / total) * 100)))`.
+    - If `nextBillingDate` is missing or unparseable, automatically computes the fallback reset date as the 1st of the next UTC month at 00:00:00Z.\n - Calculates `usedPercent = Math.max(0, Math.min(100, Math.round(((total - left) / total) * 100)))`.
     - Formats window label: `Monthly (${left.toLocaleString()} / ${total.toLocaleString()} credits left)`.
     - Produces a `ServerProviderUsageWindow` with `kind: "monthly"`, `usedPercent`, `resetsAt`, and `windowDurationMins`.
   - **Usage Bar Reset Presentation**:
@@ -407,3 +406,52 @@ While `readAbacusUsageLimits` was previously implemented and tested, `AbacusDriv
 
 - **Modifications**:
   - Updated test assertions verifying that third-party quota entries are properly excluded and labels match `"Session"` and `"Weekly"` while sorting duration order correctly.
+
+---
+
+## 12. Antigravity Model Catalog Seeding & Server Bundle Rebuild
+
+### Root Cause & Architecture
+
+- **Symptom**: When Antigravity usage limits were integrated, `readAntigravityUsageLimits` successfully confirmed active Google Cloud Code quota windows. In `AntigravityProvider.ts`, `checkAntigravityProvider` set `status: "ready"` and `auth: { status: "authenticated" }`. However, in the UI model picker dropdown, Antigravity displayed "No models found" / "No models are available for this provider. Open provider setup", despite usage limits showing correctly.
+- **Root Cause**:
+  1. In `AntigravityProvider.ts`, `initialDraft` initializes `models: []`.
+  2. Because Antigravity's health probe is synthetic (avoiding the ~1 GB PyInstaller extraction overhead of `agy_acp_server` every 60 seconds), `models` was only populated dynamically when an explicit ACP session started (`onSessionStarted` / `onConfigOptionsUpdated`).
+  3. Without an active session in memory, `draft.models` remained `[]`.
+  4. Upstream `model-manifest.json` already defines the complete Antigravity model catalog (`gemini-3.8-flash-high`, `gemini-3.8-flash-medium`, `gemini-3.8-flash-low`) with default `gemini-3.8-flash-high`.
+  5. In `AntigravityDriver.ts`, `classifyModels` only overlaid manifest metadata on _existing_ models; it did not seed `draft.models` when `draft.models` was empty.
+  6. The desktop app executes the compiled server bundle at `apps/server/dist/bin.mjs` (watched by `dev-electron.mjs`), which required rebuilding via `pnpm --filter t3 build:bundle` to take effect.
+- **Resolution**:
+  - In `apps/server/src/provider/Drivers/AntigravityDriver.ts`, updated `classifyModels`:
+    ```typescript
+    if (
+      draft.installed !== false &&
+      draft.status !== "error" &&
+      draft.auth.status !== "unauthenticated" &&
+      draft.models.length === 0
+    ) {
+      const catalog =
+        ModelManifest.resolveProviderCatalog(manifest, DRIVER) ??
+        ModelManifest.resolveProviderCatalog(ModelManifest.BUNDLED_MODEL_MANIFEST, DRIVER);
+      if (catalog && catalog.models.length > 0) {
+        withModels = {
+          ...draft,
+          models: catalog.models.map((entry) => {
+            const isDefault = entry.model.isDefault;
+            const aliases = isDefault
+              ? [...new Set([...(entry.model.aliases ?? []), ANTIGRAVITY_DEFAULT_MODEL])]
+              : entry.model.aliases;
+            return {
+              ...entry.model,
+              capabilities: entry.model.capabilities ?? { optionDescriptors: [] },
+              ...(aliases ? { aliases } : {}),
+            };
+          }),
+        };
+      }
+    }
+    ```
+  - Changed the guard from `draft.auth.status === "authenticated"` to `draft.auth.status !== "unauthenticated"` so models are available whenever Antigravity is installed and not signed out.
+  - Rebuilt the bundle with `pnpm --filter t3 build:bundle`.
+  - When an active session starts, `onSessionStarted` populates `draft.models` with live ACP models, taking precedence.
+  - When unauthenticated or disabled, models remain empty.

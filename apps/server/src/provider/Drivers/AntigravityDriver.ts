@@ -1,5 +1,10 @@
 import { withAgentDeviceEnvironment } from "../../mcp/McpProviderSession.ts";
-import { AntigravitySettings, ProviderDriverKind, ProviderSetupError } from "@t3tools/contracts";
+import {
+  ANTIGRAVITY_DEFAULT_MODEL,
+  AntigravitySettings,
+  ProviderDriverKind,
+  ProviderSetupError,
+} from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import {
   NodeRuntimeUnavailableError,
@@ -127,11 +132,40 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
       // Google returns every model the account can use, including older
       // Gemini generations. The manifest names the current ones so the picker
       // folds the rest under its legacy section, as it does for Codex.
+      // When authenticated but without an active session to populate dynamic
+      // models, seed the default models from the manifest catalog.
       const classifyModels = (draft: ServerProviderDraft) =>
         modelManifest.current.pipe(
-          Effect.map((manifest) =>
-            stampIdentity(ModelManifest.applyModelManifest(draft, manifest, DRIVER)),
-          ),
+          Effect.map((manifest) => {
+            let withModels = draft;
+            if (
+              draft.installed !== false &&
+              draft.status !== "error" &&
+              draft.auth.status !== "unauthenticated" &&
+              draft.models.length === 0
+            ) {
+              const catalog =
+                ModelManifest.resolveProviderCatalog(manifest, DRIVER) ??
+                ModelManifest.resolveProviderCatalog(ModelManifest.BUNDLED_MODEL_MANIFEST, DRIVER);
+              if (catalog && catalog.models.length > 0) {
+                withModels = {
+                  ...draft,
+                  models: catalog.models.map((entry) => {
+                    const isDefault = entry.model.isDefault;
+                    const aliases = isDefault
+                      ? [...new Set([...(entry.model.aliases ?? []), ANTIGRAVITY_DEFAULT_MODEL])]
+                      : entry.model.aliases;
+                    return {
+                      ...entry.model,
+                      capabilities: entry.model.capabilities ?? { optionDescriptors: [] },
+                      ...(aliases ? { aliases } : {}),
+                    };
+                  }),
+                };
+              }
+            }
+            return stampIdentity(ModelManifest.applyModelManifest(withModels, manifest, DRIVER));
+          }),
         );
 
       const makeRuntime = Effect.fn("AntigravityDriver.makeRuntime")(function* (

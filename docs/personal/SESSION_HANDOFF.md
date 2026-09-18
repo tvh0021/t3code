@@ -31,6 +31,11 @@ During this session, we established, implemented, and verified customizations fo
     - Investigated feasibility of Claude and GPT OSS models in Antigravity. While supported by CCPA backend, Google's `agy_acp_server` binary explicitly filters models with `if not ccpa_id.startswith("gemini"): continue`, rejecting them with RPC error `-32602`.
     - Filtered out third-party quota buckets (`3p-weekly`, `3p-5h`, Claude, and GPT) in `antigravityUsageLimits.ts` so non-functional models do not clutter the Usage tab.
     - Simplified window labels to `"Session"` (5-hour) and `"Weekly"` (weekly), matching Codex and Claude conventions, and sorted windows duration-ascending.
+15. **Antigravity Model Catalog Restoration & Server Bundle Rebuild**:
+    - Reverse-engineered empty model picker symptom where Antigravity was ready and authenticated with usage limits visible, but displayed "No models found" / "No models are available for this provider. Open provider setup" in the model picker.
+    - Upstream `model-manifest.json` already defines the 3 Gemini models (`gemini-3.8-flash-high`, `gemini-3.8-flash-medium`, `gemini-3.8-flash-low`).
+    - Seeded catalog models from `ModelManifest.resolveProviderCatalog` inside `AntigravityDriver.ts`'s `classifyModels` whenever `draft.installed !== false && draft.status !== "error" && draft.auth.status !== "unauthenticated" && draft.models.length === 0`, mapping `"antigravity-default"` to `gemini-3.8-flash-high`. Live ACP session models continue to take precedence when a session runs.
+    - Rebuilt `apps/server/dist/bin.mjs` via `pnpm --filter t3 build:bundle`. The desktop runner (`dev-electron.mjs`) watches `dist/bin.mjs` and automatically reloads the backend server upon rebuild.
 
 ---
 
@@ -112,7 +117,7 @@ During this session, we established, implemented, and verified customizations fo
     }
     ```
 
-### 6. Antigravity Quota Ingestion & Third-Party Filtration
+### 6. Antigravity Quota Ingestion, 3P Filtration & Model Catalog Seeding
 
 - [`apps/server/src/provider/Layers/antigravityUsageLimits.ts`](file:///Users/tvh0021/git_repos/t3code-dev/apps/server/src/provider/Layers/antigravityUsageLimits.ts):
   - Fetches quota summaries from `https://cloudcode-pa.googleapis.com/v1alpha:fetchCurrentTier` using cached Google OAuth tokens.
@@ -123,6 +128,9 @@ During this session, we established, implemented, and verified customizations fo
   - Unit test coverage for OAuth token caching, quota calculation, 3P filtration, and `"Session"` / `"Weekly"` labels (28/28 tests passing).
 - [`apps/server/src/provider/Drivers/AntigravityDriver.ts`](file:///Users/tvh0021/git_repos/t3code-dev/apps/server/src/provider/Drivers/AntigravityDriver.ts):
   - Ingests `readAntigravityUsageLimits` on startup and in `snapshotShape.refresh`.
+  - In `classifyModels`, when `draft.installed !== false && draft.status !== "error" && draft.auth.status !== "unauthenticated" && draft.models.length === 0`, resolves catalog models from `ModelManifest.resolveProviderCatalog(manifest, DRIVER)` (or `BUNDLED_MODEL_MANIFEST`).
+  - Seeds the 3 Gemini models (`gemini-3.8-flash-high`, `gemini-3.8-flash-medium`, `gemini-3.8-flash-low`) and binds `"antigravity-default"` alias to `gemini-3.8-flash-high`.
+  - Rebuilt `apps/server/dist/bin.mjs` via `pnpm --filter t3 build:bundle`.
 - [`apps/server/src/provider/Drivers/AbacusDriver.ts`](file:///Users/tvh0021/git_repos/t3code-dev/apps/server/src/provider/Drivers/AbacusDriver.ts):
   - Wired `readAbacusUsageLimits` to snapshot draft and `snapshotShape.refresh`.
 - [`apps/web/src/components/usage/UsageLimits.tsx`](file:///Users/tvh0021/git_repos/t3code-dev/apps/web/src/components/usage/UsageLimits.tsx):
@@ -147,6 +155,8 @@ During this session, we established, implemented, and verified customizations fo
 | `pnpm --filter t3 test Abacus`                 | ✅ PASS | 21/21 tests passing (AbacusAdapter, AbacusDriver, abacusUsageLimits)                             |
 | `pnpm --filter t3 test antigravityUsageLimits` | ✅ PASS | 7/7 tests passing (quota ingestion, 3P filtration, Session/Weekly labels)                        |
 | `pnpm --filter t3 test AntigravityProvider`    | ✅ PASS | 21/21 tests passing (provider lifecycle, snapshots, usage limit attachment)                      |
+| `pnpm --filter t3 test AntigravityDriver`      | ✅ PASS | 12/12 tests passing (model refresh, catalog fallback, auth handling)                             |
+| `pnpm --filter t3 build:bundle`                | ✅ PASS | Built 8.46 MB `dist/bin.mjs` cleanly in 768ms                                                    |
 | `pnpm --filter t3 exec tsc --noEmit`           | ✅ PASS | 0 TypeScript errors                                                                              |
 | `pnpm --filter @t3tools/client-runtime test`   | ✅ PASS | 1,524/1,524 tests passing (77/77 test files, including provider instance display & badges)       |
 
@@ -174,11 +184,9 @@ During this session, we established, implemented, and verified customizations fo
    pnpm --filter @t3tools/web test
    pnpm --filter @t3tools/client-runtime test
    pnpm --filter t3 test Abacus
+   pnpm --filter t3 test AntigravityDriver
    ```
 3. **Launch Dev Client**:
    ```bash
-   pnpm dev
+   pnpm dev:desktop
    ```
-4. **Relevant References**:
-   - [`docs/personal/MODIFICATIONS.md`](file:///Users/tvh0021/git_repos/t3code-dev/docs/personal/MODIFICATIONS.md) for full architectural explanations of each modified file.
-   - [`docs/personal/UPSTREAM_SYNC.md`](file:///Users/tvh0021/git_repos/t3code-dev/docs/personal/UPSTREAM_SYNC.md) when syncing latest commits from `upstream/main`.
