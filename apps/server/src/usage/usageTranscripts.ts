@@ -210,7 +210,11 @@ function isForkedSessionMeta(payload: Record<string, unknown>): boolean {
  * reconciles with the session's final `total_token_usage`, provided
  * consecutive duplicate events are dropped, which this does.
  */
-export function parseCodexLine(line: string, state: CodexScanState): UsageRecord | null {
+export function parseCodexLine(
+  line: string,
+  state: CodexScanState,
+  provider: UsageProviderKind = "codex",
+): UsageRecord | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
@@ -243,6 +247,7 @@ export function parseCodexLine(line: string, state: CodexScanState): UsageRecord
 
   if (record["type"] === "turn_context") {
     if (typeof payloadRecord["model"] === "string") state.model = payloadRecord["model"];
+    state.lastUsageSignature = null;
     return null;
   }
 
@@ -297,7 +302,7 @@ export function parseCodexLine(line: string, state: CodexScanState): UsageRecord
   if (totalTokens(totals) === 0) return null;
 
   return {
-    provider: "codex",
+    provider,
     timestampMs,
     model: state.model,
     sessionId: state.sessionId,

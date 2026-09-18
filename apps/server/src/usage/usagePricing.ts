@@ -30,6 +30,95 @@ export interface ModelRate {
 
 export type RateTable = ReadonlyMap<string, ModelRate>;
 
+/**
+ * Fallback rates for models known from online documentation that are not
+ * present in or aliased identically by LiteLLM.
+ * All rates are USD per token.
+ */
+export const STATIC_FALLBACK_RATES: ReadonlyMap<string, ModelRate> = new Map([
+  [
+    "gemini-3.8-flash",
+    {
+      inputCostPerToken: 0.75 / 1_000_000,
+      outputCostPerToken: 3.75 / 1_000_000,
+      cacheReadCostPerToken: 0.075 / 1_000_000,
+      cacheCreationCostPerToken: 0.75 / 1_000_000,
+    },
+  ],
+  [
+    "gemini-2.5-pro",
+    {
+      inputCostPerToken: 1.25 / 1_000_000,
+      outputCostPerToken: 10.0 / 1_000_000,
+      cacheReadCostPerToken: 0.3125 / 1_000_000,
+      cacheCreationCostPerToken: 1.25 / 1_000_000,
+    },
+  ],
+  [
+    "gemini-2.5-flash",
+    {
+      inputCostPerToken: 0.3 / 1_000_000,
+      outputCostPerToken: 2.5 / 1_000_000,
+      cacheReadCostPerToken: 0.075 / 1_000_000,
+      cacheCreationCostPerToken: 0.3 / 1_000_000,
+    },
+  ],
+  [
+    "glm-5.3-flash",
+    {
+      inputCostPerToken: 0.15 / 1_000_000,
+      outputCostPerToken: 0.5 / 1_000_000,
+      cacheReadCostPerToken: 0.03 / 1_000_000,
+      cacheCreationCostPerToken: 0.15 / 1_000_000,
+    },
+  ],
+  [
+    "deepseek-v4.1-flash",
+    {
+      inputCostPerToken: 0.15 / 1_000_000,
+      outputCostPerToken: 0.6 / 1_000_000,
+      cacheReadCostPerToken: 0.003 / 1_000_000,
+      cacheCreationCostPerToken: 0.15 / 1_000_000,
+    },
+  ],
+  [
+    "route-llm",
+    {
+      inputCostPerToken: 0.3 / 1_000_000,
+      outputCostPerToken: 1.2 / 1_000_000,
+      cacheReadCostPerToken: 0.06 / 1_000_000,
+      cacheCreationCostPerToken: 0.3 / 1_000_000,
+    },
+  ],
+  [
+    "claude-opus-4-6",
+    {
+      inputCostPerToken: 5.0 / 1_000_000,
+      outputCostPerToken: 25.0 / 1_000_000,
+      cacheReadCostPerToken: 0.5 / 1_000_000,
+      cacheCreationCostPerToken: 6.25 / 1_000_000,
+    },
+  ],
+  [
+    "claude-opus-4.6",
+    {
+      inputCostPerToken: 5.0 / 1_000_000,
+      outputCostPerToken: 25.0 / 1_000_000,
+      cacheReadCostPerToken: 0.5 / 1_000_000,
+      cacheCreationCostPerToken: 6.25 / 1_000_000,
+    },
+  ],
+  [
+    "codex-auto-review",
+    {
+      inputCostPerToken: 1.0 / 1_000_000,
+      outputCostPerToken: 4.0 / 1_000_000,
+      cacheReadCostPerToken: 0.25 / 1_000_000,
+      cacheCreationCostPerToken: 1.0 / 1_000_000,
+    },
+  ],
+]);
+
 /** Custom IDs keep their case, provider prefix, and variant suffix. */
 export function createOverrideRateTable(
   overrides: Readonly<Record<string, UsageModelPriceOverride>>,
@@ -158,11 +247,64 @@ const UNPRICEABLE_MODELS = new Set([
   "fable",
 ]);
 
+function candidateRateKeys(key: string): readonly string[] {
+  const candidates: string[] = [key];
+
+  // Strip reasoning effort or tier suffix: gemini-3.8-flash-(high|medium|low|tiered) -> gemini-3.8-flash
+  const strippedGemini = key.replace(/^(gemini-[^-]+-flash)-(high|medium|low|tiered)$/, "$1");
+  if (strippedGemini !== key) {
+    candidates.push(strippedGemini);
+  }
+
+  // Strip thinking suffix: claude-opus-4-6-thinking -> claude-opus-4-6, claude-opus-4.6
+  if (key.endsWith("-thinking")) {
+    const strippedThinking = key.slice(0, -"-thinking".length);
+    candidates.push(strippedThinking);
+    if (strippedThinking.includes("-")) {
+      candidates.push(strippedThinking.replace(/(\d+)-(\d+)/g, "$1.$2"));
+    }
+  }
+
+  // Gemini aliases
+  if (key === "gemini-pro-agent") {
+    candidates.push("gemini-2.5-pro", "gemini-pro");
+  }
+
+  // Provider aliases
+  if (key.startsWith("zai-org/")) {
+    const sub = key.slice("zai-org/".length);
+    candidates.push(`zai/${sub}`, sub);
+  }
+
+  if (key.startsWith("deepseek-ai/")) {
+    const sub = key.slice("deepseek-ai/".length);
+    candidates.push(
+      `openrouter/deepseek/${sub}`,
+      `together_ai/deepseek-ai/${sub}`,
+      `deepseek/${sub}`,
+      sub,
+    );
+  }
+
+  return candidates;
+}
+
 export function lookupRate(table: RateTable, model: string): ModelRate | null {
   const key = stripVariantSuffix(normalizeRateKey(model));
   const bareName = bareModelName(key);
   if (bareName.length === 0 || UNPRICEABLE_MODELS.has(bareName)) return null;
-  return table.get(key) ?? null;
+
+  for (const candidate of candidateRateKeys(key)) {
+    const fromTable = table.get(candidate);
+    if (fromTable !== undefined) return fromTable;
+  }
+
+  for (const candidate of candidateRateKeys(key)) {
+    const fromFallback = STATIC_FALLBACK_RATES.get(candidate);
+    if (fromFallback !== undefined) return fromFallback;
+  }
+
+  return null;
 }
 
 export interface PricedUsage {

@@ -333,6 +333,40 @@ export const make = Effect.gen(function* () {
         });
       }
     }
+    for (const provider of ["antigravity", "abacus"] as const) {
+      const directory = path.join(config.stateDir, "usage", provider, "sessions");
+      const sourceKey = provider + "\0" + directory;
+      const previous = sourceCache.get(sourceKey);
+      const dir = yield* fileSystem
+        .realPath(directory)
+        .pipe(Effect.orElseSucceed(() => previous?.dir ?? directory));
+      const currentVolumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
+      const hasRetainedHistory = fileCache
+        .entries()
+        .some(
+          ([filePath, entry]) =>
+            entry.provider === provider &&
+            entry.mtimeMs >= retentionCutoffMs &&
+            entry.records.length + entry.tailRecords.length > 0 &&
+            isWithinDirectory(filePath, dir),
+        );
+      const volumeId =
+        previous?.dir === dir && (hasRetainedHistory || !currentVolumeId)
+          ? previous.volumeId || currentVolumeId
+          : currentVolumeId;
+      if (previous?.dir !== dir || previous.volumeId !== volumeId) {
+        sourceCache.set(sourceKey, { dir, volumeId });
+        cacheDirty = true;
+      }
+      const key = `${provider}\0${dir}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      dirs.push({
+        provider,
+        dir,
+        volumeId,
+      });
+    }
     return dirs;
   });
 
@@ -585,7 +619,12 @@ export const make = Effect.gen(function* () {
         const codexEventOccurrences = new Map<string, number>();
         for (const record of file.records) {
           let usageRecord = record;
-          if (record.provider === "codex" && record.sessionId.length > 0) {
+          if (
+            (record.provider === "codex" ||
+              record.provider === "antigravity" ||
+              record.provider === "abacus") &&
+            record.sessionId.length > 0
+          ) {
             // Match moved rollout copies without collapsing repeated equal events
             // within one rollout (timestamps can have only second precision).
             const key = encodeUsageRecordKey([

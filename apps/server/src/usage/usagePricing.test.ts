@@ -130,4 +130,58 @@ describe("usage pricing", () => {
     expect(lookupRate(table, "provider-b/example-model")?.inputCostPerToken).toBe(3);
     expect(lookupRate(table, "example-model")).toBeNull();
   });
+
+  it("resolves rates for Antigravity reasoning tiers and ChatLLM models", () => {
+    const table = parseRateTable({
+      "gemini-3.8-flash": {
+        input_cost_per_token: 0.75 / 1_000_000,
+        output_cost_per_token: 3.75 / 1_000_000,
+        cache_read_input_token_cost: 0.075 / 1_000_000,
+        cache_creation_input_token_cost: 0.75 / 1_000_000,
+      },
+      "gemini-2.5-pro": {
+        input_cost_per_token: 1.25 / 1_000_000,
+        output_cost_per_token: 10 / 1_000_000,
+        cache_read_input_token_cost: 0.3125 / 1_000_000,
+        cache_creation_input_token_cost: 1.25 / 1_000_000,
+      },
+      "zai/glm-5.3-flash": {
+        input_cost_per_token: 0.15 / 1_000_000,
+        output_cost_per_token: 0.5 / 1_000_000,
+        cache_read_input_token_cost: 0.03 / 1_000_000,
+      },
+      "claude-opus-4-6": {
+        input_cost_per_token: 5.0 / 1_000_000,
+        output_cost_per_token: 25.0 / 1_000_000,
+        cache_read_input_token_cost: 0.5 / 1_000_000,
+        cache_creation_input_token_cost: 6.25 / 1_000_000,
+      },
+    });
+
+    // Reasoning effort tiers and tiered variant map to base gemini-3.8-flash
+    expect(lookupRate(table, "gemini-3.8-flash-high")?.inputCostPerToken).toBe(0.75 / 1_000_000);
+    expect(lookupRate(table, "gemini-3.8-flash-medium")?.outputCostPerToken).toBe(3.75 / 1_000_000);
+    expect(lookupRate(table, "gemini-3.8-flash-low")?.cacheReadCostPerToken).toBe(
+      0.075 / 1_000_000,
+    );
+    expect(lookupRate(table, "gemini-3.8-flash-tiered")?.inputCostPerToken).toBe(0.75 / 1_000_000);
+
+    // claude-opus-4-6-thinking maps to claude-opus-4-6
+    expect(lookupRate(table, "claude-opus-4-6-thinking")?.inputCostPerToken).toBe(5.0 / 1_000_000);
+
+    // codex-auto-review resolves via static fallback
+    expect(lookupRate(table, "codex-auto-review")?.inputCostPerToken).toBe(1.0 / 1_000_000);
+
+    // gemini-pro-agent resolves to gemini-2.5-pro
+    expect(lookupRate(table, "gemini-pro-agent")?.inputCostPerToken).toBe(1.25 / 1_000_000);
+
+    // zai-org resolves to zai/glm-5.3-flash
+    expect(lookupRate(table, "zai-org/GLM-5.3-Flash")?.inputCostPerToken).toBe(0.15 / 1_000_000);
+
+    // DeepSeek and route-llm resolve via static fallbacks if not in table
+    expect(lookupRate(table, "deepseek-ai/DeepSeek-V4.1-Flash")?.inputCostPerToken).toBe(
+      0.15 / 1_000_000,
+    );
+    expect(lookupRate(table, "route-llm")?.outputCostPerToken).toBe(1.2 / 1_000_000);
+  });
 });

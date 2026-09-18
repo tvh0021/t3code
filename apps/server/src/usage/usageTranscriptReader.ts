@@ -86,6 +86,9 @@ function fnv1a(buffer: Buffer): number {
   return hash >>> 0;
 }
 
+const isCodexLikeProvider = (provider: UsageProviderKind): boolean =>
+  provider === "codex" || provider === "antigravity" || provider === "abacus";
+
 /**
  * Lists `.jsonl` transcripts under `root` last modified at or after `sinceMs`.
  *
@@ -209,7 +212,7 @@ export async function readTranscriptRecords(
     if (
       resumeFrom !== undefined &&
       resumeFrom.resumeOffset > 0 &&
-      (provider !== "codex" || resumeFrom.codexState !== null) &&
+      (!isCodexLikeProvider(provider) || resumeFrom.codexState !== null) &&
       (await guardMatches(handle, resumeFrom))
     ) {
       if (resumeFrom.codexState !== null) codexState = { ...resumeFrom.codexState };
@@ -218,7 +221,7 @@ export async function readTranscriptRecords(
     }
 
     const parseLine = (line: string, state: CodexScanState, out: UsageRecord[]): void => {
-      if (provider === "codex") {
+      if (isCodexLikeProvider(provider)) {
         if (
           !mightCarryUsage(line, provider) &&
           !line.includes('"turn_context"') &&
@@ -226,7 +229,7 @@ export async function readTranscriptRecords(
         ) {
           return;
         }
-        const record = parseCodexLine(line, state);
+        const record = parseCodexLine(line, state, provider);
         if (record !== null) out.push(record);
         return;
       }
@@ -258,23 +261,27 @@ export async function readTranscriptRecords(
       start,
       autoClose: false,
     }) as AsyncIterable<Buffer>;
+
     for await (const chunk of stream) {
-      if (!chunk.includes(NEWLINE)) {
-        pendingChunks.push(chunk);
-        continue;
+      let chunkOffset = 0;
+      while (chunkOffset < chunk.length) {
+        const newlineIndex = chunk.indexOf(NEWLINE, chunkOffset);
+        if (newlineIndex === -1) {
+          pendingChunks.push(chunk.subarray(chunkOffset));
+          break;
+        }
+        const lineSegment = chunk.subarray(chunkOffset, newlineIndex);
+        chunkOffset = newlineIndex + 1;
+        // The offset advances past the newline immediately, so a throw inside
+        // `parseLine` leaves `resumeOffset` pointing past the offending line.
+        const lineLength =
+          pendingChunks.reduce((sum, piece) => sum + piece.length, 0) + lineSegment.length + 1;
+        const lineBuffer =
+          pendingChunks.length === 0 ? lineSegment : Buffer.concat([...pendingChunks, lineSegment]);
+        pendingChunks = [];
+        resumeOffset += lineLength;
+        parseLine(toLineString(lineBuffer), codexState, records);
       }
-      const buffer: Buffer =
-        pendingChunks.length === 0 ? chunk : Buffer.concat([...pendingChunks, chunk]);
-      pendingChunks = [];
-      let lineStart = 0;
-      for (;;) {
-        const newlineIndex = buffer.indexOf(NEWLINE, lineStart);
-        if (newlineIndex === -1) break;
-        parseLine(toLineString(buffer.subarray(lineStart, newlineIndex)), codexState, records);
-        lineStart = newlineIndex + 1;
-      }
-      resumeOffset += lineStart;
-      if (lineStart < buffer.length) pendingChunks.push(buffer.subarray(lineStart));
     }
 
     // A trailing segment without its newline is parsed for this result but not
@@ -301,7 +308,7 @@ export async function readTranscriptRecords(
         resumeOffset,
         guardLength,
         guardHash,
-        codexState: provider === "codex" ? codexState : null,
+        codexState: isCodexLikeProvider(provider) ? codexState : null,
       },
       resumed,
     };

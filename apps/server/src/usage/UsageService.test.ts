@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - the suite seeds and grows real
+// @effect-diagnostics nodeBuiltinImport:off, globalDateInEffect:off - the suite seeds and grows real
 // transcript trees on disk, outside the service's Effect FileSystem.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
@@ -30,6 +30,7 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as UsageService from "./UsageService.ts";
+import { appendProviderTurnUsage } from "./providerTurnUsageWriter.ts";
 
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -55,7 +56,9 @@ const WINDOW: UsageSummaryInput = {
 
 const setup = Effect.gen(function* () {
   const home = yield* Effect.promise(() =>
-    NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "usage-service-test-")),
+    NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "usage-service-test-")).then((dir) =>
+      NodeFSP.realpath(dir),
+    ),
   );
   yield* Effect.addFinalizer(() =>
     Effect.promise(() => NodeFSP.rm(home, { recursive: true, force: true })),
@@ -711,6 +714,67 @@ describe("UsageService", () => {
       assert.isUndefined(
         orphanedAt,
         `interruption left the next matching request pending at scheduler check ${orphanedAt}`,
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("scans and aggregates antigravity and abacus provider usage", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+
+      yield* Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+
+        yield* Effect.promise(async () => {
+          await appendProviderTurnUsage({
+            stateDir: config.stateDir,
+            provider: "antigravity",
+            sessionId: "ag-session-1",
+            turnId: "turn-1",
+            model: "gemini-2.5-pro",
+            timestampMs: Date.parse("2026-08-01T10:00:00Z"),
+            tokens: {
+              inputTokens: 100,
+              cachedInputTokens: 20,
+              cacheCreationTokens: 0,
+              outputTokens: 50,
+              reasoningTokens: 10,
+            },
+          });
+          await appendProviderTurnUsage({
+            stateDir: config.stateDir,
+            provider: "abacus",
+            sessionId: "abacus-session-1",
+            turnId: "turn-1",
+            model: "route-llm",
+            timestampMs: Date.parse("2026-08-01T11:00:00Z"),
+            tokens: {
+              inputTokens: 200,
+              cachedInputTokens: 0,
+              outputTokens: 80,
+              reasoningTokens: 0,
+            },
+          });
+        });
+
+        const service = yield* UsageService.make;
+        const summary = yield* service.readSummary(WINDOW);
+        const providersInSources = summary.sources.map((s) => s.fingerprint.provider);
+        assert.include(providersInSources, "antigravity");
+        assert.include(providersInSources, "abacus");
+
+        const antigravityBuckets = summary.buckets.filter((b) => b.provider === "antigravity");
+        const abacusBuckets = summary.buckets.filter((b) => b.provider === "abacus");
+
+        assert.isAbove(antigravityBuckets.length, 0);
+        assert.isAbove(abacusBuckets.length, 0);
+
+        const agOutput = antigravityBuckets.reduce((sum, b) => sum + b.totals.outputTokens, 0);
+        const abacusOutput = abacusBuckets.reduce((sum, b) => sum + b.totals.outputTokens, 0);
+        assert.strictEqual(agOutput, 50);
+        assert.strictEqual(abacusOutput, 80);
+      }).pipe(
+        Effect.provide(serviceLayers({ prefix: "usage-service-ag-abacus-test", home, settings })),
       );
     }).pipe(Effect.scoped),
   );

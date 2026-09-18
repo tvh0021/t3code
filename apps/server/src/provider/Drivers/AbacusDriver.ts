@@ -10,6 +10,8 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as Option from "effect/Option";
+import { ServerConfig } from "../../config.ts";
 import * as Schema from "effect/Schema";
 
 import { makeAbacusAdapter } from "../Layers/AbacusAdapter.ts";
@@ -144,11 +146,15 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
           })),
       };
 
+      const serverConfig = yield* Effect.serviceOption(ServerConfig);
+      const stateDir = Option.isSome(serverConfig) ? serverConfig.value.stateDir : undefined;
+
       const adapter = yield* makeAbacusAdapter({
         apiBaseUrl: config.apiBaseUrl || "https://routellm.abacus.ai/v1",
         apiKey,
         defaultModel: "route-llm",
         instanceId,
+        stateDir,
       });
 
       const unsupportedTextGen = (operation: string) =>

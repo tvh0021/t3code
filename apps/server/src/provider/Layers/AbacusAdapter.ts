@@ -24,6 +24,7 @@ import {
   type ProviderAdapterError,
 } from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
+import { appendProviderTurnUsage } from "../../usage/providerTurnUsageWriter.ts";
 
 const PROVIDER = ProviderDriverKind.make("abacus");
 const MAX_BUFFER = 1024 * 1024;
@@ -72,6 +73,7 @@ export interface AbacusAdapterOptions {
   readonly apiKey: string;
   readonly defaultModel: string;
   readonly instanceId: ProviderInstanceId;
+  readonly stateDir?: string | undefined;
   readonly fetch?: Fetch;
   readonly requestTimeoutMs?: number;
 }
@@ -988,6 +990,55 @@ export const makeAbacusAdapter = (
 
       if (active.cancelled || failure) {
         context.messages.length = initialMessageCount;
+      }
+
+      if (options.stateDir) {
+        const usageObj = finalUsage as
+          | {
+              prompt_tokens?: number;
+              input_tokens?: number;
+              completion_tokens?: number;
+              output_tokens?: number;
+              prompt_tokens_details?: { cached_tokens?: number };
+              completion_tokens_details?: { reasoning_tokens?: number };
+              cached_tokens?: number;
+              reasoning_tokens?: number;
+            }
+          | undefined;
+        const promptTokens = usageObj?.prompt_tokens ?? usageObj?.input_tokens ?? 0;
+        const cachedTokens =
+          usageObj?.prompt_tokens_details?.cached_tokens ?? usageObj?.cached_tokens ?? 0;
+        let outputTokens = usageObj?.completion_tokens ?? usageObj?.output_tokens ?? 0;
+        const reasoningTokens =
+          usageObj?.completion_tokens_details?.reasoning_tokens ?? usageObj?.reasoning_tokens ?? 0;
+
+        let uncachedInput = Math.max(0, promptTokens - cachedTokens);
+        if (uncachedInput === 0 && outputTokens === 0) {
+          let promptChars = 0;
+          for (const msg of context.messages) {
+            if (typeof msg.content === "string") promptChars += msg.content.length;
+          }
+          uncachedInput = Math.max(1, Math.ceil(promptChars / 4));
+          outputTokens = 1;
+        }
+
+        if (uncachedInput > 0 || outputTokens > 0) {
+          yield* Effect.promise(() =>
+            appendProviderTurnUsage({
+              stateDir: options.stateDir!,
+              provider: "abacus",
+              sessionId: input.threadId,
+              turnId,
+              model: context.session.model || options.defaultModel,
+              tokens: {
+                inputTokens: uncachedInput,
+                cachedInputTokens: cachedTokens,
+                outputTokens,
+                reasoningTokens,
+              },
+            }),
+          ).pipe(Effect.catchCause(() => Effect.void));
+        }
       }
 
       if (!active.settled) {
