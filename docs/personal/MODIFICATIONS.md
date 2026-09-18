@@ -399,9 +399,11 @@ While `readAbacusUsageLimits` was previously implemented and tested, `AbacusDriv
 
 - **Modifications**:
   - In `antigravityQuotaSummaryToLimits`, buckets belonging to Claude/GPT groups (e.g. group name containing `"claude"` or `"gpt"`, or bucket ID starting with `"3p"`) are ignored.
+  - Simplified window labels to `"Session"` (for 5-hour quota) and `"Weekly"` (for weekly quota), aligning with Codex and Claude provider conventions instead of prefixing `"Gemini (...) "`.
+  - Windows are sorted by `windowDurationMins` ascending so that `"Session"` appears first, followed by `"Weekly"`.
   - Only active Gemini quota windows (`gemini-weekly` and `gemini-5h`) are exposed to the client runtime.
 
-### `apps/server/src/provider/Layers/antigravityUsageLimits.test.ts`
+### `apps/server/src/provider/Layers/antigravityUsageLimits.test.ts` & `AntigravityProvider.test.ts`
 
 - **Modifications**:
-  - Updated test assertions verifying that third-party quota entries are properly excluded while Gemini session and weekly quota windows are preserved.
+  - Updated test assertions verifying that third-party quota entries are properly excluded and labels match `"Session"` and `"Weekly"` while sorting duration order correctly.

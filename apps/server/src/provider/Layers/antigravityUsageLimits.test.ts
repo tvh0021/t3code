@@ -67,7 +67,7 @@ describe("antigravityUsageLimits", () => {
       const geminiWeekly = limits.windows.find((w) => w.id === "gemini-weekly");
       expect(geminiWeekly).toBeDefined();
       expect(geminiWeekly?.kind).toBe("weekly");
-      expect(geminiWeekly?.label).toBe("Gemini (Weekly)");
+      expect(geminiWeekly?.label).toBe("Weekly");
       expect(geminiWeekly?.usedPercent).toBeCloseTo(36.71, 1);
       expect(geminiWeekly?.windowDurationMins).toBe(10080);
       expect(geminiWeekly?.resetsAt).toBe("2026-09-23T03:38:22.000Z");
@@ -75,7 +75,7 @@ describe("antigravityUsageLimits", () => {
       const gemini5h = limits.windows.find((w) => w.id === "gemini-5h");
       expect(gemini5h).toBeDefined();
       expect(gemini5h?.kind).toBe("session");
-      expect(gemini5h?.label).toBe("Gemini (5-Hour)");
+      expect(gemini5h?.label).toBe("Session");
       expect(gemini5h?.usedPercent).toBeCloseTo(65.27, 1);
       expect(gemini5h?.windowDurationMins).toBe(300);
       expect(gemini5h?.resetsAt).toBe("2026-09-18T08:31:22.000Z");
@@ -212,7 +212,7 @@ describe("antigravityUsageLimits", () => {
 
         expect(limits1.windows).toHaveLength(1);
         expect(limits1.windows[0]?.id).toBe("gemini-5h");
-        expect(limits1.windows[0]?.label).toBe("Gemini (5-Hour)");
+        expect(limits1.windows[0]?.label).toBe("Session");
         expect(limits1.windows[0]?.usedPercent).toBe(50);
         expect(refreshCallCount).toBe(1);
         expect(quotaCallCount).toBe(1);

@@ -86,32 +86,20 @@ export type AntigravityTokenFile = typeof AntigravityTokenFile.Type;
 
 const decodeTokenFile = Schema.decodeUnknownEffect(Schema.fromJsonString(AntigravityTokenFile));
 
-function resolveBucketLabel(groupName?: string, bucket?: AntigravityQuotaBucket): string {
-  const bucketId = bucket?.bucketId ?? "";
-  const is5h = bucket?.window === "5h" || bucketId.includes("5h");
-  const isWeekly = bucket?.window === "weekly" || bucketId.includes("weekly");
-  const windowPart = is5h ? "5-Hour" : isWeekly ? "Weekly" : bucket?.displayName || bucketId;
-
-  if (groupName) {
-    const lowerGroup = groupName.toLowerCase();
-    if (lowerGroup.includes("gemini")) {
-      return `Gemini (${windowPart})`;
-    }
-    return `${groupName} (${windowPart})`;
-  }
-
-  if (bucketId.startsWith("gemini")) {
-    return `Gemini (${windowPart})`;
-  }
-  return bucket?.displayName || bucketId || windowPart;
-}
-
 function resolveBucketKind(bucket: AntigravityQuotaBucket): ServerProviderUsageWindow["kind"] {
   const windowStr = (bucket.window || bucket.bucketId).toLowerCase();
   if (windowStr.includes("5h") || windowStr.includes("session")) return "session";
   if (windowStr.includes("week")) return "weekly";
   if (windowStr.includes("month")) return "monthly";
   return "other";
+}
+
+function resolveBucketLabel(bucket: AntigravityQuotaBucket): string {
+  const kind = resolveBucketKind(bucket);
+  if (kind === "session") return "Session";
+  if (kind === "weekly") return "Weekly";
+  if (kind === "monthly") return "Monthly";
+  return bucket.displayName || bucket.bucketId || "Limit";
 }
 
 function resolveBucketDurationMins(bucket: AntigravityQuotaBucket): number | undefined {
@@ -166,7 +154,7 @@ export function antigravityQuotaSummaryToLimits(
     windows.push({
       id: bucket.bucketId,
       kind: resolveBucketKind(bucket),
-      label: resolveBucketLabel(groupName, bucket),
+      label: resolveBucketLabel(bucket),
       usedPercent,
       ...(resetsAt ? { resetsAt } : {}),
       ...(durationMins !== undefined ? { windowDurationMins: durationMins } : {}),
@@ -186,6 +174,8 @@ export function antigravityQuotaSummaryToLimits(
       processBucket(bucket);
     }
   }
+
+  windows.sort((a, b) => (a.windowDurationMins ?? 0) - (b.windowDurationMins ?? 0));
 
   return windows.length > 0
     ? makeUsageLimits({ checkedAt, windows })

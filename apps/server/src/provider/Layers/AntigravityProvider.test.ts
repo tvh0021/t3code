@@ -658,7 +658,7 @@ it.layer(testLayer)("Antigravity provider snapshots", (it) => {
               {
                 id: "gemini-5h",
                 kind: "session",
-                label: "Gemini (5-Hour)",
+                label: "Session",
                 usedPercent: 42,
                 windowDurationMins: 300,
               },
