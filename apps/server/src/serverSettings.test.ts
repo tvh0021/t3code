@@ -1248,6 +1248,92 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("preserves, replaces, removes, and redacts an Abacus API key", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const instanceId = ProviderInstanceId.make("abacus");
+      const firstKey = "abacus-test-key-one";
+      const replacementKey = "abacus-test-key-two";
+
+      const initial = yield* serverSettings.updateSettings({
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("abacus"),
+            enabled: true,
+            environment: [{ name: "ABACUS_API_KEY", value: firstKey, sensitive: true }],
+            config: {
+              apiBaseUrl: "https://example.test/routellm/v1",
+              customModels: ["route-llm", "account-route"],
+            },
+          },
+        },
+      });
+      const redactedInitial = ServerSettingsModule.redactServerSettingsForClient(initial);
+
+      assert.deepEqual(redactedInitial.providerInstances[instanceId]?.environment, [
+        {
+          name: "ABACUS_API_KEY",
+          value: "",
+          sensitive: true,
+          valueRedacted: true,
+        },
+      ]);
+      assert.deepEqual(initial.providerInstances[instanceId]?.config, {
+        apiBaseUrl: "https://example.test/routellm/v1",
+        customModels: ["route-llm", "account-route"],
+      });
+      assert.notInclude(yield* fileSystem.readFileString(serverConfig.settingsPath), firstKey);
+
+      const afterUnrelatedSave = yield* serverSettings.updateSettings({
+        addProjectBaseDirectory: "~/AbacusProjects",
+      });
+      assert.equal(
+        afterUnrelatedSave.providerInstances[instanceId]?.environment?.[0]?.value,
+        firstKey,
+      );
+
+      const afterRedactedSave = yield* serverSettings.updateSettings({
+        providerInstances: redactedInitial.providerInstances,
+      });
+      assert.equal(
+        afterRedactedSave.providerInstances[instanceId]?.environment?.[0]?.value,
+        firstKey,
+      );
+
+      const replaced = yield* serverSettings.updateSettings({
+        providerInstances: {
+          [instanceId]: {
+            ...afterRedactedSave.providerInstances[instanceId]!,
+            environment: [{ name: "ABACUS_API_KEY", value: replacementKey, sensitive: true }],
+          },
+        },
+      });
+      assert.equal(replaced.providerInstances[instanceId]?.environment?.[0]?.value, replacementKey);
+      assert.notInclude(
+        yield* fileSystem.readFileString(serverConfig.settingsPath),
+        replacementKey,
+      );
+
+      const cleared = yield* serverSettings.updateSettings({
+        providerInstances: {
+          [instanceId]: {
+            ...replaced.providerInstances[instanceId]!,
+            environment: [{ name: "ABACUS_API_KEY", value: "", sensitive: true }],
+          },
+        },
+      });
+      assert.deepEqual(cleared.providerInstances[instanceId]?.environment, [
+        { name: "ABACUS_API_KEY", value: "", sensitive: true },
+      ]);
+      assert.notInclude(
+        yield* fileSystem.readFileString(serverConfig.settingsPath),
+        replacementKey,
+      );
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("materializes provider secrets for terminal environment resolution", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

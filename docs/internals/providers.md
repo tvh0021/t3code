@@ -9,6 +9,67 @@ A driver kind identifies an integration; an instance identifies one configuratio
 lifecycle. Route work by instance, so two accounts using the same driver do not share mutable
 session or catalog state.
 
+## Provider registration and initialization
+
+[`ProviderDriver`](../../apps/server/src/provider/ProviderDriver.ts) is the server registration
+contract. A driver declares its kind, metadata, configuration schema, default configuration, and a
+`create` function. [`BUILT_IN_DRIVERS`](../../apps/server/src/provider/builtInDrivers.ts) is the
+registration list. The web settings picker has a matching browser-safe list in
+[`PROVIDER_CLIENT_DEFINITIONS`](../../apps/web/src/components/settings/providerDriverMeta.ts).
+
+[`ServerSettings`](../../packages/contracts/src/settings.ts) decodes both the legacy
+`providers.<kind>` configuration and the instance-based `providerInstances` map.
+`deriveProviderInstanceConfigMap` in
+[`ProviderInstanceRegistryHydration`](../../apps/server/src/provider/Layers/ProviderInstanceRegistryHydration.ts)
+adds a default instance for each built-in driver. `ProviderInstanceRegistryLive` decodes the
+driver-specific `config`, resolves the effective enabled flag, and calls `ProviderDriver.create`.
+The resulting `ProviderInstance` owns its status snapshot, adapter, and text-generation helper.
+
+Grok follows the complete path. `GrokSettings` supplies the stored configuration,
+`GrokDriver.create` builds `makeGrokAdapter` and the provider snapshot, and `ProviderService`
+routes session calls by `ProviderInstanceId`. `ProviderCommandReactor` starts sessions and sends
+turns. Adapter events enter `ProviderService.streamEvents`, then `ProviderRuntimeIngestion`
+converts those normalized runtime events into persisted orchestration events.
+
+## Adapter requirements for direct chat APIs
+
+[`ProviderAdapterShape`](../../apps/server/src/provider/Services/ProviderAdapter.ts) requires
+session start, turn dispatch, interruption, request responses, session lookup and shutdown,
+thread reads and rollback, and a `ProviderRuntimeEvent` stream. The Abacus adapter maps RouteLLM
+chat-completion SSE responses into those runtime events. It returns explicit unsupported errors for
+operations that RouteLLM text chat does not implement.
+
+The contract supports chat without coding tools. Tools do not appear in `ProviderAdapterShape`,
+and capability fields can report that model switching, rollback, or promptless continuation are
+unsupported. `ProviderService` can still mint an MCP credential before session start, so a plain
+chat adapter must ignore tool configuration and must not claim tool capabilities.
+
+The Abacus adapter keeps a transcript for each active session and sends the full successful
+conversation with each request. Failed and interrupted turns do not enter that transcript. The
+adapter streams assistant text, aborts the HTTP request on interruption or session shutdown, and
+rejects concurrent turns, attachments, tool calls, and rollback. A server restart loses the
+in-memory transcript, so the adapter rejects recovery instead of continuing with incomplete
+history.
+
+The driver reports ready only when its local configuration has an API key and at least one model.
+This status does not prove that the key is valid or that RouteLLM is available. The driver makes no
+health-check request.
+
+## Provider credentials
+
+Sensitive entries in `ProviderInstanceConfig.environment` use the existing server secret store.
+`ServerSettingsService.updateSettings` moves their values out of `settings.json`, while
+`redactServerSettingsForClient` returns only an empty value and `valueRedacted: true`. A redacted
+value preserves the existing secret. A new non-empty value replaces it, and an explicit empty value
+or removal deletes it. Driver creation receives the materialized environment after the server reads
+the secret.
+
+This mechanism stores named environment variables, not arbitrary fields inside a driver's opaque
+`config` object. Abacus therefore uses the sensitive `ABACUS_API_KEY` environment variable rather
+than an `apiKey` configuration field. The raw key is present in client memory for the submission
+that sets it, but settings responses and browser-persisted server configuration contain only the
+redaction marker.
+
 ## Process and account isolation
 
 T3-managed OpenCode chat uses one server per thread. Its MCP registrations are directory-scoped, while

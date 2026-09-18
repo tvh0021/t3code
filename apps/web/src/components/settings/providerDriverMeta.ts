@@ -1,4 +1,5 @@
 import {
+  AbacusSettings,
   AntigravitySettings,
   ClaudeSettings,
   CodexSettings,
@@ -9,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import type * as Schema from "effect/Schema";
 import {
+  AbacusIcon,
   AntigravityIcon,
   ClaudeAI,
   CursorIcon,
@@ -81,6 +83,12 @@ const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
     label: "Antigravity",
     icon: AntigravityIcon,
     settingsSchema: AntigravitySettings,
+  },
+  {
+    value: ProviderDriverKind.make("abacus"),
+    label: "ChatLLM",
+    icon: AbacusIcon,
+    settingsSchema: AbacusSettings,
   },
 ];
 

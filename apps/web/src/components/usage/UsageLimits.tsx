@@ -48,6 +48,7 @@ const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof Ga
 export function barColor(driver: ServerProvider["driver"]): string {
   const kind: UsageProviderKind | undefined =
     driver === "codex" ? "codex" : driver === "claudeAgent" ? "claude" : undefined;
+  if (driver === "abacus") return "#8b5cf6";
   return kind ? PROVIDER_PRESENTATION[kind].color : "var(--foreground)";
 }
 

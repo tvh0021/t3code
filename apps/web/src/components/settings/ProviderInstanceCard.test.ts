@@ -8,7 +8,31 @@ import {
   type ServerProviderModel,
 } from "@t3tools/contracts";
 
-import { deriveProviderModelsForDisplay, ProviderInstanceCard } from "./ProviderInstanceCard";
+import {
+  deriveProviderModelsForDisplay,
+  providerEnvironmentForDisplay,
+  ProviderInstanceCard,
+} from "./ProviderInstanceCard";
+
+describe("providerEnvironmentForDisplay", () => {
+  it("offers the server-redacted Abacus API key variable by default", () => {
+    expect(providerEnvironmentForDisplay({ driver: ProviderDriverKind.make("abacus") })).toEqual([
+      { name: "ABACUS_API_KEY", value: "", sensitive: true },
+    ]);
+  });
+
+  it("preserves the saved environment exactly", () => {
+    const environment = [
+      { name: "ABACUS_API_KEY", value: "", sensitive: true, valueRedacted: true },
+    ];
+    expect(
+      providerEnvironmentForDisplay({
+        driver: ProviderDriverKind.make("abacus"),
+        environment,
+      }),
+    ).toBe(environment);
+  });
+});
 
 describe("deriveProviderModelsForDisplay", () => {
   it("uses current config custom models instead of stale live custom rows", () => {

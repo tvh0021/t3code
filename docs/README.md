@@ -1,5 +1,13 @@
 # T3 Code docs
 
+## Personal Fork
+
+- [Personal Fork Documentation](./personal/README.md)
+- [Detailed Modifications & Architecture](./personal/MODIFICATIONS.md)
+- [Upstream Synchronization Guide](./personal/UPSTREAM_SYNC.md)
+
+---
+
 ## Using T3 Code
 
 - [Install T3 Code](./user/install.md)
@@ -48,13 +56,3 @@ source alone does not explain. Most code changes do not need an internal documen
 - [Mobile development lifecycle](./internals/mobile-development.md)
 - [Terminal runtime](./internals/terminal-runtime.md)
 - [Devices](./internals/devices.md)
-- [Voice input](./internals/voice-input.md)
-
-### Runbooks
-
-- [Development and local builds](./operations/development.md)
-- [T3 Connect setup](./operations/connect-setup.md)
-- [Release](./operations/release.md)
-- [Observability](./operations/observability.md)
-- [Relay observability](./operations/relay-observability.md)
-- [Mobile app store screenshots](./operations/mobile-app-store-screenshots.md)

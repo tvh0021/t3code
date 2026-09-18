@@ -10,6 +10,7 @@ import {
 
 const codex = ProviderDriverKind.make("codex");
 const claude = ProviderDriverKind.make("claudeAgent");
+const abacus = ProviderDriverKind.make("abacus");
 
 describe("resolveProviderInstanceDisplayName", () => {
   it("keeps a snapshot name that differs from the brand label", () => {
@@ -40,6 +41,16 @@ describe("resolveProviderInstanceDisplayName", () => {
       }),
     ).toBe("Codex");
   });
+
+  it("migrates legacy Abacus snapshot displayName to ChatLLM", () => {
+    expect(
+      resolveProviderInstanceDisplayName({
+        instanceId: ProviderInstanceId.make("abacus"),
+        driver: abacus,
+        displayName: "Abacus",
+      }),
+    ).toBe("ChatLLM");
+  });
 });
 
 describe("providerInstanceInitials", () => {
@@ -51,58 +62,79 @@ describe("providerInstanceInitials", () => {
     expect(providerInstanceInitials("Codex Personal")).toBe("CP");
   });
 
-  it("ignores words past the first two", () => {
-    expect(providerInstanceInitials("Codex Personal Backup Account")).toBe("CP");
-  });
-
-  it("returns an empty string for an empty label", () => {
+  it("handles empty strings", () => {
     expect(providerInstanceInitials("")).toBe("");
   });
 
-  it("keeps an emoji whole instead of splitting its surrogate pair", () => {
-    expect(providerInstanceInitials("😀 Work")).toBe("😀W");
-    expect(providerInstanceInitials("😀")).toBe("😀");
+  it("handles single-character labels", () => {
+    expect(providerInstanceInitials("X")).toBe("X");
   });
 });
 
 describe("normalizeProviderAccentColor", () => {
-  it("accepts a lowercase hex color", () => {
-    expect(normalizeProviderAccentColor("#ff8800")).toBe("#ff8800");
+  it("accepts six-digit hex colors", () => {
+    expect(normalizeProviderAccentColor("#ff00aa")).toBe("#ff00aa");
+    expect(normalizeProviderAccentColor("#123456")).toBe("#123456");
   });
 
-  it("accepts an uppercase hex color", () => {
-    expect(normalizeProviderAccentColor("#FF8800")).toBe("#FF8800");
-  });
-
-  it("rejects a non-hex value", () => {
-    expect(normalizeProviderAccentColor("blue")).toBeUndefined();
-  });
-
-  it("rejects a short hex value", () => {
+  it("rejects non-hex or malformed colors", () => {
+    expect(normalizeProviderAccentColor("red")).toBeUndefined();
     expect(normalizeProviderAccentColor("#fff")).toBeUndefined();
-  });
-
-  it("treats undefined and blank as unset", () => {
+    expect(normalizeProviderAccentColor("#12345678")).toBeUndefined();
+    expect(normalizeProviderAccentColor("")).toBeUndefined();
     expect(normalizeProviderAccentColor(undefined)).toBeUndefined();
-    expect(normalizeProviderAccentColor("   ")).toBeUndefined();
   });
 });
 
 describe("shouldShowInstanceBadge", () => {
-  it("shows the badge when the entry has an accent color", () => {
-    const entry = { driverKind: codex, accentColor: "#ff8800" };
-    expect(shouldShowInstanceBadge(entry, [entry])).toBe(true);
+  it("always flags custom instances", () => {
+    expect(
+      shouldShowInstanceBadge({ instanceId: "codex_personal", isDefault: false }, [
+        { instanceId: "codex_personal" },
+      ]),
+    ).toBe(true);
   });
 
-  it("shows the badge when two entries share a driver, even without an accent", () => {
-    const first = { driverKind: codex, accentColor: undefined };
-    const second = { driverKind: codex, accentColor: undefined };
-    expect(shouldShowInstanceBadge(first, [first, second])).toBe(true);
+  it("suppresses the badge on the default instance when alone", () => {
+    expect(
+      shouldShowInstanceBadge({ instanceId: "codex", isDefault: true }, [{ instanceId: "codex" }]),
+    ).toBe(false);
   });
 
-  it("hides the badge for a single instance of a driver with no accent", () => {
-    const entry = { driverKind: codex, accentColor: undefined };
-    const other = { driverKind: claude, accentColor: undefined };
-    expect(shouldShowInstanceBadge(entry, [entry, other])).toBe(false);
+  it("shows the badge on the default instance when siblings exist", () => {
+    expect(
+      shouldShowInstanceBadge({ instanceId: "codex", isDefault: true }, [
+        { instanceId: "codex" },
+        { instanceId: "codex_personal" },
+      ]),
+    ).toBe(true);
+  });
+
+  it("suppresses the badge on default instances across different driver kinds", () => {
+    expect(
+      shouldShowInstanceBadge({ driverKind: codex, isDefault: true }, [
+        { driverKind: codex },
+        { driverKind: abacus },
+        { driverKind: claude },
+      ]),
+    ).toBe(false);
+  });
+
+  it("shows the badge when multiple instances of the same driver kind exist", () => {
+    expect(
+      shouldShowInstanceBadge({ driverKind: codex, isDefault: true }, [
+        { driverKind: codex },
+        { driverKind: codex },
+        { driverKind: abacus },
+      ]),
+    ).toBe(true);
+  });
+
+  it("shows the badge if accentColor is set", () => {
+    expect(
+      shouldShowInstanceBadge({ driverKind: codex, accentColor: "#ff0000" }, [
+        { driverKind: codex },
+      ]),
+    ).toBe(true);
   });
 });

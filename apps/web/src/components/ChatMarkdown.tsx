@@ -1,3 +1,6 @@
+import "katex/dist/katex.min.css";
+import rehypeKatex from "rehype-katex";
+import remarkMath from "remark-math";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -489,6 +492,7 @@ const CHAT_MARKDOWN_REMARK_PLUGINS = [
   remarkGithubAlerts,
   remarkNormalizeListItemIndentation,
   remarkCodexDirectives,
+  [remarkMath, { singleDollarTextMath: false }],
   remarkPreserveCodeMeta,
   remarkNormalizeLinksAndTagInlineCode,
 ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
@@ -499,6 +503,7 @@ const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
   remarkNormalizeListItemIndentation,
   remarkCodexDirectives,
   remarkBreaks,
+  [remarkMath, { singleDollarTextMath: false }],
   remarkPreserveCodeMeta,
   remarkNormalizeLinksAndTagInlineCode,
 ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
@@ -507,6 +512,7 @@ const CHAT_MARKDOWN_REHYPE_PLUGINS = [
   rehypeRaw,
   rehypePreserveImageSourceMeta,
   [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
+  rehypeKatex,
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
 /** GitHub's own five alert kinds, in its colors: the glyph names the urgency, the title says it. */
@@ -3294,6 +3300,54 @@ const CHAT_MARKDOWN_COMPONENTS = {
   },
 } satisfies Components;
 
+function looksLikeMath(content: string): boolean {
+  if (!content || !content.trim()) return false;
+  if (content.includes("\n")) return false;
+  // Contains LaTeX commands e.g. \frac, \alpha, \Delta, \sum
+  if (/\\[a-zA-Z]+/.test(content)) return true;
+  // Contains math operators or sub/superscripts
+  if (/[=^_<>]|\b(?:cos|sin|tan|log|ln|det|lim)\b/.test(content)) return true;
+  // Single variable / identifier like x, y, n, or x_1, or dt
+  if (/^[a-zA-Z](?:_[a-zA-Z0-9]+)?$/.test(content.trim())) return true;
+  // If it contains multiple English prose words, it is not math
+  if (/\b(?:the|and|or|with|a|an|in|on|at|to|for|is|are|of|by)\b/i.test(content)) return false;
+  return false;
+}
+
+/**
+ * Preprocesses markdown text for LaTeX math rendering:
+ * 1. Converts display math \\[ ... \\] to $$ ... $$
+ * 2. Converts inline math \\( ... \\) to $$ ... $$
+ * 3. Converts single-dollar math $ ... $ to $$ ... $$ if the content looks like math,
+ *    avoiding collision with currency amounts ($20k, $10) and skill mentions ($2spec).
+ * Code blocks and inline code are preserved verbatim.
+ */
+export function preprocessMarkdownMath(text: string): string {
+  const parts = text.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+
+      let res = part;
+      // 1. Display math: \\[ ... \\] -> $$ ... $$
+      res = res.replace(/\\\[([\s\S]*?)\\\]/g, (_m, inner) => `\n\n$$\n${inner.trim()}\n$$\n\n`);
+      // 2. Inline math: \\( ... \\) -> $$ ... $$
+      res = res.replace(/\\\(([\s\S]*?)\\\)/g, (_m, inner) => `$$${inner}$$`);
+      // 3. Single-dollar inline math: $...$ -> $$...$$ if it looks like math
+      res = res.replace(
+        /(^|[\s([{])\$([^\s$](?:[^$\n]*?[^\s$])?)\$(?=[\s.,!?;:)\]}]|$)/g,
+        (match, prefix, content) => {
+          if (looksLikeMath(content)) {
+            return `${prefix}$$${content}$$`;
+          }
+          return match;
+        },
+      );
+      return res;
+    })
+    .join("");
+}
+
 function ChatMarkdown({
   text,
   className,
@@ -3302,6 +3356,7 @@ function ChatMarkdown({
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   ...props
 }: ChatMarkdownProps) {
+  const preparedText = useMemo(() => preprocessMarkdownMath(text), [text]);
   const {
     componentState,
     handleCopy,
@@ -3309,11 +3364,11 @@ function ChatMarkdown({
     markdownUrlTransform,
     localMediaPreview,
     setLocalMediaPreview,
-  } = useChatMarkdownState({ text, ...props });
+  } = useChatMarkdownState({ text: preparedText, ...props });
   const incrementalParsing =
     props.isStreaming === true &&
     extraRemarkPlugins.length === 0 &&
-    /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(text);
+    /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(preparedText);
   const remarkPlugins = useMemo(
     () => [
       ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
@@ -3345,7 +3400,7 @@ function ChatMarkdown({
           components={CHAT_MARKDOWN_COMPONENTS}
           urlTransform={markdownUrlTransform}
         >
-          {text}
+          {preparedText}
         </ReactMarkdown>
       </ChatMarkdownRendererContext>
       {localMediaPreview ? (

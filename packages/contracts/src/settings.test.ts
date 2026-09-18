@@ -3,6 +3,8 @@ import * as Schema from "effect/Schema";
 
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
+  ABACUS_DEFAULT_API_BASE_URL,
+  AbacusSettings,
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClaudeSettings,
@@ -19,6 +21,8 @@ const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
+const decodeAbacusSettings = Schema.decodeUnknownSync(AbacusSettings);
+const encodeAbacusSettings = Schema.encodeSync(AbacusSettings);
 
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
@@ -189,6 +193,38 @@ describe("custom model settings", () => {
     expect(() =>
       decodeServerSettingsPatch({ providers: { codex: { customModels: [{ name: "no slug" }] } } }),
     ).toThrow();
+  });
+});
+
+describe("Abacus settings", () => {
+  it("loads legacy settings without Abacus and applies disabled defaults", () => {
+    const settings = decodeServerSettings({ providers: { codex: { binaryPath: "/bin/codex" } } });
+
+    expect(settings.providers.abacus).toEqual({
+      enabled: false,
+      apiBaseUrl: ABACUS_DEFAULT_API_BASE_URL,
+      sessionCookie: "",
+      customModels: [],
+    });
+  });
+
+  it("round-trips a custom endpoint, session cookie, and configured model IDs", () => {
+    const configured = decodeAbacusSettings({
+      enabled: true,
+      apiBaseUrl: "https://example.test/routellm/v1",
+      sessionCookie: "session=test-cookie",
+      customModels: ["route-llm", "account-route"],
+    });
+
+    expect(encodeAbacusSettings(configured)).toEqual({
+      enabled: true,
+      apiBaseUrl: "https://example.test/routellm/v1",
+      sessionCookie: "session=test-cookie",
+      customModels: ["route-llm", "account-route"],
+    });
+    expect(
+      decodeServerSettingsPatch({ providers: { abacus: configured } }).providers?.abacus,
+    ).toEqual(configured);
   });
 });
 
@@ -743,6 +779,7 @@ describe("provider enabled defaults", () => {
     expect(decoded.providers.claudeAgent.enabled).toBe(true);
     expect(decoded.providers.cursor.enabled).toBe(false);
     expect(decoded.providers.grok.enabled).toBe(false);
+    expect(decoded.providers.abacus.enabled).toBe(false);
     expect(decoded.providers.opencode.enabled).toBe(false);
   });
 

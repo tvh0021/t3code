@@ -111,6 +111,14 @@ function readConfigCustomModels(config: unknown): ReadonlyArray<CustomModelDefin
   return readCustomModelEntries((config as Record<string, unknown>).customModels);
 }
 
+export function providerEnvironmentForDisplay(
+  instance: ProviderInstanceConfig,
+): ReadonlyArray<ProviderInstanceEnvironmentVariable> {
+  if (instance.environment !== undefined) return instance.environment;
+  if (instance.driver !== "abacus") return [];
+  return [{ name: "ABACUS_API_KEY", value: "", sensitive: true }];
+}
+
 /**
  * Set `key` to an arbitrary value on the opaque config blob. Unlike
  * provider settings field updates, does not drop empty-looking values — the
@@ -878,8 +886,14 @@ export function ProviderInstanceCard({
         aria-disabled={readOnly || undefined}
         className={readOnly ? "opacity-50 select-none" : undefined}
       >
+        {instance.driver === "abacus" ? (
+          <p className="px-3 pt-3 text-xs text-muted-foreground sm:px-4">
+            Set <code className="text-foreground">ABACUS_API_KEY</code> here. The server stores
+            sensitive values separately and redacts them from settings responses.
+          </p>
+        ) : null}
         <ProviderEnvironmentSection
-          environment={instance.environment ?? []}
+          environment={providerEnvironmentForDisplay(instance)}
           onChange={updateEnvironment}
         />
       </SettingsSection>

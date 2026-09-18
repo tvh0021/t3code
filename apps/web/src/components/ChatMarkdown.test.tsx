@@ -860,3 +860,63 @@ describe("ChatMarkdown Windows file links", () => {
     expect(html).not.toContain("chat-markdown-file-link");
   });
 });
+
+describe("ChatMarkdown math rendering", () => {
+  it("renders display math with fraction lines", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown cwd="/tmp/project" text={"The equation is:\n\n$$\n\\frac{1}{2}\n$$"} />,
+    );
+
+    expect(html).toContain("katex-display");
+    expect(html).toContain("mfrac");
+    expect(html).toContain("frac-line");
+  });
+
+  it("renders inline math with single dollar signs when content looks like math", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown cwd="/tmp/project" text={"Energy is given by $E = mc^2$ in relativity."} />,
+    );
+
+    expect(html).toContain("katex");
+    expect(html).not.toContain("$E = mc^2$");
+  });
+
+  it("renders LaTeX bracket delimiters \\[ ... \\] and \\( ... \\)", () => {
+    const displayHtml = renderToStaticMarkup(
+      <ChatMarkdown cwd="/tmp/project" text={"\\[\\frac{a}{b}\\]"} />,
+    );
+    expect(displayHtml).toContain("katex-display");
+    expect(displayHtml).toContain("frac-line");
+
+    const inlineHtml = renderToStaticMarkup(
+      <ChatMarkdown cwd="/tmp/project" text={"Inline \\(\\alpha + \\beta\\) formula"} />,
+    );
+    expect(inlineHtml).toContain("katex");
+  });
+
+  it("does not mistake currency amounts for math formulas", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/tmp/project"
+        text={"We spent $20k out of a $100k budget on server costs."}
+      />,
+    );
+
+    expect(html).not.toContain("katex");
+    expect(html).toContain("$20k");
+    expect(html).toContain("$100k");
+  });
+
+  it("does not transform math delimiters inside code blocks or inline code", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/tmp/project"
+        text={String.raw`Use \`$\frac{1}{2}$\` or:\n\`\`\`\n$E = mc^2$\n\`\`\``}
+      />,
+    );
+
+    expect(html).not.toContain("katex");
+    expect(html).toContain(String.raw`$\frac{1}{2}$`);
+    expect(html).toContain("$E = mc^2$");
+  });
+});

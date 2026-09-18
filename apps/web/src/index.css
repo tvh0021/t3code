@@ -2222,3 +2222,35 @@ code {
 .composer-tiptap li[data-checked] > div > p {
   margin: 0;
 }
+
+/* KaTeX math rendering – inherit chat text color and handle overflow */
+.katex {
+  color: inherit;
+}
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.75em 0;
+  margin: 0.25em 0;
+}
+
+/* KaTeX square root clearance: raise the horizontal radical line so it does not cut into superscripts */
+.katex .sqrt > .vlist-t > .vlist-r:first-child > .vlist > span:not(.svg-align) {
+  transform: translateY(-0.22em);
+}
+.katex .sqrt {
+  padding-top: 0.22em;
+}
+
+/* KaTeX fraction denominator clearance: prevent fraction line from clipping denominator or powers */
+.katex .mfrac:has(.frac-line) > .vlist-t > .vlist-r:first-child > .vlist > span:first-child {
+  transform: translateY(0.22em);
+}
+.katex
+  .mfrac:has(.frac-line)
+  > .vlist-t
+  > .vlist-r:first-child
+  > .vlist
+  > span:first-child:has(.msupsub) {
+  transform: translateY(0.38em);
+}

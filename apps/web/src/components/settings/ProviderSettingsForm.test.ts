@@ -150,4 +150,17 @@ describe("ProviderSettingsForm helpers", () => {
 
     expect(next).toEqual({ experimental: false });
   });
+  it("registers ChatLLM with an editable API base URL", () => {
+    const abacus = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("abacus")];
+    expect(abacus).toBeDefined();
+    expect(abacus).toMatchObject({
+      value: "abacus",
+      label: "ChatLLM",
+    });
+    expect(abacus).not.toHaveProperty("badgeLabel");
+    expect(deriveProviderSettingsFields(abacus!).map((field) => field.key)).toEqual([
+      "apiBaseUrl",
+      "sessionCookie",
+    ]);
+  });
 });
