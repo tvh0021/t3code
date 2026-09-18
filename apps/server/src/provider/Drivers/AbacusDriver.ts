@@ -13,6 +13,7 @@ import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
 
 import { makeAbacusAdapter } from "../Layers/AbacusAdapter.ts";
+import { readAbacusUsageLimits } from "../Layers/abacusUsageLimits.ts";
 import { defaultProviderContinuationIdentity, type ProviderDriver } from "../ProviderDriver.ts";
 import { withInstanceIdentity } from "./instanceIdentity.ts";
 import type { ServerProviderShape } from "../Services/ServerProvider.ts";
@@ -79,9 +80,21 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
 
       const apiKey =
         environment.find((entry) => entry.name === "ABACUS_API_KEY")?.value.trim() ?? "";
+      const sessionCookie =
+        config.sessionCookie?.trim() ||
+        environment.find((entry) => entry.name === "ABACUS_SESSION_COOKIE")?.value.trim() ||
+        "";
 
       const now = yield* DateTime.now;
       const checkedAt = DateTime.formatIso(now);
+
+      const usageLimits =
+        apiKey || sessionCookie
+          ? yield* readAbacusUsageLimits({
+              apiKey,
+              sessionCookie,
+            }).pipe(Effect.orElseSucceed(() => undefined))
+          : undefined;
 
       const draft: ServerProviderDraft = {
         enabled,
@@ -94,6 +107,7 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
         skills: [],
         version: null,
         supportsTextGeneration: true,
+        ...(usageLimits ? { usageLimits } : {}),
       };
 
       const rawSnapshot: ServerProvider = stampIdentity(draft);
@@ -102,7 +116,22 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
       const snapshotShape: ServerProviderShape = {
         resolveMaintenance: () => Effect.succeed(MAINTENANCE_CAPABILITIES),
         getSnapshot: Ref.get(snapshotRef),
-        refresh: Ref.get(snapshotRef),
+        refresh: Effect.gen(function* () {
+          const current = yield* Ref.get(snapshotRef);
+          if (!apiKey && !sessionCookie) {
+            return current;
+          }
+          const freshLimits = yield* readAbacusUsageLimits({
+            apiKey,
+            sessionCookie,
+          }).pipe(Effect.orElseSucceed(() => current.usageLimits));
+          const updated: ServerProvider = {
+            ...current,
+            usageLimits: freshLimits,
+          };
+          yield* Ref.set(snapshotRef, updated);
+          return updated;
+        }),
         streamChanges: Stream.fromEffect(Ref.get(snapshotRef)),
         applyUsageLimits: (update) =>
           Ref.update(snapshotRef, (current) => ({
