@@ -5,6 +5,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSetupError,
+  type ServerProviderUsageLimits,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -111,7 +112,11 @@ const testLayer = Layer.merge(
 type ProbeError = EffectAcpErrors.AcpError | ProviderSetupError;
 
 const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
-  options: { readonly enabled?: boolean; readonly safe?: boolean } = {},
+  options: {
+    readonly enabled?: boolean;
+    readonly safe?: boolean;
+    readonly readUsageLimits?: Effect.Effect<ServerProviderUsageLimits, never>;
+  } = {},
 ) {
   const initialProbe = yield* Deferred.make<EffectAcpSchema.InitializeResponse, ProbeError>();
   const probeCalls = yield* Ref.make(0);
@@ -132,6 +137,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
         Effect.andThen(Ref.get(safety)),
         Effect.flatten,
       ),
+      readUsageLimits: options.readUsageLimits,
     },
   );
   const initialUpdate = yield* Stream.toPull(
@@ -640,5 +646,41 @@ it.layer(testLayer)("Antigravity provider snapshots", (it) => {
         expect(yield* Ref.get(harness.probeCalls)).toBe(1);
       }),
     ),
+  );
+  it.effect(
+    "reads and attaches usage limits on check and session start, and clears on sign-out",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const mockLimits: ServerProviderUsageLimits = {
+            checkedAt: "2026-09-18T05:00:00.000Z",
+            windows: [
+              {
+                id: "gemini-5h",
+                kind: "session",
+                label: "Gemini (5-Hour)",
+                usedPercent: 42,
+                windowDurationMins: 300,
+              },
+            ],
+          };
+          const harness = yield* makeHarness({
+            readUsageLimits: Effect.succeed(mockLimits),
+          });
+          yield* harness.initialize;
+
+          const initial = yield* harness.provider.snapshot.getSnapshot;
+          expect(initial.usageLimits).toEqual(mockLimits);
+
+          yield* harness.provider.onSessionStarted(started);
+          const afterSession = yield* harness.provider.snapshot.getSnapshot;
+          expect(afterSession.usageLimits).toEqual(mockLimits);
+
+          yield* harness.provider.onSignedOut;
+          const afterSignOut = yield* harness.provider.snapshot.getSnapshot;
+          expect(afterSignOut.usageLimits).toBeUndefined();
+          expect(afterSignOut.auth.status).toBe("unauthenticated");
+        }),
+      ),
   );
 });

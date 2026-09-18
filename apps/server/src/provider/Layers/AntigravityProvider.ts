@@ -6,6 +6,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
+  type ServerProviderUsageLimits,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import * as DateTime from "effect/DateTime";
@@ -116,16 +117,17 @@ interface AntigravityProviderState {
   readonly authRevision: number;
 }
 
-interface AntigravityProviderOptions {
+export interface AntigravityProviderOptions {
   readonly stampIdentity: (snapshot: ServerProviderDraft) => Effect.Effect<ServerProvider>;
   readonly probe: Effect.Effect<
     EffectAcpSchema.InitializeResponse,
     EffectAcpErrors.AcpError | ProviderSetupError
   >;
   readonly supportsTextGeneration: Effect.Effect<boolean>;
-  readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
+  readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities | undefined;
   /** Auth type and label published once a session authenticates. */
-  readonly auth?: { readonly type: string; readonly label: string };
+  readonly auth?: { readonly type: string; readonly label: string } | undefined;
+  readonly readUsageLimits?: Effect.Effect<ServerProviderUsageLimits, never> | undefined;
 }
 
 /** Health uses initialize only. Session callbacks supply account-specific metadata. */
@@ -193,10 +195,23 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     const supportsTextGeneration =
       initialized !== undefined ? yield* options.supportsTextGeneration : false;
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
+
+    const shouldReadUsage =
+      options.readUsageLimits !== undefined &&
+      initialized !== undefined &&
+      before.draft.auth.status !== "unauthenticated";
+    const usageLimits = shouldReadUsage
+      ? yield* options.readUsageLimits.pipe(Effect.orElseSucceed(() => undefined))
+      : before.draft.auth.status === "unauthenticated"
+        ? undefined
+        : before.draft.usageLimits;
+
     const next = yield* SubscriptionRef.updateAndGet(metadata, (state) => {
       if (state.authRevision !== before.authRevision) return state;
       const { message: _previousMessage, ...draft } = state.draft;
-      const authenticated = draft.auth.status === "authenticated";
+      const authenticated =
+        draft.auth.status === "authenticated" ||
+        (draft.auth.status !== "unauthenticated" && (usageLimits?.windows?.length ?? 0) > 0);
       const message =
         errorMessage ??
         (authenticated
@@ -211,7 +226,15 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
           installed: !missingInstallation,
           version: initialized?.agentInfo?.version || draft.version,
           status: errorMessage ? "error" : authenticated ? "ready" : "warning",
+          auth: authenticated
+            ? {
+                status: "authenticated",
+                type: draft.auth.type ?? options.auth?.type ?? "oauth-personal",
+                label: draft.auth.label ?? options.auth?.label ?? "Google account",
+              }
+            : draft.auth,
           checkedAt: updatedAt,
+          ...(usageLimits ? { usageLimits } : {}),
           ...(missingInstallation
             ? {
                 models: [],
@@ -262,6 +285,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     const before = yield* SubscriptionRef.get(metadata);
     const supportsTextGeneration = yield* options.supportsTextGeneration;
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
+    const usageLimits = options.readUsageLimits
+      ? yield* options.readUsageLimits.pipe(Effect.orElseSucceed(() => undefined))
+      : undefined;
     yield* SubscriptionRef.update(metadata, (state) => {
       if (
         state.authRevision !== before.authRevision &&
@@ -287,6 +313,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
           checkedAt: updatedAt,
           models: buildAntigravityModelsFromSession(started.sessionSetupResult),
           supportsTextGeneration,
+          ...(usageLimits ? { usageLimits } : {}),
           ...(cwd
             ? {
                 workspaceSnapshots: [
@@ -367,6 +394,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             skills: [],
             workspaceSnapshots: [],
             supportsTextGeneration: false,
+            usageLimits: undefined,
           },
         }) satisfies AntigravityProviderState,
     );

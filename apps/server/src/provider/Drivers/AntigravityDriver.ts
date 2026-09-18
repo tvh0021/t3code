@@ -50,6 +50,7 @@ import {
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityAdapter } from "../Layers/AntigravityAdapter.ts";
 import { makeAntigravityProvider } from "../Layers/AntigravityProvider.ts";
+import { readAntigravityUsageLimits } from "../Layers/antigravityUsageLimits.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import * as ModelManifest from "../ModelManifest.ts";
 import {
@@ -353,6 +354,15 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
         };
       });
 
+      const tokenPath = path.join(profileDirectory, "antigravity-acp", "acp_token.json");
+      const readUsageLimits = readAntigravityUsageLimits({
+        tokenPath,
+        authMethod: auth.authMethod,
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
+      );
+
       const provider = yield* makeAntigravityProvider(settings, {
         stampIdentity: classifyModels,
         probe,
@@ -362,6 +372,7 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
           Effect.provideService(Path.Path, path),
           Effect.orElseSucceed(() => false),
         ),
+        readUsageLimits,
       }).pipe(
         Effect.mapError(
           (cause) =>
