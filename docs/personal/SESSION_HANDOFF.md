@@ -3,7 +3,7 @@
 **Date**: September 18, 2026  
 **Repository**: [`tvh0021/t3code`](file:///Users/tvh0021/git_repos/t3code-dev) (Personal fork of `pingdotgg/t3code`)  
 **Branch**: `integration/zed-abacus`  
-**Latest Checkpoint Commit**: [`106307ee7`](https://github.com/tvh0021/t3code/commit/106307ee7) (pushed to `origin/integration/zed-abacus`)  
+**Latest Checkpoint Commit**: [`dc12a6a1e`](https://github.com/tvh0021/t3code/commit/dc12a6a1e) (pushed to `origin/integration/zed-abacus`)  
 **Active Harness**: Antigravity harness running in T3 Code
 
 ---
@@ -25,6 +25,12 @@ During this session, we established, implemented, and verified customizations fo
 9. **Clean Service Logos (Initials Badges Removed)**: Restored `shouldShowInstanceBadge` in `packages/client-runtime/src/state/providerInstanceDisplay.ts` to only show initials badges when multiple instances of the same driver kind exist or when a custom accent color is set. Clean vector icons appear in the chat sidebar and model dropdown menu without overlay badges ("CH", "CO", "AN").
 10. **Full Stylesheet & Layout Integrity**: Restored all 2,245 lines of `apps/web/src/index.css` (window controls overlay, traffic light geometry, sidebar borders, drag regions, and theme variables), resolving window proportion and border issues.
 11. **Personal Fork Documentation & Checkpoint**: Cataloged all changes, maintainer workflows, and upstream synchronization procedures under `docs/personal/`. All work committed and pushed to `origin/integration/zed-abacus`.
+12. **Antigravity Real-Time Quota Usage Limits**: Queried Google's Cloud Code Private API (`https://cloudcode-pa.googleapis.com/v1alpha:fetchCurrentTier`) using the authenticated user's OAuth credentials to surface active quota windows, remaining usage percentages, and reset countdowns in the native Usage Limits panel. Styled Antigravity usage bars with Google blue (`#4285f4`).
+13. **ChatLLM (Abacus) Usage Limits Restoration**: Connected `readAbacusUsageLimits` to `AbacusDriver.ts` draft snapshot creation and live refresh cycles, restoring ChatLLM's compute points and reset countdown display.
+14. **Antigravity 3P Model Analysis & Quota Window Polish**:
+    - Investigated feasibility of Claude and GPT OSS models in Antigravity. While supported by CCPA backend, Google's `agy_acp_server` binary explicitly filters models with `if not ccpa_id.startswith("gemini"): continue`, rejecting them with RPC error `-32602`.
+    - Filtered out third-party quota buckets (`3p-weekly`, `3p-5h`, Claude, and GPT) in `antigravityUsageLimits.ts` so non-functional models do not clutter the Usage tab.
+    - Simplified window labels to `"Session"` (5-hour) and `"Weekly"` (weekly), matching Codex and Claude conventions, and sorted windows duration-ascending.
 
 ---
 
@@ -106,7 +112,25 @@ During this session, we established, implemented, and verified customizations fo
     }
     ```
 
-### 6. Personal Fork Documentation
+### 6. Antigravity Quota Ingestion & Third-Party Filtration
+
+- [`apps/server/src/provider/Layers/antigravityUsageLimits.ts`](file:///Users/tvh0021/git_repos/t3code-dev/apps/server/src/provider/Layers/antigravityUsageLimits.ts):
+  - Fetches quota summaries from `https://cloudcode-pa.googleapis.com/v1alpha:fetchCurrentTier` using cached Google OAuth tokens.
+  - Filters out third-party model buckets (`3p-weekly`, `3p-5h`, Claude, GPT).
+  - Standardizes labels to `"Session"` and `"Weekly"`.
+  - Sorts windows by `windowDurationMins` ascending (`Session` followed by `Weekly`).
+- [`apps/server/src/provider/Layers/antigravityUsageLimits.test.ts`](file:///Users/tvh0021/git_repos/t3code-dev/apps/server/src/provider/Layers/antigravityUsageLimits.test.ts) & [`AntigravityProvider.test.ts`](file:///Users/tvh0021/git_repos/t3code-dev/apps/server/src/provider/Layers/AntigravityProvider.test.ts):
+  - Unit test coverage for OAuth token caching, quota calculation, 3P filtration, and `"Session"` / `"Weekly"` labels (28/28 tests passing).
+- [`apps/server/src/provider/Drivers/AntigravityDriver.ts`](file:///Users/tvh0021/git_repos/t3code-dev/apps/server/src/provider/Drivers/AntigravityDriver.ts):
+  - Ingests `readAntigravityUsageLimits` on startup and in `snapshotShape.refresh`.
+- [`apps/server/src/provider/Drivers/AbacusDriver.ts`](file:///Users/tvh0021/git_repos/t3code-dev/apps/server/src/provider/Drivers/AbacusDriver.ts):
+  - Wired `readAbacusUsageLimits` to snapshot draft and `snapshotShape.refresh`.
+- [`apps/web/src/components/usage/UsageLimits.tsx`](file:///Users/tvh0021/git_repos/t3code-dev/apps/web/src/components/usage/UsageLimits.tsx):
+  - Configured Google blue `#4285f4` in `barColor()` for `driver === "antigravity"`.
+
+---
+
+### 7. Personal Fork Documentation
 
 - [`docs/personal/README.md`](file:///Users/tvh0021/git_repos/t3code-dev/docs/personal/README.md): Fork overview, architecture, and developer quickstart.
 - [`docs/personal/MODIFICATIONS.md`](file:///Users/tvh0021/git_repos/t3code-dev/docs/personal/MODIFICATIONS.md): Comprehensive catalog of all changed/added files, rationale, and cosmetic rebranding details.
@@ -121,6 +145,8 @@ During this session, we established, implemented, and verified customizations fo
 | `pnpm --filter @t3tools/web test`              | ✅ PASS | 5,203/5,203 web unit tests passing (390/390 test files, including 53/53 `ChatMarkdown.test.tsx`) |
 | `pnpm --filter @t3tools/web exec tsc --noEmit` | ✅ PASS | 0 TypeScript errors                                                                              |
 | `pnpm --filter t3 test Abacus`                 | ✅ PASS | 21/21 tests passing (AbacusAdapter, AbacusDriver, abacusUsageLimits)                             |
+| `pnpm --filter t3 test antigravityUsageLimits` | ✅ PASS | 7/7 tests passing (quota ingestion, 3P filtration, Session/Weekly labels)                        |
+| `pnpm --filter t3 test AntigravityProvider`    | ✅ PASS | 21/21 tests passing (provider lifecycle, snapshots, usage limit attachment)                      |
 | `pnpm --filter t3 exec tsc --noEmit`           | ✅ PASS | 0 TypeScript errors                                                                              |
 | `pnpm --filter @t3tools/client-runtime test`   | ✅ PASS | 1,524/1,524 tests passing (77/77 test files, including provider instance display & badges)       |
 
@@ -132,7 +158,7 @@ During this session, we established, implemented, and verified customizations fo
 - **Origin**: `https://github.com/tvh0021/t3code.git`
 - **Upstream**: `https://github.com/pingdotgg/t3code.git`
 - **Working Tree**: Clean (all changes committed and pushed to `origin/integration/zed-abacus`).
-- **Latest Commit**: `106307ee7` (`feat: integrate ChatLLM provider, KaTeX math typesetting, and UI branding`)
+- **Latest Commit**: `dc12a6a1e` (`feat(antigravity): simplify usage window labels to Session and Weekly`)
 
 ---
 
