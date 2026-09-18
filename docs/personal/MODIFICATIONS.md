@@ -170,7 +170,7 @@ Rather than tracking micro-credits consumed per individual chat message, the use
     - Formats window label: `Monthly (${left.toLocaleString()} / ${total.toLocaleString()} credits left)`.
     - Produces a `ServerProviderUsageWindow` with `kind: "monthly"`, `usedPercent`, `resetsAt`, and `windowDurationMins`.
   - **Usage Bar Reset Presentation**:
-    - Exposing `resetsAt` enables the right-side reset countdown badge on the progress bar plate (e.g., `⤻ 24d 1h`), resolving the previously empty right-hand side.
+    - Exposing `resetsAt` enables the right-side reset countdown badge on the progress bar plate (e.g., `↺ 24d 1h`), resolving the previously empty right-hand side.
   - **Graceful Error Handling**:
     - On unauthenticated or network failures, gracefully returns `makeUnavailableUsageLimits({ reason: "probeFailed" })`.
   - **Unit Testing**:
@@ -314,3 +314,58 @@ LLM responses frequently contain mathematical notation using standard LaTeX deli
 
 - **Modifications**:
   - Added `packageOverrides` entries for `rehype-katex` and `remark-math` (MIT license, Copyright (c) Junyoung Choi) with `sourceUrl` pointing to the `remarkjs/remark-math` monorepo.
+
+---
+
+## 9. Antigravity Real-Time Quota Usage Limits
+
+### Architecture Overview
+
+Antigravity operates via the Cloud Code for Google Cloud platform. By reverse-engineering network traffic from the Antigravity extension, the underlying usage quota endpoint was identified:
+`POST https://cloudcode-pa.googleapis.com/v1alpha:fetchCurrentTier`
+
+Rather than relying solely on local heuristic estimations, T3 Code now queries this endpoint in real time using the authenticated user's OAuth access token, surfacing active quotas and refill schedules directly in the Usage Limits section.
+
+### `apps/server/src/provider/Layers/antigravityUsageLimits.ts` & `antigravityUsageLimits.test.ts`
+
+- **Modifications**:
+  - **Cloud Code Tier Endpoint**:
+    - Dispatches HTTP POST to `https://cloudcode-pa.googleapis.com/v1alpha:fetchCurrentTier`.
+    - Authenticates using Bearer token (`Authorization: Bearer <token>`).
+  - **Quota Window Parsing**:
+    - Ingests `tier` and `modelTiers` array.
+    - Maps model quotas (e.g. `gemini-3.8-flash-high`, `gemini-3.8-pro`, `claude-3-5-sonnet`, `claude-3-7-sonnet`).
+    - Reads `remainingFraction` (e.g. `0.9` -> 10% consumed, 90% remaining).
+    - Translates `remainingFraction` into `usedPercent = clampPercent(Math.round((1 - remainingFraction) * 100))`.
+    - Parses `resetTime` (ISO timestamp) and computes `windowDurationMins` based on reset interval (typically 5 hours or 300 minutes).
+    - Generates corresponding `ServerProviderUsageWindow` entries per quota tier.
+  - **Unit Testing**:
+    - 7 unit tests covering schema validation, single and multi-window quotas, fraction conversion, reset calculation, and error fallback.
+
+### `apps/server/src/provider/Drivers/AntigravityDriver.ts` & `AntigravityDriver.test.ts`
+
+- **Modifications**:
+  - Imported `readAntigravityUsageLimits` and integrated with OAuth credential extraction.
+  - Attached `usageLimits` to initial provider snapshot.
+  - Enhanced `snapshotShape.refresh` to refresh live usage quotas dynamically.
+
+### `apps/web/src/components/usage/UsageLimits.tsx`
+
+- **Modifications**:
+  - Configured Google blue `#4285f4` in `barColor()` for `driver === "antigravity"` to distinctly identify Antigravity usage bars in the UI.
+
+---
+
+## 10. ChatLLM (Abacus) Usage Limits Restoration & Snapshot Wiring
+
+### Root Cause & Architecture
+
+While `readAbacusUsageLimits` was previously implemented and tested, `AbacusDriver.ts` was not invoking it or attaching the returned limits to the driver's snapshot draft or `refresh` method. Because `provider.usageLimits` remained `undefined`, `providersWithLimits()` in `packages/shared/src/usageLimits.ts` filtered ChatLLM out of the Usage Limits panel.
+
+### `apps/server/src/provider/Drivers/AbacusDriver.ts`
+
+- **Modifications**:
+  - Imported `readAbacusUsageLimits` from `../Layers/abacusUsageLimits.ts`.
+  - Extracted `apiKey` and `sessionCookie` during provider instantiation.
+  - When credentials are present, queries `readAbacusUsageLimits` and attaches `usageLimits` to `draft`.
+  - Implemented `snapshotShape.refresh` to re-query `readAbacusUsageLimits` whenever the snapshot is refreshed, updating `usageLimits` dynamically.
