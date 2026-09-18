@@ -62,6 +62,11 @@ During this session, we established, implemented, and verified customizations fo
 23. **ChatLLM / Abacus Token & Point Audit**:
     - Audited all disk files (`~/.abacusai/projects/*/*.json`, logs, history) and confirmed no tokens are exposed locally.
     - Confirmed compute point conversion rate: 10,000 points = $10.00 ($0.001 per compute point).
+24. **LaTeX Math Support in Markdown Table Cells & Formatting Wrappers**:
+    - Identified and fixed single-dollar math expressions failing to render when placed inside bold tags (e.g. `**$G_{\mu\nu}$**`) or bounded by table cell pipes (`| $...$ |`).
+    - Broadened `preprocessMarkdownMath` boundary sets to include `*`, `_`, `~`, `|`, `[`, `]`, `—`, `–`, and `-`.
+    - Enhanced `looksLikeMath` to recognize LaTeX command macros with single and escaped backslashes (e.g. `$\Lambda$`).
+    - Added unit test coverage in `ChatMarkdown.test.tsx` verifying bold table math rendering (54/54 tests passing).
 
 ---
 
@@ -69,7 +74,7 @@ During this session, we established, implemented, and verified customizations fo
 
 | Test Suite / Command                                                   | Status  | Details                                                                     |
 | ---------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------- |
-| `pnpm --filter @t3tools/web test src/components/ChatMarkdown.test.tsx` | ✅ PASS | 53/53 math rendering and LaTeX formatting tests passing                     |
+| `pnpm --filter @t3tools/web test src/components/ChatMarkdown.test.tsx` | ✅ PASS | 54/54 math rendering, bold wrappers, and table math tests passing           |
 | `pnpm --filter t3 test Abacus`                                         | ✅ PASS | 21/21 tests passing (AbacusAdapter, AbacusDriver, abacusUsageLimits)        |
 | `pnpm --filter t3 test antigravityUsageLimits`                         | ✅ PASS | 7/7 tests passing (quota ingestion, 3P filtration, Session/Weekly labels)   |
 | `pnpm --filter t3 test AntigravityProvider`                            | ✅ PASS | 21/21 tests passing (provider lifecycle, snapshots, usage limit attachment) |

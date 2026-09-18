@@ -6,6 +6,7 @@ A concise, chronological record of custom code changes made to this personal for
 
 ### 2026-09-18
 
+- **LaTeX Math Support in Tables & Formatting Wrappers**: Enhanced `preprocessMarkdownMath` in `ChatMarkdown.tsx` to recognize single-dollar math enclosed in markdown bold/italic wrappers (`**$...$**`, `*$...$*`) and table cells (`| $...$ |`), and relaxed LaTeX macro pattern matching to support single and escaped slashes (e.g. `$\Lambda$`, `$G_{\mu\nu}$`). Added comprehensive unit test coverage.
 - **Sidebar Header Layout**: Restructured sidebar title in `SidebarChrome.tsx` into a two-line layout (`T3 Code` / `personal`) with descender padding to prevent letter clipping.
 - **Appearance & Font Defaults**: Raised default typography sizes in `packages/contracts/src/settings.ts` (UI 20px, Prompt 18px, Code 18px, Terminal 17px) for comfortable readability out of the box.
 - **Autonomous Agentic Driver for Abacus / RouteLLM**: Implemented `AbacusAdapter.ts` and `AbacusDriver.ts` supporting autonomous tool loops (`read_file`, `write_file`, `edit_file`, `list_directory`, `execute_command`), command safety checks, and a 20-step loop ceiling.

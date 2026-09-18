@@ -919,4 +919,24 @@ describe("ChatMarkdown math rendering", () => {
     expect(html).toContain(String.raw`$\frac{1}{2}$`);
     expect(html).toContain("$E = mc^2$");
   });
+
+  it("renders math wrapped in bold and inside markdown table cells", () => {
+    const markdown = [
+      "| Term | Name | Meaning |",
+      "| --- | --- | --- |",
+      "| **$G_{\\mu\\nu}$** | Einstein Tensor | defined as $R_{\\mu\\nu} - \\frac{1}{2}Rg_{\\mu\\nu}$ |",
+      "| **$\\Lambda$** | Cosmological Constant | vacuum energy |",
+      "| **$G$ & $c$** | Constants | fundamental constants |",
+    ].join("\n");
+
+    const html = renderToStaticMarkup(<ChatMarkdown cwd="/tmp/project" text={markdown} />);
+
+    // Check that math formulas are converted into KaTeX elements and not left as raw dollar strings
+    expect(html).toContain("katex");
+    expect(html).not.toContain("$G_{\\mu\\nu}$");
+    expect(html).not.toContain("$\\Lambda$");
+    expect(html).not.toContain("$G$");
+    expect(html).not.toContain("$c$");
+    expect(html).toContain("Einstein Tensor");
+  });
 });
