@@ -369,3 +369,39 @@ While `readAbacusUsageLimits` was previously implemented and tested, `AbacusDriv
   - Extracted `apiKey` and `sessionCookie` during provider instantiation.
   - When credentials are present, queries `readAbacusUsageLimits` and attaches `usageLimits` to `draft`.
   - Implemented `snapshotShape.refresh` to re-query `readAbacusUsageLimits` whenever the snapshot is refreshed, updating `usageLimits` dynamically.
+
+---
+
+## 11. Antigravity Third-Party Models Feasibility Analysis & Quota Filtration
+
+### Feasibility Analysis of Third-Party Models (Claude / GPT-OSS)
+
+- **Backend Capabilities**:
+  - Cloud Code Private API (CCPA) supports models such as `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, and `gpt-oss-120b-medium`. Live API calls confirmed that `v1internal:streamGenerateContent` successfully streams completions for these models when authenticated.
+- **ACP Protocol Blocker**:
+  - In T3 Code, Antigravity communicates via Google's official ACP server binary (`agy_acp_server.par`).
+  - Analysis of `agy_acp_server.par` (specifically `google3/cloud/developer_experience/antigravity_extensions/acp_server/model_selection.py`) revealed a hardcoded filter:
+    ```python
+    for ccpa_id in ordered_model_ids:
+        # Only include models that start with "gemini".
+        if not ccpa_id.startswith("gemini"):
+            continue
+    ```
+  - During session initialization or model switching (`session/new` or `session/set_config_option`), the server validates the requested model against this whitelist. Selecting any non-Gemini model causes the server to reject the request with JSON-RPC error `-32602` (`RequestError: Model is not available`).
+  - Because `agy_acp_server.par` is fetched as a Google-signed release binary with strict SHA256 integrity verification, binary modification is infeasible.
+  - In Antigravity Desktop, 3P models are served through `language_server` rather than `agy_acp_server`. Once Google updates the ACP binary to support 3P models, T3 Code will automatically surface them without code changes due to its dynamic ACP option discovery.
+
+### Exclusion of Claude/GPT Quota Windows
+
+- **User Preference**: Since 3P models cannot currently be selected or used through Antigravity in T3 Code, third-party quota buckets are filtered out from the Usage tab to prevent misleading status displays.
+
+### `apps/server/src/provider/Layers/antigravityUsageLimits.ts`
+
+- **Modifications**:
+  - In `antigravityQuotaSummaryToLimits`, buckets belonging to Claude/GPT groups (e.g. group name containing `"claude"` or `"gpt"`, or bucket ID starting with `"3p"`) are ignored.
+  - Only active Gemini quota windows (`gemini-weekly` and `gemini-5h`) are exposed to the client runtime.
+
+### `apps/server/src/provider/Layers/antigravityUsageLimits.test.ts`
+
+- **Modifications**:
+  - Updated test assertions verifying that third-party quota entries are properly excluded while Gemini session and weekly quota windows are preserved.

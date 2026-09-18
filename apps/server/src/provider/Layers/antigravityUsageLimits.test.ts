@@ -12,7 +12,7 @@ import {
 
 describe("antigravityUsageLimits", () => {
   describe("antigravityQuotaSummaryToLimits", () => {
-    it("transforms valid quota response into 4 distinct usage windows", () => {
+    it("transforms valid quota response into Gemini usage windows and filters out third-party Claude/GPT models", () => {
       const checkedAt = "2026-09-18T05:00:00.000Z";
       const sampleResponse: AntigravityRetrieveUserQuotaSummaryResponse = {
         groups: [
@@ -62,7 +62,7 @@ describe("antigravityUsageLimits", () => {
       const limits = antigravityQuotaSummaryToLimits(sampleResponse, checkedAt);
 
       expect(limits.checkedAt).toBe(checkedAt);
-      expect(limits.windows).toHaveLength(4);
+      expect(limits.windows).toHaveLength(2);
 
       const geminiWeekly = limits.windows.find((w) => w.id === "gemini-weekly");
       expect(geminiWeekly).toBeDefined();
@@ -80,21 +80,9 @@ describe("antigravityUsageLimits", () => {
       expect(gemini5h?.windowDurationMins).toBe(300);
       expect(gemini5h?.resetsAt).toBe("2026-09-18T08:31:22.000Z");
 
-      const thirdPartyWeekly = limits.windows.find((w) => w.id === "3p-weekly");
-      expect(thirdPartyWeekly).toBeDefined();
-      expect(thirdPartyWeekly?.kind).toBe("weekly");
-      expect(thirdPartyWeekly?.label).toBe("Claude/GPT (Weekly)");
-      expect(thirdPartyWeekly?.usedPercent).toBeCloseTo(60.42, 1);
-      expect(thirdPartyWeekly?.windowDurationMins).toBe(10080);
-      expect(thirdPartyWeekly?.resetsAt).toBe("2026-09-22T04:37:03.000Z");
-
-      const thirdParty5h = limits.windows.find((w) => w.id === "3p-5h");
-      expect(thirdParty5h).toBeDefined();
-      expect(thirdParty5h?.kind).toBe("session");
-      expect(thirdParty5h?.label).toBe("Claude/GPT (5-Hour)");
-      expect(thirdParty5h?.usedPercent).toBeCloseTo(86.29, 1);
-      expect(thirdParty5h?.windowDurationMins).toBe(300);
-      expect(thirdParty5h?.resetsAt).toBe("2026-09-18T07:58:34.000Z");
+      // Verify that Claude and GPT third-party models are excluded
+      expect(limits.windows.some((w) => w.id === "3p-weekly")).toBe(false);
+      expect(limits.windows.some((w) => w.id === "3p-5h")).toBe(false);
     });
 
     it("clamps percentages and handles boundary values", () => {

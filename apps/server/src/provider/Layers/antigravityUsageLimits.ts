@@ -3,12 +3,16 @@
  * Antigravity subscription usage limits.
  *
  * Antigravity connects to Google Cloud Code Private API (CCPA) to retrieve
- * user quota summaries across Gemini and 3P (Claude/GPT) models.
- * This module authenticates using the stored OAuth credentials from
- * `acp_token.json`, performs token refresh when needed, resolves the
- * Google-managed companion project via `loadCodeAssist`, queries
- * `retrieveUserQuotaSummary`, and maps the quota buckets into T3 Code's
- * standardized `ServerProviderUsageLimits` windows.
+ * user quota summaries. The official Antigravity ACP binary (`agy_acp_server`)
+ * restricts model selection exclusively to Gemini models; third-party models
+ * (Claude / GPT-OSS) are not usable through ACP sessions. Therefore, this module
+ * filters the quota summary down to available Gemini quota windows.
+ *
+ * This module authenticates using stored OAuth credentials from `acp_token.json`,
+ * performs token refresh when needed, resolves the Google-managed companion
+ * project via `loadCodeAssist`, queries `retrieveUserQuotaSummary`, and maps
+ * the Gemini quota buckets into T3 Code's standardized `ServerProviderUsageLimits`
+ * windows.
  *
  * @module provider/Layers/antigravityUsageLimits
  */
@@ -93,17 +97,11 @@ function resolveBucketLabel(groupName?: string, bucket?: AntigravityQuotaBucket)
     if (lowerGroup.includes("gemini")) {
       return `Gemini (${windowPart})`;
     }
-    if (lowerGroup.includes("claude") || lowerGroup.includes("gpt") || bucketId.startsWith("3p")) {
-      return `Claude/GPT (${windowPart})`;
-    }
     return `${groupName} (${windowPart})`;
   }
 
   if (bucketId.startsWith("gemini")) {
     return `Gemini (${windowPart})`;
-  }
-  if (bucketId.startsWith("3p")) {
-    return `Claude/GPT (${windowPart})`;
   }
   return bucket?.displayName || bucketId || windowPart;
 }
@@ -126,6 +124,9 @@ function resolveBucketDurationMins(bucket: AntigravityQuotaBucket): number | und
 
 /**
  * Transforms Antigravity quota summary response into standardized `ServerProviderUsageLimits`.
+ *
+ * Excludes third-party models (Claude / GPT-OSS) since the official Antigravity ACP binary
+ * explicitly restricts model selection to Gemini models.
  */
 export function antigravityQuotaSummaryToLimits(
   response: AntigravityRetrieveUserQuotaSummaryResponse,
@@ -137,6 +138,15 @@ export function antigravityQuotaSummaryToLimits(
     if (bucket.remainingFraction === undefined || !Number.isFinite(bucket.remainingFraction)) {
       return;
     }
+
+    const bucketId = bucket.bucketId ?? "";
+    const lowerGroup = (groupName ?? "").toLowerCase();
+
+    // Skip third-party (Claude / GPT) models: they are not usable through Antigravity ACP.
+    if (lowerGroup.includes("claude") || lowerGroup.includes("gpt") || bucketId.startsWith("3p")) {
+      return;
+    }
+
     const remaining = Math.max(0, Math.min(1, bucket.remainingFraction));
     const usedPercent = clampPercent((1 - remaining) * 100);
 
@@ -399,11 +409,11 @@ export const readAntigravityUsageLimits = Effect.fn("readAntigravityUsageLimits"
       } finally {
         clearTimeout(timer);
       }
-    } catch (cause) {
+    } catch (err) {
       return makeUnavailableUsageLimits({
         checkedAt,
         reason: "probeFailed",
-        message: cause instanceof Error ? cause.message : String(cause),
+        message: `Failed to retrieve Antigravity usage limits: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   });
