@@ -13,6 +13,7 @@ import {
   type ServerProviderSlashCommand,
   isProviderAvailable,
   type ServerProvider,
+  type ServerProviderCredits,
   type ServerProviderUsageLimits,
   type ServerProviderUsageWindow,
   type UsageLimitSourceSnapshots,
@@ -280,6 +281,7 @@ export interface LimitPool {
   readonly driver: ServerProvider["driver"];
   readonly accounts: readonly LimitAccount[];
   readonly windows: readonly LimitPoolWindow[];
+  readonly credits?: ServerProviderCredits;
 }
 
 const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
@@ -328,7 +330,15 @@ export function collectLimitPools(
         accountSortName(left).localeCompare(accountSortName(right)) ||
         left.key.localeCompare(right.key),
     );
-    return { driver, accounts: sorted, windows: poolWindows(sorted, now) };
+    const credits = members
+      .map((account) => account.limits.credits)
+      .find((c) => c !== undefined && (c.balance !== undefined || c.hasCredits));
+    return {
+      driver,
+      accounts: sorted,
+      windows: poolWindows(sorted, now),
+      ...(credits ? { credits } : {}),
+    };
   });
 }
 

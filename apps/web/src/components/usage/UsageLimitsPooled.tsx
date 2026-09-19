@@ -508,6 +508,31 @@ function PoolWindowCard({
   );
 }
 
+function PoolCreditsCard({ credits }: { readonly credits: NonNullable<LimitPool["credits"]> }) {
+  const balance = credits.balance ?? 0;
+  const formattedBalance = (Math.round(balance * 100) / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
+  return (
+    <div className="grid items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-medium text-foreground">Credits</span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-3xl font-semibold text-foreground tabular-nums">
+            {formattedBalance}
+          </span>
+          <span className="text-sm text-muted-foreground">left</span>
+        </span>
+      </div>
+      <div className="flex items-center text-xs text-muted-foreground">
+        Used when weekly or session limit is reached
+      </div>
+    </div>
+  );
+}
+
 function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {
   const color = barColor(pool.driver);
   const label = getDriverOption(pool.driver)?.label ?? String(pool.driver);
@@ -526,6 +551,7 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
       {pool.windows.map((window) => (
         <PoolWindowCard key={`${window.kind}:${window.id}`} pool={window} color={color} now={now} />
       ))}
+      {pool.credits ? <PoolCreditsCard credits={pool.credits} /> : null}
     </section>
   );
 }

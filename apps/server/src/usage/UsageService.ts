@@ -61,7 +61,7 @@ import {
   pruneScanCache,
   type ScanCache,
 } from "./usageScanCache.ts";
-import type { UsageRecord } from "./usageTranscripts.ts";
+import { reconcileCodexCreditUsage, type UsageRecord } from "./usageTranscripts.ts";
 
 const LITELLM_RATES_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
@@ -604,13 +604,15 @@ export const make = Effect.gen(function* () {
           continue;
         retainedFiles.push({ path: filePath, records: [...entry.records, ...entry.tailRecords] });
       }
+      const filesToAggregate =
+        provider === "codex" ? reconcileCodexCreditUsage(retainedFiles) : retainedFiles;
       let scannedFiles = 0;
       let skippedFiles = 0;
       // Distinct per directory. Buckets carry per-cell session counts, but a
       // session spans days and models, so clients total this figure instead.
       const sessionIds = new Set<string>();
 
-      for (const file of retainedFiles) {
+      for (const file of filesToAggregate) {
         if (file.records.length === 0) {
           skippedFiles += 1;
           continue;

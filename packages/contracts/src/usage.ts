@@ -41,6 +41,26 @@ export const UsageProviderKind = Schema.Literals([
 ]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 
+export const ABACUS_CREDIT_COST_USD = 0.0005;
+
+export function abacusCreditsToUsd(credits: number): number {
+  return credits * ABACUS_CREDIT_COST_USD;
+}
+
+export function usdToAbacusCredits(usd: number): number {
+  return usd / ABACUS_CREDIT_COST_USD;
+}
+
+export const CODEX_CREDIT_COST_USD = 0.04;
+
+export function codexCreditsToUsd(credits: number): number {
+  return credits * CODEX_CREDIT_COST_USD;
+}
+
+export function usdToCodexCredits(usd: number): number {
+  return usd / CODEX_CREDIT_COST_USD;
+}
+
 /**
  * Normalizes model names for usage accounting.
  *
@@ -48,7 +68,17 @@ export type UsageProviderKind = typeof UsageProviderKind.Type;
  * and capabilities, so their accounting in the usage window is unified under `gemini-3.8-flash`.
  */
 export function normalizeUsageModel(model: string): string {
-  return model.replace(/(gemini-[^-/]+-flash)-(high|medium|low|tiered)\b/i, "$1");
+  const trimmed = model.trim();
+  if (/^claude-opus-4-6(-thinking)?$/i.test(trimmed)) {
+    return "claude-opus-4.6";
+  }
+  if (/^(deepseek-ai\/)?deepseek-v4\.1-flash$/i.test(trimmed)) {
+    return "deepseek-v4.1-flash";
+  }
+  if (/^(zai-org\/|zai\/)?glm-5\.3-flash$/i.test(trimmed)) {
+    return "glm-5.3-flash";
+  }
+  return trimmed.replace(/(gemini-[^-/]+-flash)-(high|medium|low|tiered)\b/i, "$1");
 }
 
 /**
@@ -123,6 +153,8 @@ export const UsageBucket = Schema.Struct({
   unpricedRecords: NonNegativeInt,
   /** Distinct transcript sessions that contributed to this cell. */
   sessions: NonNegativeInt,
+  /** Credit consumption for credit-based providers. */
+  credits: Schema.optional(Schema.Number),
 });
 export type UsageBucket = typeof UsageBucket.Type;
 

@@ -13,6 +13,7 @@
  * @module usageAggregation
  */
 import {
+  ABACUS_CREDIT_COST_USD,
   normalizeUsageModel,
   type UsageBucket,
   type UsageDay,
@@ -55,6 +56,7 @@ const HOUR_MS = 60 * 60 * 1000;
 interface MutableBucket {
   totals: UsageTokenTotals;
   costUsd: number;
+  credits: number;
   cacheSavingsUsd: number;
   records: number;
   unpricedRecords: number;
@@ -153,12 +155,17 @@ export class UsageAggregator {
               Math.floor((record.timestampMs - this.#hourlyWindow.sinceTimeMs) / HOUR_MS) * HOUR_MS,
           ).toISOString();
     const model = normalizeUsageModel(record.model);
-    const key = `${day}\u0000${hourStart}\u0000${record.provider}\u0000${model}`;
+    const isCodexAutoReview = record.provider === "codex" && model === "codex-auto-review";
+    const isCredit =
+      (record.credits !== null && record.credits !== undefined && record.credits > 0) ||
+      record.provider === "abacus";
+    const key = `${day}\u0000${hourStart}\u0000${record.provider}\u0000${model}\u0000${isCredit ? "credit" : "sub"}`;
     let bucket = this.#buckets.get(key);
     if (bucket === undefined) {
       bucket = {
         totals: EMPTY_TOTALS,
         costUsd: 0,
+        credits: 0,
         cacheSavingsUsd: 0,
         records: 0,
         unpricedRecords: 0,
@@ -168,22 +175,26 @@ export class UsageAggregator {
       this.#buckets.set(key, bucket);
     }
 
-    const priced = priceUsage(
+    const pricedByModel = priceUsage(
       this.#options.rates,
       model,
       record.totals,
       record.reportedCostUsd,
       this.#options.priceOverrides,
     );
+    const priced = isCodexAutoReview ? { ...pricedByModel, costUsd: 0 } : pricedByModel;
 
     bucket.totals = addTotals(bucket.totals, record.totals);
     bucket.costUsd += priced.costUsd;
-    bucket.cacheSavingsUsd += cacheSavingsUsd(
-      this.#options.rates,
-      model,
-      record.totals,
-      this.#options.priceOverrides,
-    );
+    if (record.credits !== undefined && record.credits !== null && record.credits > 0) {
+      bucket.credits += record.credits;
+    } else if (record.provider === "abacus") {
+      const recordCredits = priced.costUsd > 0 ? priced.costUsd / ABACUS_CREDIT_COST_USD : 0;
+      bucket.credits += recordCredits;
+    }
+    bucket.cacheSavingsUsd += isCodexAutoReview
+      ? 0
+      : cacheSavingsUsd(this.#options.rates, model, record.totals, this.#options.priceOverrides);
     bucket.records += 1;
     if (priced.costSource === "unpriced") bucket.unpricedRecords += 1;
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
@@ -202,6 +213,9 @@ export class UsageAggregator {
         model,
         totals: bucket.totals,
         costUsd: bucket.costUsd,
+        ...(provider === "abacus" || bucket.credits > 0
+          ? { credits: Math.round(bucket.credits * 100) / 100 }
+          : {}),
         cacheSavingsUsd: bucket.cacheSavingsUsd,
         costSource: resolveCostSource(bucket),
         records: bucket.records,

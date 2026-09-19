@@ -24,6 +24,7 @@ function record(overrides: Partial<UsageRecord> = {}): UsageRecord {
       reasoningTokens: 0,
     },
     reportedCostUsd: null,
+    credits: null,
     dedupeKey: "msg_1:",
     ...overrides,
   };
@@ -74,7 +75,15 @@ describe("scan cache round trip", () => {
       size: 80,
       mtimeMs: 400,
       provider: "codex",
-      records: [record({ provider: "codex", model: "gpt-5.2-codex", dedupeKey: null })],
+      records: [
+        record({
+          provider: "codex",
+          model: "gpt-5.2-codex",
+          dedupeKey: null,
+          credits: 5.5,
+          reportedCostUsd: 0.22,
+        }),
+      ],
       tailRecords: [],
       position: position({
         codexState: {
@@ -84,6 +93,7 @@ describe("scan cache round trip", () => {
           sawSessionMeta: true,
           suppressingForkCopies: false,
           forkCopyAnchorMs: 0,
+          lastCreditBalance: null,
         },
       }),
     });
@@ -125,7 +135,7 @@ describe("scan cache round trip", () => {
 
   it("rejects a document from the previous cache version", () => {
     const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
-    const previous = { ...encoded, version: 2 };
+    const previous = { ...encoded, version: 3 };
 
     expect(decodeScanCache(JSON.parse(JSON.stringify(previous))).size).toBe(0);
   });

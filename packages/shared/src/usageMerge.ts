@@ -7,6 +7,10 @@
  * @module usageMerge
  */
 import {
+  ABACUS_CREDIT_COST_USD,
+  abacusCreditsToUsd,
+  CODEX_CREDIT_COST_USD,
+  codexCreditsToUsd,
   normalizeUsageModel,
   USAGE_MERGE_COMPATIBLE_SINCE,
   type EnvironmentId,
@@ -25,6 +29,7 @@ export interface EnvironmentUsage {
 export interface ProviderTotals {
   readonly provider: UsageProviderKind;
   readonly costUsd: number;
+  readonly credits?: number;
   readonly totalTokens: number;
   readonly records: number;
   readonly sessions: number;
@@ -36,6 +41,8 @@ export interface ModelTotals {
   readonly model: string;
   readonly provider: UsageProviderKind;
   readonly costUsd: number;
+  readonly credits?: number;
+  readonly isCreditBased?: boolean;
   readonly totalTokens: number;
   readonly records: number;
   /**
@@ -78,12 +85,23 @@ export interface CostQuality {
 
 export interface MergedUsage {
   readonly costUsd: number;
+  readonly subscriptionCostUsd: number;
   readonly uncachedInputTokens: number;
   readonly cachedInputTokens: number;
   readonly cacheCreationTokens: number;
   readonly outputTokens: number;
   readonly reasoningTokens: number;
   readonly totalTokens: number;
+  readonly subscriptionTotalTokens: number;
+  readonly subscriptionTotals: {
+    readonly uncachedInputTokens: number;
+    readonly cachedInputTokens: number;
+    readonly cacheCreationTokens: number;
+    readonly outputTokens: number;
+    readonly reasoningTokens: number;
+    readonly totalTokens: number;
+  };
+  readonly subscriptionCacheSavingsUsd: number;
   readonly records: number;
   readonly sessions: number;
   readonly providers: readonly ProviderTotals[];
@@ -197,12 +215,23 @@ export function isCompatibleUsageContractVersion(version: number, expected: numb
 
 const EMPTY_MERGED: MergedUsage = {
   costUsd: 0,
+  subscriptionCostUsd: 0,
   uncachedInputTokens: 0,
   cachedInputTokens: 0,
   cacheCreationTokens: 0,
   outputTokens: 0,
   reasoningTokens: 0,
   totalTokens: 0,
+  subscriptionTotalTokens: 0,
+  subscriptionTotals: {
+    uncachedInputTokens: 0,
+    cachedInputTokens: 0,
+    cacheCreationTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    totalTokens: 0,
+  },
+  subscriptionCacheSavingsUsd: 0,
   records: 0,
   sessions: 0,
   providers: [],
@@ -258,21 +287,30 @@ export function mergeUsage(
   let records = 0;
   let sessions = 0;
   let cacheSavingsUsd = 0;
+  let subscriptionCostUsd = 0;
+  let subscriptionUncachedInputTokens = 0;
+  let subscriptionCachedInputTokens = 0;
+  let subscriptionCacheCreationTokens = 0;
+  let subscriptionOutputTokens = 0;
+  let subscriptionReasoningTokens = 0;
+  let subscriptionCacheSavingsUsd = 0;
   let providerReportedRecords = 0;
   let unpricedRecords = 0;
 
   const providerAccumulator = new Map<
     UsageProviderKind,
-    { costUsd: number; totalTokens: number; records: number; sessions: number }
+    { costUsd: number; credits: number; totalTokens: number; records: number; sessions: number }
   >();
   const modelAccumulator = new Map<
     string,
     {
       provider: UsageProviderKind;
       costUsd: number;
+      credits: number;
       totalTokens: number;
       records: number;
       unpricedRecords: number;
+      isCreditBased?: boolean;
     }
   >();
   const dailyAccumulator = new Map<
@@ -304,6 +342,7 @@ export function mergeUsage(
       if (providerSessions === 0) continue;
       const provider = providerAccumulator.get(providerKind) ?? {
         costUsd: 0,
+        credits: 0,
         totalTokens: 0,
         records: 0,
         sessions: 0,
@@ -315,53 +354,104 @@ export function mergeUsage(
     for (const bucket of buckets) {
       const tokens = bucketTokens(bucket);
 
-      costUsd += bucket.costUsd;
-      cacheSavingsUsd += bucket.cacheSavingsUsd;
+      const modelName = normalizeUsageModel(bucket.model);
+      const isCodexAutoReview = bucket.provider === "codex" && modelName === "codex-auto-review";
+      const rawBucketCredits =
+        bucket.credits ??
+        (bucket.provider === "abacus"
+          ? bucket.costUsd > 0
+            ? bucket.costUsd / ABACUS_CREDIT_COST_USD
+            : 0
+          : 0);
+      const bucketCredits = isCodexAutoReview ? 0 : rawBucketCredits;
+
+      // Preserve a pre-existing credit bucket for auto-review so both legacy
+      // rows remain visible, but force its accounting to zero.
+      const isCreditBased = bucket.provider === "abacus" || rawBucketCredits > 0;
+      const isSubscription = !isCreditBased;
+      const bucketCostUsd = isCodexAutoReview ? 0 : bucket.costUsd;
+
+      costUsd += bucketCostUsd;
+      cacheSavingsUsd += isCodexAutoReview ? 0 : bucket.cacheSavingsUsd;
       uncachedInputTokens += bucket.totals.uncachedInputTokens;
       cachedInputTokens += bucket.totals.cachedInputTokens;
       cacheCreationTokens += bucket.totals.cacheCreationTokens;
       outputTokens += bucket.totals.outputTokens;
       reasoningTokens += bucket.totals.reasoningTokens;
+
+      if (isSubscription) {
+        subscriptionCostUsd += bucketCostUsd;
+        subscriptionCacheSavingsUsd += isCodexAutoReview ? 0 : bucket.cacheSavingsUsd;
+        subscriptionUncachedInputTokens += bucket.totals.uncachedInputTokens;
+        subscriptionCachedInputTokens += bucket.totals.cachedInputTokens;
+        subscriptionCacheCreationTokens += bucket.totals.cacheCreationTokens;
+        subscriptionOutputTokens += bucket.totals.outputTokens;
+        subscriptionReasoningTokens += bucket.totals.reasoningTokens;
+      }
       records += bucket.records;
       unpricedRecords += bucket.unpricedRecords;
       if (bucket.costSource === "providerReported") providerReportedRecords += bucket.records;
 
+      const modelKey = `${isCreditBased ? "credit" : "sub"} ${bucket.provider} ${modelName}`;
+      const model = modelAccumulator.get(modelKey) ?? {
+        provider: bucket.provider,
+        costUsd: 0,
+        credits: 0,
+        totalTokens: 0,
+        records: 0,
+        unpricedRecords: 0,
+        isCreditBased,
+      };
+
+      const bucketCost =
+        bucket.provider === "codex" && isCreditBased
+          ? codexCreditsToUsd(bucketCredits)
+          : bucket.provider === "abacus"
+            ? abacusCreditsToUsd(bucketCredits)
+            : bucketCostUsd;
+
+      model.costUsd += bucketCost;
+      if (isSubscription) {
+        model.totalTokens += tokens;
+      }
+      model.records += bucket.records;
+      model.unpricedRecords += bucket.unpricedRecords;
+      if (isCreditBased) {
+        model.credits += bucketCredits;
+      }
+      modelAccumulator.set(modelKey, model);
+
       const provider = providerAccumulator.get(bucket.provider) ?? {
         costUsd: 0,
+        credits: 0,
         totalTokens: 0,
         records: 0,
         sessions: 0,
       };
-      provider.costUsd += bucket.costUsd;
-      provider.totalTokens += tokens;
+      provider.costUsd += bucketCost;
+      if (isSubscription) {
+        provider.totalTokens += tokens;
+      }
       provider.records += bucket.records;
+      if (isCreditBased) {
+        provider.credits += bucketCredits;
+      }
       providerAccumulator.set(bucket.provider, provider);
-
-      const modelName = normalizeUsageModel(bucket.model);
-      const modelKey = `${bucket.provider} ${modelName}`;
-      const model = modelAccumulator.get(modelKey) ?? {
-        provider: bucket.provider,
-        costUsd: 0,
-        totalTokens: 0,
-        records: 0,
-        unpricedRecords: 0,
-      };
-      model.costUsd += bucket.costUsd;
-      model.totalTokens += tokens;
-      model.records += bucket.records;
-      model.unpricedRecords += bucket.unpricedRecords;
-      modelAccumulator.set(modelKey, model);
 
       const day = dailyAccumulator.get(bucket.day) ?? {
         costUsd: 0,
         totalTokens: 0,
         byProvider: new Map<UsageProviderKind, { costUsd: number; totalTokens: number }>(),
       };
-      day.costUsd += bucket.costUsd;
-      day.totalTokens += tokens;
+      if (isSubscription) {
+        day.costUsd += bucketCostUsd;
+        day.totalTokens += tokens;
+      }
       const dayProvider = day.byProvider.get(bucket.provider) ?? { costUsd: 0, totalTokens: 0 };
-      dayProvider.costUsd += bucket.costUsd;
-      dayProvider.totalTokens += tokens;
+      dayProvider.costUsd += bucketCostUsd;
+      if (isSubscription) {
+        dayProvider.totalTokens += tokens;
+      }
       day.byProvider.set(bucket.provider, dayProvider);
       dailyAccumulator.set(bucket.day, day);
 
@@ -373,14 +463,18 @@ export function mergeUsage(
           totalTokens: 0,
           byProvider: new Map<UsageProviderKind, { costUsd: number; totalTokens: number }>(),
         };
-        hour.costUsd += bucket.costUsd;
-        hour.totalTokens += tokens;
+        if (isSubscription) {
+          hour.costUsd += bucketCostUsd;
+          hour.totalTokens += tokens;
+        }
         const hourProvider = hour.byProvider.get(bucket.provider) ?? {
           costUsd: 0,
           totalTokens: 0,
         };
-        hourProvider.costUsd += bucket.costUsd;
-        hourProvider.totalTokens += tokens;
+        hourProvider.costUsd += bucketCostUsd;
+        if (isSubscription) {
+          hourProvider.totalTokens += tokens;
+        }
         hour.byProvider.set(bucket.provider, hourProvider);
         hourlyAccumulator.set(bucket.hourStart, hour);
       }
@@ -388,29 +482,79 @@ export function mergeUsage(
   }
 
   const totalTokens = uncachedInputTokens + cachedInputTokens + cacheCreationTokens + outputTokens;
+  const subscriptionTotalTokens =
+    subscriptionUncachedInputTokens +
+    subscriptionCachedInputTokens +
+    subscriptionCacheCreationTokens +
+    subscriptionOutputTokens;
+  const subscriptionTotals = {
+    uncachedInputTokens: subscriptionUncachedInputTokens,
+    cachedInputTokens: subscriptionCachedInputTokens,
+    cacheCreationTokens: subscriptionCacheCreationTokens,
+    outputTokens: subscriptionOutputTokens,
+    reasoningTokens: subscriptionReasoningTokens,
+    totalTokens: subscriptionTotalTokens,
+  };
+
+  const totalCreditCostUsd = [...modelAccumulator.values()]
+    .filter((m) => m.isCreditBased)
+    .reduce((sum, m) => sum + m.costUsd, 0);
+  const totalCostUsd = subscriptionCostUsd + totalCreditCostUsd;
 
   const providers: ProviderTotals[] = [...providerAccumulator.entries()]
-    .map(([provider, totals]) => ({
-      provider,
-      costUsd: totals.costUsd,
-      totalTokens: totals.totalTokens,
-      records: totals.records,
-      sessions: totals.sessions,
-      costShare: costUsd === 0 ? 0 : totals.costUsd / costUsd,
-      tokenShare: totalTokens === 0 ? 0 : totals.totalTokens / totalTokens,
-    }))
+    .map(([provider, totals]) => {
+      const isChatLlm = provider === "abacus";
+      return {
+        provider,
+        costUsd: totals.costUsd,
+        ...(totals.credits > 0 || isChatLlm
+          ? { credits: Math.round(totals.credits * 100) / 100 }
+          : {}),
+        totalTokens: totals.totalTokens,
+        records: totals.records,
+        sessions: totals.sessions,
+        costShare: isChatLlm
+          ? totalCostUsd === 0
+            ? 0
+            : totals.costUsd / totalCostUsd
+          : subscriptionCostUsd === 0
+            ? 0
+            : totals.costUsd / subscriptionCostUsd,
+        tokenShare: isChatLlm
+          ? 0
+          : subscriptionTotalTokens === 0
+            ? 0
+            : totals.totalTokens / subscriptionTotalTokens,
+      };
+    })
     .sort((a, b) => b.costUsd - a.costUsd);
 
   const models: ModelTotals[] = [...modelAccumulator.entries()]
-    .map(([key, totals]) => ({
-      model: key.slice(key.indexOf(" ") + 1),
-      provider: totals.provider,
-      costUsd: totals.costUsd,
-      totalTokens: totals.totalTokens,
-      records: totals.records,
-      unpricedRecords: totals.unpricedRecords,
-      costShare: costUsd === 0 ? 0 : totals.costUsd / costUsd,
-    }))
+    .map(([key, totals]) => {
+      const modelCostShare = totals.isCreditBased
+        ? totalCreditCostUsd === 0
+          ? 0
+          : totals.costUsd / totalCreditCostUsd
+        : subscriptionCostUsd === 0
+          ? 0
+          : totals.costUsd / subscriptionCostUsd;
+
+      const firstSpace = key.indexOf(" ");
+      const secondSpace = key.indexOf(" ", firstSpace + 1);
+      const modelName = secondSpace !== -1 ? key.slice(secondSpace + 1) : key;
+
+      return {
+        model: modelName,
+        provider: totals.provider,
+        costUsd: totals.costUsd,
+        ...(totals.isCreditBased ? { isCreditBased: true } : {}),
+        ...(totals.credits > 0 ? { credits: Math.round(totals.credits * 100) / 100 } : {}),
+        totalTokens: totals.totalTokens,
+        records: totals.records,
+        unpricedRecords: totals.unpricedRecords,
+        costShare: modelCostShare,
+      };
+    })
     .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens);
 
   const daily: DailyTotals[] = [...dailyAccumulator.entries()]
@@ -434,6 +578,10 @@ export function mergeUsage(
     outputTokens,
     reasoningTokens,
     totalTokens,
+    subscriptionCostUsd,
+    subscriptionTotalTokens,
+    subscriptionTotals,
+    subscriptionCacheSavingsUsd,
     records,
     sessions,
     providers,

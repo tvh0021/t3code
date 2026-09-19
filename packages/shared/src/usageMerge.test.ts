@@ -462,4 +462,211 @@ describe("mergeUsage", () => {
     expect(antigravityModels[0]?.costUsd).toBe(10);
     expect(antigravityModels[0]?.totalTokens).toBe(1500);
   });
+
+  it("normalizes displayed model names for opus-thinking, deepseek-v4.1, and glm-5.3", () => {
+    const abacusSource = { provider: "abacus" as const, hostId: "mac", homePath: "/a" };
+    const antigravitySource = { provider: "antigravity" as const, hostId: "mac", homePath: "/b" };
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              bucket({
+                provider: "antigravity",
+                model: "claude-opus-4-6-thinking",
+                costUsd: 5,
+              }),
+              bucket({
+                provider: "abacus",
+                model: "deepseek-ai/DeepSeek-V4.1-Flash",
+                costUsd: 2,
+              }),
+              bucket({
+                provider: "abacus",
+                model: "zai-org/GLM-5.3-Flash",
+                costUsd: 1,
+              }),
+            ],
+            [abacusSource, antigravitySource],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    const modelNames = merged.models.map((m) => m.model);
+    expect(modelNames).toContain("claude-opus-4.6");
+    expect(modelNames).toContain("deepseek-v4.1-flash");
+    expect(modelNames).toContain("glm-5.3-flash");
+  });
+
+  it("tracks credits for abacus and computes subscriptionTotals excluding abacus", () => {
+    const codexSource = { provider: "codex" as const, hostId: "mac", homePath: "/a" };
+    const abacusSource = { provider: "abacus" as const, hostId: "mac", homePath: "/b" };
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              bucket({
+                provider: "codex",
+                model: "gpt-5-codex",
+                costUsd: 1.5,
+                totals: {
+                  uncachedInputTokens: 1000,
+                  cachedInputTokens: 200,
+                  cacheCreationTokens: 0,
+                  outputTokens: 300,
+                  reasoningTokens: 50,
+                },
+              }),
+              bucket({
+                provider: "abacus",
+                model: "deepseek-v4.1-flash",
+                costUsd: 0.25,
+                credits: 500,
+                totals: {
+                  uncachedInputTokens: 5000,
+                  cachedInputTokens: 0,
+                  cacheCreationTokens: 0,
+                  outputTokens: 1000,
+                  reasoningTokens: 0,
+                },
+              }),
+            ],
+            [codexSource, abacusSource],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    // Overall aggregate includes both
+    expect(merged.costUsd).toBe(1.75);
+    expect(merged.totalTokens).toBe(7500);
+
+    // Subscription-only metrics exclude abacus
+    expect(merged.subscriptionCostUsd).toBe(1.5);
+    expect(merged.subscriptionTotalTokens).toBe(1500);
+    expect(merged.subscriptionTotals.uncachedInputTokens).toBe(1000);
+    expect(merged.subscriptionTotals.cachedInputTokens).toBe(200);
+    expect(merged.subscriptionTotals.outputTokens).toBe(300);
+
+    // Abacus provider totals have credits
+    const abacusProvider = merged.providers.find((p) => p.provider === "abacus");
+    expect(abacusProvider?.credits).toBe(500);
+    expect(abacusProvider?.costUsd).toBe(0.25);
+
+    // Abacus model totals have credits
+    const abacusModel = merged.models.find((m) => m.provider === "abacus");
+    expect(abacusModel?.credits).toBe(500);
+    expect(abacusModel?.costUsd).toBe(0.25);
+  });
+
+  it("separates subscription and credit-based models for codex spillover", () => {
+    const codexSource = { provider: "codex" as const, hostId: "mac", homePath: "/a" };
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              // Standard subscription turn
+              bucket({
+                provider: "codex",
+                model: "gpt-5.6-sol",
+                costUsd: 2.0,
+                totals: {
+                  uncachedInputTokens: 2000,
+                  cachedInputTokens: 500,
+                  cacheCreationTokens: 0,
+                  outputTokens: 400,
+                  reasoningTokens: 100,
+                },
+              }),
+              // Spillover credit turn (10 credits = $0.40)
+              bucket({
+                provider: "codex",
+                model: "gpt-5.6-sol",
+                costUsd: 0.4,
+                credits: 10,
+                totals: {
+                  uncachedInputTokens: 1000,
+                  cachedInputTokens: 0,
+                  cacheCreationTokens: 0,
+                  outputTokens: 200,
+                  reasoningTokens: 0,
+                },
+              }),
+            ],
+            [codexSource],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    const subModel = merged.models.find((m) => m.provider === "codex" && !m.isCreditBased);
+    expect(subModel).toBeDefined();
+    expect(subModel?.costUsd).toBe(2.0);
+    expect(subModel?.totalTokens).toBe(2900);
+    expect(subModel?.credits).toBeUndefined();
+
+    const creditModel = merged.models.find((m) => m.provider === "codex" && m.isCreditBased);
+    expect(creditModel).toBeDefined();
+    expect(creditModel?.costUsd).toBe(0.4);
+    expect(creditModel?.credits).toBe(10);
+    expect(creditModel?.totalTokens).toBe(0);
+  });
+
+  it("prices codex auto-review at zero in both model buckets", () => {
+    const codexSource = { provider: "codex" as const, hostId: "mac", homePath: "/a" };
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              bucket({
+                provider: "codex",
+                model: "codex-auto-review",
+                costUsd: 1,
+                totals: {
+                  uncachedInputTokens: 10,
+                  cachedInputTokens: 0,
+                  cacheCreationTokens: 0,
+                  outputTokens: 2,
+                  reasoningTokens: 0,
+                },
+              }),
+              bucket({
+                provider: "codex",
+                model: "codex-auto-review",
+                costUsd: 0.5,
+                credits: 20,
+                totals: {
+                  uncachedInputTokens: 10,
+                  cachedInputTokens: 0,
+                  cacheCreationTokens: 0,
+                  outputTokens: 2,
+                  reasoningTokens: 0,
+                },
+              }),
+            ],
+            [codexSource],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    const autoReviewModels = merged.models.filter(
+      (model) => model.provider === "codex" && model.model === "codex-auto-review",
+    );
+    expect(autoReviewModels).toHaveLength(2);
+    expect(autoReviewModels.every((model) => model.costUsd === 0)).toBe(true);
+    expect(merged.costUsd).toBe(0);
+  });
 });

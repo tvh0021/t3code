@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import { UsageAggregator } from "./usageAggregation.ts";
 import type { RateTable } from "./usagePricing.ts";
-import type { UsageRecord } from "./usageTranscripts.ts";
+import { reconcileCodexCreditUsage, type UsageRecord } from "./usageTranscripts.ts";
 
 const rates: RateTable = new Map([
   [
@@ -12,6 +12,15 @@ const rates: RateTable = new Map([
       outputCostPerToken: 5e-5,
       cacheReadCostPerToken: 1e-6,
       cacheCreationCostPerToken: 1.25e-5,
+    },
+  ],
+  [
+    "gpt-5.6-luna",
+    {
+      inputCostPerToken: 1e-6,
+      outputCostPerToken: 2e-6,
+      cacheReadCostPerToken: 5e-7,
+      cacheCreationCostPerToken: 1.25e-6,
     },
   ],
 ]);
@@ -170,6 +179,20 @@ describe("UsageAggregator", () => {
 
     expect(result.buckets[0]?.costUsd).toBe(1.25);
     expect(result.buckets[0]?.costSource).toBe("providerReported");
+  });
+
+  it("keeps subscription pricing after Codex credit reconciliation", () => {
+    const [reconciled] = reconcileCodexCreditUsage([
+      {
+        path: "luna.jsonl",
+        records: [record({ provider: "codex", model: "gpt-5.6-luna", creditBalance: 1169 })],
+      },
+    ]);
+    const result = aggregate(reconciled?.records ?? []);
+
+    expect(reconciled?.records[0]?.credits).toBe(0);
+    expect(reconciled?.records[0]?.reportedCostUsd).toBeNull();
+    expect(result.buckets[0]?.costUsd).toBeGreaterThan(0);
   });
 
   it("drops records outside the window", () => {

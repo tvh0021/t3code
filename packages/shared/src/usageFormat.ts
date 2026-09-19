@@ -23,6 +23,14 @@ export function formatCount(value: number): string {
   return INTEGER.format(Math.round(value));
 }
 
+export function formatCredits(value: number): string {
+  const rounded = Math.round(value * 100) / 100;
+  return rounded.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
 /**
  * Compacts a token count to three significant figures with a unit suffix, so
  * columns of numbers line up at a glance (`19.9B`, `76.7M`, `804K`).
