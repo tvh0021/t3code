@@ -676,6 +676,52 @@ export const ClaudeSettings = makeProviderSettingsSchema(
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
 
+export const ZedSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("zed-acp-server").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the Zed ACP server binary.",
+        providerSettingsForm: { placeholder: "zed-acp-server", clearWhenEmpty: "omit" },
+      }),
+    ),
+    dataDir: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Zed data directory",
+        description: "Custom Zed data directory path (optional).",
+        providerSettingsForm: {
+          placeholder: "/path/to/zed/data",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    model: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Model",
+        description: "Model identifier (e.g. anthropic/claude-3-7-sonnet).",
+        providerSettingsForm: {
+          placeholder: "anthropic/claude-3-7-sonnet",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    customModels: Schema.Array(CustomModelSetting).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath", "model", "dataDir"],
+  },
+);
+export type ZedSettings = typeof ZedSettings.Type;
+
 export const CursorSettings = makeProviderSettingsSchema(
   {
     // Off by default like Grok and OpenCode. Users opt in from Settings.
@@ -1260,6 +1306,7 @@ export const ServerSettings = Schema.Struct({
     abacus: AbacusSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     antigravity: AntigravitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    zed: ZedSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
   // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
@@ -1402,6 +1449,14 @@ const ClaudeSettingsPatch = Schema.Struct({
   ),
 });
 
+const ZedSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(Schema.String),
+  dataDir: Schema.optionalKey(TrimmedString),
+  model: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
+});
+
 const CursorSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
@@ -1541,6 +1596,7 @@ export const ServerSettingsPatch = Schema.Struct({
       abacus: Schema.optionalKey(AbacusSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
       antigravity: Schema.optionalKey(AntigravitySettingsPatch),
+      zed: Schema.optionalKey(ZedSettingsPatch),
     }),
   ),
   // Whole-map replacement for the new instance config. Patching individual

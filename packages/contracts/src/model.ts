@@ -149,6 +149,7 @@ const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 const ABACUS_DRIVER_KIND = ProviderDriverKind.make("abacus");
+const ZED_DRIVER_KIND = ProviderDriverKind.make("zed");
 
 export const DEFAULT_MODEL = "gpt-6-astra";
 
@@ -177,6 +178,7 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
   [ABACUS_DRIVER_KIND]: ABACUS_DEFAULT_MODEL,
   [ProviderDriverKind.make("antigravity")]: ANTIGRAVITY_DEFAULT_MODEL,
+  [ZED_DRIVER_KIND]: "default",
 };
 
 /** Per-provider text generation model defaults. */
@@ -216,7 +218,7 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
   [OPENCODE_DRIVER_KIND]: {},
 };
 
-// ── Provider display names ────────────────────────────────────────────
+// ── Provider display names ──────────────────────────────────────────────────
 
 export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>> = {
   [ProviderDriverKind.make("antigravity")]: "Antigravity",
@@ -226,4 +228,5 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [GROK_DRIVER_KIND]: "Grok",
   [OPENCODE_DRIVER_KIND]: "OpenCode",
   [ABACUS_DRIVER_KIND]: "ChatLLM",
+  [ZED_DRIVER_KIND]: "Zed",
 };

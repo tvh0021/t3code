@@ -6,6 +6,7 @@ import {
   CursorSettings,
   GrokSettings,
   OpenCodeSettings,
+  ZedSettings,
   ProviderDriverKind,
 } from "@t3tools/contracts";
 import type * as Schema from "effect/Schema";
@@ -18,6 +19,7 @@ import {
   type Icon,
   OpenAI,
   OpenCodeIcon,
+  Zed,
 } from "../Icons";
 
 type ProviderSettingsSchema = {
@@ -89,6 +91,13 @@ const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
     label: "ChatLLM",
     icon: AbacusIcon,
     settingsSchema: AbacusSettings,
+  },
+  {
+    value: ProviderDriverKind.make("zed"),
+    label: "Zed",
+    icon: Zed,
+    badgeLabel: "Early Access",
+    settingsSchema: ZedSettings,
   },
 ];
 

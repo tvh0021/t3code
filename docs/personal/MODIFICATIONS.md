@@ -242,3 +242,35 @@ Mixing ChatLLM into the top-level token and cost figures skewed subscription tok
 - Scan-cache version 5 stores raw Codex credit balances. The server reconciles all retained Codex records in timestamp order before aggregation, including balance changes carried by duplicate token payloads.
 - `codex-auto-review` is excluded from credit cost and USD cost. Its balance snapshot does not move the paid baseline, so a concurrent paid drop is counted on the next paid record.
 - The corrected local corpus result is about 1,334 credits, or $53.37, for a balance change from 2,500 to about 1,166.
+
+## 19. Zed ACP Agent Integration Step 3 Verification
+
+### Verification Scope
+
+- Verified the Zed provider snapshot and health probe, adapter lifecycle, streaming event mapping, permission flow, elicitation flow, slash-command dispatch, rollback protection, and real-binary integration.
+- Verified the protocol harness against `/Users/tvh0021/git_repos/zed-dev/target/debug/zed-acp-server`.
+- Limited the built-in Zed model catalog to `zed.dev/claude-sonnet-5` (Claude Sonnet 5) and `zed.dev/gpt-5.6-luna` (GPT 5.6 Luna), while retaining support for explicitly configured custom models.
+
+### Modifications
+
+- Kept the ACP protocol handshake independent of an ACP auth method; hosted Zed models still reuse the user's stored Zed credentials.
+- Forwarded the selected T3 model identifier to the headless Zed binary and corrected its settings key to `agent.default_model`.
+- Added headless model readiness: the ACP server authenticates with the existing Zed credential store, waits for the selected model to be discovered, and installs it in Zed's model registry before creating a session.
+- Corrected Zed adapter runtime identifiers to use Effect's crypto service.
+- Aligned provider snapshots and driver wiring with the current server-provider contracts.
+- Added schema-compliant ACP elicitation responses and synchronized slash-command assertions with streamed output.
+
+### Verification Results
+
+- `ZedAdapter.test.ts`: 10 tests passed, including streamed real-binary turns for both configured models.
+- `ZedAcpServer.test.ts`: 6 tests passed.
+- `ZedAcpSupport.test.ts`: 1 test passed.
+- Combined focused Vite test run: 17 tests passed.
+- The scoped server typecheck exits 0 with no Zed-related TypeScript diagnostics.
+- The rebuilt headless Zed binary passes the real-binary loop for Claude Sonnet 5 and GPT 5.6 Luna, including `/compact` and graceful shutdown.
+
+### Current status
+
+- After restarting the worktree desktop app, the Zed provider accepted requests with the configured model choices and is usable for current work.
+- The desktop startup can show transient auth bootstrap or proxy errors while the backend comes up; the backend recovered and `/api/auth/session` returned `200`.
+- Some rough edges remain for follow-up work. No change-log entry was added.

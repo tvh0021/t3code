@@ -8,6 +8,7 @@ import {
   Icon,
   OpenAI,
   OpenCodeIcon,
+  Zed,
 } from "../Icons";
 
 export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
@@ -18,6 +19,7 @@ export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>
   [ProviderDriverKind.make("grok")]: GrokIcon,
   [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
   [ProviderDriverKind.make("abacus")]: AbacusIcon,
+  [ProviderDriverKind.make("zed")]: Zed,
 };
 
 export type ModelEsque = {
