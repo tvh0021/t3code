@@ -34,3 +34,4 @@ A concise, chronological record of custom changes made to this personal fork of 
 - **Usage Breakdowns**: Separated subscription models from credit-based models and excluded credit usage from token totals and cost charts.
 - **Codex Credit Accounting**: Added Codex credit balances, credit-based model reporting, and spillover billing at $0.04 per credit.
 - **Codex History Backfill**: Reconciled 90 days of transcript history, including forks and duplicate events. Updated the scan cache to v5 and excluded `codex-auto-review` from credit usage. The corrected backfill is about 1,334 credits.
+- **Zed ACP Provider**: Added headless Zed agent support over ACP with Claude Sonnet 5 and GPT 5.6 Luna model selection.
