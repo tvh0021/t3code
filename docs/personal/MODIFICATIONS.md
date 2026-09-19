@@ -156,7 +156,89 @@ T3 Code's Usage window previously only tracked tokens and costs for Codex (and C
    - Antigravity tiered routing model.
    - Updated candidate normalization regex in `usagePricing.ts` from `/^(gemini-[^-]+-flash)-(high|medium|low)$/` to `/^(gemini-[^-]+-flash)-(high|medium|low|tiered)$/`, normalizing directly to `gemini-3.8-flash`.
 
-### ChatLLM / Abacus Token & Point Verification
+### ChatLLM / RouteLLM Credit Valuation
 
 - Audited all local Abacus project files (`~/.abacusai/projects/*/*.json`), logs, and history files. Verified that no local token counts are recorded by Abacus.
-- Confirmed official compute point conversion: 10,000 points = $10.00 ($0.001 per compute point).
+- Reverse-engineered user plan pricing anchors (Basic 10k/$5, Month 1 14k/$7, Month 2+ 20k/$10) to establish the exact constant: **1 credit = $0.0005** (2,000 credits = $1.00).
+
+---
+
+## 15. Antigravity Usage Label Standardization & Model Display Name Normalization
+
+### Antigravity Presentation Label
+
+- Replaced two-word spelling `"Anti Gravity"` with official single-word name `"Antigravity"` across:
+  - `apps/web/src/components/usage/usageProviders.ts`
+  - `apps/mobile/src/features/usage/usageProviders.ts`
+- Ensured consistent naming matching Google Antigravity across web and mobile surfaces.
+
+### Model Display Name Normalization
+
+- Centralized usage model string cleaning in `normalizeUsageModel` inside `packages/contracts/src/usage.ts`:
+  - `claude-opus-4-6-thinking` and `claude-opus-4-6` normalize to `claude-opus-4.6`
+  - `deepseek-ai/DeepSeek-V4.1-Flash` normalizes to `deepseek-v4.1-flash`
+  - `zai-org/GLM-5.3-Flash` and `zai/glm-5.3-flash` normalize to `glm-5.3-flash`
+  - `gemini-*-flash-(high|medium|low|tiered)` retains normalization to `gemini-*-flash`
+- Integrated across server-side usage aggregations (`usageAggregation.ts`), multi-environment usage folding (`usageMerge.ts`), and price rate overrides (`usagePricing.ts`).
+- Added unit tests in `packages/shared/src/usageMerge.test.ts` verifying canonical model name presentation.
+
+---
+
+## 16. ChatLLM (RouteLLM) Token Accounting Under-reporting Root Cause Analysis
+
+### Diagnosis
+
+- Comparison of local JSONL logs (17 turns across 10 sessions) against official Abacus RouteLLM credit usage revealed a ~4.5x undercount:
+  - **Local token pricing**: $0.003599 (~7.20 credits at $0.0005/credit)
+  - **Actual RouteLLM billing**: 32.18 credits ($0.01609)
+  - **Variance**: Sep 17 undercounted 8.6x; Sep 18 undercounted 3.9x.
+- Because the undercount varies significantly by day and session, a flat rate multiplier is inapplicable.
+
+### Root Cause
+
+- In `apps/server/src/provider/Layers/AbacusAdapter.ts` (`sendTurn`), the agentic loop executed:
+  ```typescript
+  if (usage !== undefined) finalUsage = usage;
+  ```
+  on each tool execution iteration.
+- Because each tool call step sends an independent HTTP completion to RouteLLM containing the growing conversation history, system prompt, and tool schemas, overwriting `finalUsage` causes all intermediate steps' tokens to be lost. Only the final completion's usage reached `appendProviderTurnUsage`.
+
+### Remediation
+
+- Accumulate prompt, cached, output, and reasoning tokens across all loop steps before invoking `appendProviderTurnUsage`.
+
+---
+
+## 17. ChatLLM Credit vs Subscription Separation in Usage Reporting
+
+### Problem & Motivation
+
+Subscription models (Codex, Antigravity) are paid flat-rate monthly subscriptions where token counts represent raw throughput and API cost is an estimated figure based on standard API rates. In contrast, ChatLLM (Abacus / RouteLLM) is metered on a prepaid compute-credits basis where each request consumes compute points ($0.0005 / credit).
+Mixing ChatLLM into the top-level token and cost figures skewed subscription token metrics and misrepresented how ChatLLM is billed.
+
+### Architecture & Implementation
+
+1. **Billing & Valuation Constants**:
+   - Added `ABACUS_CREDIT_COST_USD = 0.0005` in `packages/contracts/src/usage.ts` alongside helper utilities `abacusCreditsToUsd` and `usdToAbacusCredits`.
+   - Added optional `credits` field to `UsageBucket` and updated model normalizations.
+2. **Turn Credit Measurement**:
+   - In `apps/server/src/provider/Layers/abacusUsageLimits.ts`, exported `fetchAbacusComputePoints` to probe the Abacus `_getOrganizationComputePoints` endpoint before and after an execution turn.
+   - In `apps/server/src/provider/Layers/AbacusAdapter.ts`, accumulated tokens across agent tool execution loops (fixing the clobbering bug) and computed credit consumption from the compute points delta (falling back to model rate / `ABACUS_CREDIT_COST_USD` if points delta is zero).
+3. **Usage Transcript & Storage**:
+   - Persisted `credits` in `providerTurnUsageWriter.ts` and extracted it in `usageTranscripts.ts` and `usageAggregation.ts`.
+4. **Subscription Totals Separation**:
+   - In `packages/shared/src/usageMerge.ts`, calculated separate subscription totals (`subscriptionCostUsd`, `subscriptionTotalTokens`, `subscriptionTotals`, `subscriptionCacheSavingsUsd`) that only aggregate Codex and Antigravity (excluding Abacus / ChatLLM).
+5. **UI Structure in `UsagePage.tsx`**:
+   - **Hero Card**: Displays `subscriptionCostUsd` and `subscriptionTotalTokens` with descriptive subtitle reflecting subscription usage.
+   - **Provider Card**: Shows credit count for Abacus (`X credits · Y tokens`) while subscription providers show cost and token share.
+   - **Totals Row**: Shows subscription model totals (Processed tokens, Cached input, Uncached input, Output, Cache savings).
+   - **Model Breakdown**: Split into two distinct sections:
+     - _Subscription Models (Codex & Antigravity)_: Shows Model, Cost, Cost Share, and Tokens.
+     - _ChatLLM Models (Credit-Based)_: Shows Model with ChatLLM badge, Cost, Credits used, and Tokens.
+
+## 18. Codex credit backfill correction
+
+- The first 90-day Codex backfill was invalid because it treated an account-wide balance snapshot as if it belonged to each rollout file. Parallel and forked sessions therefore counted the same balance drop more than once.
+- Scan-cache version 5 stores raw Codex credit balances. The server reconciles all retained Codex records in timestamp order before aggregation, including balance changes carried by duplicate token payloads.
+- `codex-auto-review` is excluded from credit cost and USD cost. Its balance snapshot does not move the paid baseline, so a concurrent paid drop is counted on the next paid record.
+- The corrected local corpus result is about 1,334 credits, or $53.37, for a balance change from 2,500 to about 1,166.

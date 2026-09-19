@@ -18,12 +18,13 @@ export interface RecordProviderTurnUsageInput {
     readonly outputTokens: number;
     readonly reasoningTokens?: number;
   };
+  readonly credits?: number | undefined;
   readonly timestamp?: Date | string | number;
   readonly timestampMs?: number;
 }
 
 export async function appendProviderTurnUsage(input: RecordProviderTurnUsageInput): Promise<void> {
-  const { stateDir, provider, sessionId, model, tokens, turnId } = input;
+  const { stateDir, provider, sessionId, model, tokens, turnId, credits } = input;
   if (!sessionId || !model || !stateDir) return;
 
   const uncachedInput = Math.max(0, Math.round(tokens.inputTokens || 0));
@@ -32,7 +33,13 @@ export async function appendProviderTurnUsage(input: RecordProviderTurnUsageInpu
   const output = Math.max(0, Math.round(tokens.outputTokens || 0));
   const reasoning = Math.max(0, Math.round(tokens.reasoningTokens || 0));
 
-  if (uncachedInput === 0 && cachedInput === 0 && cacheCreation === 0 && output === 0) {
+  if (
+    uncachedInput === 0 &&
+    cachedInput === 0 &&
+    cacheCreation === 0 &&
+    output === 0 &&
+    (credits === undefined || credits === 0)
+  ) {
     return;
   }
 
@@ -93,6 +100,7 @@ export async function appendProviderTurnUsage(input: RecordProviderTurnUsageInpu
             cache_write_input_tokens: cacheCreation,
             output_tokens: output,
             reasoning_output_tokens: reasoning,
+            ...(credits !== undefined ? { credits: Math.round(credits * 100) / 100 } : {}),
             ...(turnId ? { turn_id: turnId } : {}),
           },
         },

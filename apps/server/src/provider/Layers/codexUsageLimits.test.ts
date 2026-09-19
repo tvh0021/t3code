@@ -2,6 +2,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  codexCreditsToContract,
   codexRateLimitsFailureMessage,
   codexRateLimitsToLimits,
   codexRateLimitsToUpdate,
@@ -110,6 +111,26 @@ describe("codexRateLimitsToLimits", () => {
       }).windows,
     ).toEqual([]);
   });
+
+  it("extracts credits and carries them onto the limits", () => {
+    expect(
+      codexRateLimitsToLimits({
+        checkedAt,
+        snapshot: {
+          primary: { usedPercent: 10, windowDurationMins: 300 },
+          credits: {
+            hasCredits: true,
+            unlimited: false,
+            balance: "1169.8594240000",
+          },
+        },
+      }).credits,
+    ).toEqual({
+      hasCredits: true,
+      unlimited: false,
+      balance: 1169.86,
+    });
+  });
 });
 
 describe("codexRateLimitsToUpdate", () => {
@@ -155,6 +176,43 @@ describe("codexRateLimitsToUpdate", () => {
       },
     ]);
   });
+
+  it("carries credits when updated", () => {
+    expect(
+      codexRateLimitsToUpdate({
+        credits: {
+          hasCredits: true,
+          unlimited: false,
+          balance: "1150.25",
+        },
+      }),
+    ).toEqual({
+      windows: [],
+      credits: {
+        hasCredits: true,
+        unlimited: false,
+        balance: 1150.25,
+      },
+    });
+  });
+});
+
+describe("codexCreditsToContract", () => {
+  it("converts snapshot credits to contract format", () => {
+    expect(
+      codexCreditsToContract({
+        hasCredits: true,
+        unlimited: false,
+        balance: "1169.8594240000",
+      }),
+    ).toEqual({
+      hasCredits: true,
+      unlimited: false,
+      balance: 1169.86,
+    });
+    expect(codexCreditsToContract(null)).toBeUndefined();
+    expect(codexCreditsToContract(undefined)).toBeUndefined();
+  });
 });
 
 describe("codexRateLimitsFailureMessage", () => {
@@ -171,6 +229,9 @@ describe("codexRateLimitsFailureMessage", () => {
   });
 
   it("phrases a dead process differently from a bad answer", () => {
+    expect(
+      codexRateLimitsFailureMessage(new CodexErrors.CodexAppServerSpawnError({ cause: null })),
+    ).toBe("Codex could not be started to read usage.");
     expect(
       codexRateLimitsFailureMessage(new CodexErrors.CodexAppServerProcessExitedError({ code: 1 })),
     ).toBe("Codex exited before it could report usage.");

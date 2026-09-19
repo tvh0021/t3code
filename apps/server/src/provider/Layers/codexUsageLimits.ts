@@ -8,6 +8,7 @@
  */
 import type {
   ProviderUsageLimitsUpdate,
+  ServerProviderCredits,
   ServerProviderResetCredits,
   ServerProviderUsageLimits,
   ServerProviderUsageWindow,
@@ -31,6 +32,11 @@ export interface CodexRateLimitSnapshot {
   readonly rateLimitReachedType?: string | null;
   readonly primary?: CodexRateLimitWindow | null;
   readonly secondary?: CodexRateLimitWindow | null;
+  readonly credits?: {
+    readonly hasCredits: boolean;
+    readonly unlimited: boolean;
+    readonly balance?: string | null;
+  } | null;
 }
 
 /** Structural view of the read response's `rateLimitResetCredits`. */
@@ -58,43 +64,75 @@ function kindForDuration(mins: number): ServerProviderUsageWindow["kind"] {
   return "session";
 }
 
-function labelForKind(kind: ServerProviderUsageWindow["kind"]): string {
-  return kind === "session" ? "Session" : kind === "weekly" ? "Weekly" : "Monthly";
+function labelForDuration(mins: number): string {
+  if (mins >= MONTH_MINS) return "Monthly";
+  if (mins >= WEEK_MINS) return "Weekly";
+  return "Session";
 }
 
-/**
- * `primary` / `secondary` are positions, not durations. Codex usually sends
- * `windowDurationMins`; when it does not, paid plans expose the 5-hour and
- * weekly pair and Free/Go expose one monthly allowance.
- */
+function windowDurationMins(
+  window: CodexRateLimitWindow,
+  fallbackMins: number,
+): number | undefined {
+  if (
+    typeof window.windowDurationMins === "number" &&
+    Number.isFinite(window.windowDurationMins) &&
+    window.windowDurationMins > 0
+  ) {
+    return window.windowDurationMins;
+  }
+  return fallbackMins;
+}
+
+function mapWindow(
+  id: string,
+  window: CodexRateLimitWindow,
+  fallbackMins: number,
+): ServerProviderUsageWindow {
+  const duration = windowDurationMins(window, fallbackMins);
+  const resetsAt = isoFromEpochSeconds(window.resetsAt);
+  return {
+    id,
+    kind: kindForDuration(duration ?? fallbackMins),
+    label: labelForDuration(duration ?? fallbackMins),
+    usedPercent: clampPercent(window.usedPercent),
+    ...(resetsAt ? { resetsAt } : {}),
+    ...(duration ? { windowDurationMins: duration } : {}),
+  };
+}
+
 function codexRateLimitsToWindows(
   snapshot: CodexRateLimitSnapshot,
-): ReadonlyArray<ServerProviderUsageWindow> {
-  // Show the main allowance only. Model-specific notifications (such as Spark)
-  // must not replace its primary/secondary rows. Older CLIs omit the limit id.
+): readonly ServerProviderUsageWindow[] {
+  // Spark notifications arrive on the same channel but describe a separate
+  // allowance (`limitId === "codex_bengalfox"`). Never map them: they would
+  // clobber the primary/secondary windows the main model runs against.
   if (snapshot.limitId && snapshot.limitId !== "codex") return [];
-  const isMonthlyPlan = snapshot.planType === "free" || snapshot.planType === "go";
-  const positions = [
-    ["primary", snapshot.primary, isMonthlyPlan ? MONTH_MINS : SESSION_MINS],
-    ["secondary", snapshot.secondary, WEEK_MINS],
-  ] as const;
   const windows: ServerProviderUsageWindow[] = [];
-  for (const [id, window, fallbackMins] of positions) {
-    if (!window || !Number.isFinite(window.usedPercent)) continue;
-    const windowDurationMins =
-      typeof window.windowDurationMins === "number" ? window.windowDurationMins : fallbackMins;
-    const kind = kindForDuration(windowDurationMins);
-    const resetsAt = isoFromEpochSeconds(window.resetsAt);
-    windows.push({
-      id,
-      kind,
-      label: labelForKind(kind),
-      usedPercent: clampPercent(window.usedPercent),
-      windowDurationMins,
-      ...(resetsAt ? { resetsAt } : {}),
-    });
+  if (snapshot.primary) {
+    // Primary with no duration is 5h on Plus/Team/Enterprise and 30d on Free/Go.
+    const fallbackMins =
+      snapshot.planType === "free" || snapshot.planType === "go" ? MONTH_MINS : SESSION_MINS;
+    windows.push(mapWindow("primary", snapshot.primary, fallbackMins));
+  }
+  if (snapshot.secondary) {
+    windows.push(mapWindow("secondary", snapshot.secondary, WEEK_MINS));
   }
   return windows;
+}
+
+export function codexCreditsToContract(
+  credits: CodexRateLimitSnapshot["credits"],
+): ServerProviderCredits | undefined {
+  if (!credits) return undefined;
+  const balanceNum = typeof credits.balance === "string" ? parseFloat(credits.balance) : undefined;
+  return {
+    hasCredits: credits.hasCredits,
+    unlimited: credits.unlimited,
+    ...(balanceNum !== undefined && Number.isFinite(balanceNum)
+      ? { balance: Math.round(balanceNum * 100) / 100 }
+      : {}),
+  };
 }
 
 export function codexResetCreditsToContract(
@@ -124,13 +162,16 @@ export function codexRateLimitsToLimits(input: {
 }): ServerProviderUsageLimits {
   const resetCredits = codexResetCreditsToContract(input.resetCredits);
   // Select the main bucket explicitly; the legacy snapshot can name another limit.
-  const windows = codexRateLimitsToWindows(input.rateLimitsByLimitId?.codex ?? input.snapshot);
+  const mainSnapshot = input.rateLimitsByLimitId?.codex ?? input.snapshot;
+  const windows = codexRateLimitsToWindows(mainSnapshot);
+  const credits = codexCreditsToContract(mainSnapshot.credits ?? input.snapshot.credits);
   return {
     ...makeUsageLimits({
       checkedAt: input.checkedAt,
       windows,
     }),
     ...(resetCredits ? { resetCredits } : {}),
+    ...(credits ? { credits } : {}),
   };
 }
 
@@ -138,7 +179,10 @@ export function codexRateLimitsToUpdate(
   snapshot: CodexRateLimitSnapshot,
 ): ProviderUsageLimitsUpdate | undefined {
   const windows = codexRateLimitsToWindows(snapshot);
-  return windows.length > 0 ? { windows } : undefined;
+  const credits = codexCreditsToContract(snapshot.credits);
+  return windows.length > 0 || credits !== undefined
+    ? { windows, ...(credits !== undefined ? { credits } : {}) }
+    : undefined;
 }
 
 /**
@@ -182,6 +226,7 @@ export function mergeCodexRateLimits(
       : {}),
     ...(update.primary !== undefined ? { primary: update.primary } : {}),
     ...(update.secondary !== undefined ? { secondary: update.secondary } : {}),
+    ...(update.credits !== undefined ? { credits: update.credits } : {}),
   };
 }
 

@@ -3,8 +3,10 @@ import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
+  ABACUS_CREDIT_COST_USD,
   type CanonicalItemType,
   EventId,
+  normalizeUsageModel,
   ProviderDriverKind,
   type ProviderInstanceId,
   type ProviderRuntimeEvent,
@@ -25,10 +27,13 @@ import {
 } from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import { appendProviderTurnUsage } from "../../usage/providerTurnUsageWriter.ts";
+import { fetchAbacusComputePoints, type AbacusComputePointsSnapshot } from "./abacusUsageLimits.ts";
+import { STATIC_FALLBACK_RATES } from "../../usage/usagePricing.ts";
 
 const PROVIDER = ProviderDriverKind.make("abacus");
 const MAX_BUFFER = 1024 * 1024;
 const MAX_TURN_STEPS = 20;
+let lastKnownComputePoints: AbacusComputePointsSnapshot | null = null;
 export const MAX_TOOL_OUTPUT_BYTES = 30 * 1024;
 export const MAX_HEAD_LINES = 200;
 export const MAX_TAIL_LINES = 300;
@@ -775,7 +780,9 @@ export const makeAbacusAdapter = (
         }
 
         if (finishReason) finalFinishReason = finishReason;
-        if (usage !== undefined) finalUsage = usage;
+        if (usage !== undefined) {
+          finalUsage = usage;
+        }
 
         const toolCalls: ToolCall[] = Array.from(toolCallAccumulators.entries())
           .sort(([a], [b]) => a - b)
@@ -993,6 +1000,27 @@ export const makeAbacusAdapter = (
       }
 
       if (options.stateDir) {
+        const currentPoints = yield* Effect.promise(() =>
+          fetchAbacusComputePoints(options.apiKey, undefined, fetch, 3000),
+        ).pipe(Effect.catchCause(() => Effect.succeed(null)));
+
+        let credits: number | undefined;
+        if (currentPoints) {
+          if (lastKnownComputePoints) {
+            const usageDelta =
+              (currentPoints.currMonthUsage ?? 0) - (lastKnownComputePoints.currMonthUsage ?? 0);
+            const leftDelta =
+              (lastKnownComputePoints.computePointsLeft ?? 0) -
+              (currentPoints.computePointsLeft ?? 0);
+            if (usageDelta > 0) {
+              credits = Math.round(usageDelta * 100) / 100;
+            } else if (leftDelta > 0) {
+              credits = Math.round(leftDelta * 100) / 100;
+            }
+          }
+          lastKnownComputePoints = currentPoints;
+        }
+
         const usageObj = finalUsage as
           | {
               prompt_tokens?: number;
@@ -1022,20 +1050,35 @@ export const makeAbacusAdapter = (
           outputTokens = 1;
         }
 
-        if (uncachedInput > 0 || outputTokens > 0) {
+        const turnModel = context.session.model || options.defaultModel;
+        if (credits === undefined || credits === 0) {
+          const normModel = normalizeUsageModel(turnModel);
+          const rate =
+            STATIC_FALLBACK_RATES.get(normModel) ?? STATIC_FALLBACK_RATES.get("route-llm");
+          if (rate) {
+            const cost =
+              uncachedInput * rate.inputCostPerToken +
+              cachedTokens * rate.cacheReadCostPerToken +
+              outputTokens * rate.outputCostPerToken;
+            credits = Math.round((cost / ABACUS_CREDIT_COST_USD) * 100) / 100;
+          }
+        }
+
+        if (uncachedInput > 0 || outputTokens > 0 || (credits !== undefined && credits > 0)) {
           yield* Effect.promise(() =>
             appendProviderTurnUsage({
               stateDir: options.stateDir!,
               provider: "abacus",
               sessionId: input.threadId,
               turnId,
-              model: context.session.model || options.defaultModel,
+              model: turnModel,
               tokens: {
                 inputTokens: uncachedInput,
                 cachedInputTokens: cachedTokens,
                 outputTokens,
                 reasoningTokens,
               },
+              ...(credits !== undefined ? { credits } : {}),
             }),
           ).pipe(Effect.catchCause(() => Effect.void));
         }

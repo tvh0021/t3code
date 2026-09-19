@@ -63,7 +63,10 @@ export function applyUsageLimitsUpdate(input: {
   readonly checkedAt: string;
 }): ServerProviderUsageLimits | undefined {
   const { previous, update } = input;
-  if (update.windows.length === 0 || previous?.unavailable?.reason === "unsupported") {
+  if (
+    (update.windows.length === 0 && update.credits === undefined) ||
+    previous?.unavailable?.reason === "unsupported"
+  ) {
     return previous;
   }
   const merged = new Map(previous?.windows.map((window) => [window.id, window] as const));
@@ -88,12 +91,27 @@ export function applyUsageLimitsUpdate(input: {
       changed = true;
     }
   }
+  if (update.credits !== undefined) {
+    if (
+      previous?.credits === undefined ||
+      previous.credits.balance !== update.credits.balance ||
+      previous.credits.hasCredits !== update.credits.hasCredits ||
+      previous.credits.unlimited !== update.credits.unlimited
+    ) {
+      changed = true;
+    }
+  }
   if (!changed && previous !== undefined && previous.unavailable === undefined) {
     return previous;
   }
   return {
     ...makeUsageLimits({ checkedAt: input.checkedAt, windows: merged.values() }),
     ...(previous?.resetCredits !== undefined ? { resetCredits: previous.resetCredits } : {}),
+    ...(update.credits !== undefined
+      ? { credits: update.credits }
+      : previous?.credits !== undefined
+        ? { credits: previous.credits }
+        : {}),
   };
 }
 

@@ -23,7 +23,9 @@ import type { CodexScanState, UsageRecord } from "./usageTranscripts.ts";
 // entries would keep serving double-counted records forever.
 // v3: entries carry the parse position and reducer state so a grown file
 // re-parses only its appended bytes instead of starting over.
-const USAGE_SCAN_CACHE_VERSION = 3 as const;
+// v4: entries serialize credit consumption for credit-based turns.
+// v5: entries serialize raw creditBalance for chronological reconciliation across rollouts.
+export const USAGE_SCAN_CACHE_VERSION = 5 as const;
 
 export interface CachedFile {
   readonly size: number;
@@ -58,6 +60,8 @@ type SerializedRecord = readonly [
   reasoningTokens: number,
   dedupeKey: string | null,
   reportedCostUsd: number | null,
+  credits?: number | null,
+  creditBalance?: number | null,
 ];
 
 interface SerializedFile {
@@ -109,6 +113,8 @@ export function encodeScanCache(cache: ScanCache): SerializedCache {
     record.totals.reasoningTokens,
     record.dedupeKey,
     record.reportedCostUsd,
+    record.credits ?? null,
+    record.creditBalance ?? null,
   ];
 
   const files: Record<string, SerializedFile> = {};
@@ -148,24 +154,18 @@ export function decodeScanCache(document: unknown): ScanCache {
   if (!isRecordArray(root.models) || !isRecordArray(root.sessions)) return cache;
   if (typeof root.files !== "object" || root.files === null) return cache;
 
-  // The intern tables must be all strings: a numeric entry would pass the
-  // undefined guard below, land in a record's model, and crash the aggregate
-  // at lookupRate. A corrupt table rejects the whole cache.
   if (!root.models.every((value) => typeof value === "string")) return cache;
   if (!root.sessions.every((value) => typeof value === "string")) return cache;
   const models = root.models as readonly string[];
   const sessions = root.sessions as readonly string[];
 
-  // Any corrupt row disqualifies the whole entry. Keeping the survivors
-  // under the original (size, mtime) would read as a valid warm hit and the
-  // file would never be re-parsed, silently losing the dropped rows' usage.
   const decodeRecords = (
     rows: readonly unknown[],
     provider: UsageProviderKind,
   ): UsageRecord[] | null => {
     const records: UsageRecord[] = [];
     for (const row of rows) {
-      if (!isRecordArray(row) || row.length < 10) return null;
+      if (!Array.isArray(row) || row.length < 10) return null;
       const [
         timestampMs,
         modelIndex,
@@ -177,7 +177,9 @@ export function decodeScanCache(document: unknown): ScanCache {
         reasoning,
         dedupeKey,
         reportedCostUsd,
-      ] = row as SerializedRecord;
+        credits,
+        creditBalance,
+      ] = row as unknown as SerializedRecord;
 
       const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
       if (
@@ -206,6 +208,10 @@ export function decodeScanCache(document: unknown): ScanCache {
           reasoningTokens: reasoning,
         },
         reportedCostUsd: typeof reportedCostUsd === "number" ? reportedCostUsd : null,
+        credits: typeof credits === "number" && Number.isFinite(credits) ? credits : null,
+        ...(typeof creditBalance === "number" && Number.isFinite(creditBalance)
+          ? { creditBalance }
+          : {}),
         dedupeKey: typeof dedupeKey === "string" ? dedupeKey : null,
       });
     }
@@ -216,7 +222,14 @@ export function decodeScanCache(document: unknown): ScanCache {
     if (typeof raw !== "object" || raw === null) continue;
     const entry = raw as Partial<SerializedFile>;
     if (typeof entry.s !== "number" || typeof entry.m !== "number") continue;
-    if (entry.p !== "claude" && entry.p !== "codex" && entry.p !== "grok") continue;
+    if (
+      entry.p !== "claude" &&
+      entry.p !== "codex" &&
+      entry.p !== "grok" &&
+      entry.p !== "antigravity" &&
+      entry.p !== "abacus"
+    )
+      continue;
     if (!isRecordArray(entry.r) || !isRecordArray(entry.t)) continue;
     // Position fields feed byte offsets and a Buffer allocation in the reader,
     // so anything outside their real ranges must reject the entry: a bogus
@@ -263,9 +276,10 @@ export function decodeScanCache(document: unknown): ScanCache {
 }
 
 /**
- * Validates a persisted Codex reducer state. Returns `undefined` for a corrupt
- * value, which disqualifies the entry: resuming with a bad state would attach
- * appended usage to the wrong model or replay fork-copied history.
+ * Validates a decoded `cs` object against `CodexScanState`.
+ *
+ * Missing fields or un-finite numbers return `undefined` to signal a malformed
+ * entry; a valid state returns a defensively copied instance.
  */
 function decodeCodexState(value: unknown): CodexScanState | null | undefined {
   if (value === null) return null;
@@ -278,7 +292,10 @@ function decodeCodexState(value: unknown): CodexScanState | null | undefined {
     typeof state.sawSessionMeta !== "boolean" ||
     typeof state.suppressingForkCopies !== "boolean" ||
     typeof state.forkCopyAnchorMs !== "number" ||
-    !Number.isFinite(state.forkCopyAnchorMs)
+    !Number.isFinite(state.forkCopyAnchorMs) ||
+    (state.lastCreditBalance !== undefined &&
+      state.lastCreditBalance !== null &&
+      (typeof state.lastCreditBalance !== "number" || !Number.isFinite(state.lastCreditBalance)))
   ) {
     return undefined;
   }
@@ -289,6 +306,7 @@ function decodeCodexState(value: unknown): CodexScanState | null | undefined {
     sawSessionMeta: state.sawSessionMeta,
     suppressingForkCopies: state.suppressingForkCopies,
     forkCopyAnchorMs: state.forkCopyAnchorMs,
+    lastCreditBalance: typeof state.lastCreditBalance === "number" ? state.lastCreditBalance : null,
   };
 }
 

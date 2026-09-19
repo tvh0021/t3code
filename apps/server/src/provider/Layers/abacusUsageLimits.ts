@@ -249,3 +249,46 @@ export const readAbacusUsageLimits = Effect.fn("readAbacusUsageLimits")(function
       }),
   });
 });
+
+export interface AbacusComputePointsSnapshot {
+  readonly computePointsLeft?: number | undefined;
+  readonly currMonthUsage?: number | undefined;
+}
+
+export async function fetchAbacusComputePoints(
+  apiKey?: string,
+  sessionCookie?: string,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  timeoutMs = 5000,
+): Promise<AbacusComputePointsSnapshot | null> {
+  if (!apiKey && !sessionCookie) return null;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (sessionCookie) {
+    headers.Cookie = sessionCookie.startsWith("session=")
+      ? sessionCookie
+      : `session=${sessionCookie}`;
+  }
+  if (apiKey) {
+    headers.apiKey = apiKey;
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+  try {
+    const res = await fetchFn("https://apps.abacus.ai/api/_getOrganizationComputePoints", {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as AbacusComputePointsResponse;
+    const result = data?.result;
+    if (!result) return null;
+    const computePointsLeft = result.computePointsLeft ?? result.curr_month_avail_points;
+    const currMonthUsage = result.curr_month_usage;
+    return {
+      ...(computePointsLeft !== undefined ? { computePointsLeft } : {}),
+      ...(currMonthUsage !== undefined ? { currMonthUsage } : {}),
+    };
+  } catch {
+    return null;
+  }
+}

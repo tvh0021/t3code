@@ -41,6 +41,16 @@ export const ServerProviderResetCredits = Schema.Struct({
 export type ServerProviderResetCredits = typeof ServerProviderResetCredits.Type;
 
 /**
+ * Available credits a provider reports for the account (e.g. Codex API/account credits).
+ */
+export const ServerProviderCredits = Schema.Struct({
+  hasCredits: Schema.Boolean,
+  unlimited: Schema.Boolean,
+  balance: Schema.optional(Schema.Number),
+});
+export type ServerProviderCredits = typeof ServerProviderCredits.Type;
+
+/**
  * Subscription usage the provider knows about the signed-in account.
  *
  * `unavailable` distinguishes an account that can never report windows (API
@@ -51,6 +61,7 @@ export const ServerProviderUsageLimits = Schema.Struct({
   checkedAt: IsoDateTime,
   windows: ForwardCompatibleArray(ServerProviderUsageWindow),
   resetCredits: Schema.optional(ServerProviderResetCredits),
+  credits: Schema.optional(ServerProviderCredits),
   unavailable: Schema.optional(
     Schema.Struct({
       reason: Schema.Literals(["unsupported", "probeFailed"]),
@@ -68,6 +79,7 @@ export type ServerProviderUsageLimits = typeof ServerProviderUsageLimits.Type;
  */
 export const ProviderUsageLimitsUpdate = Schema.Struct({
   windows: Schema.Array(ServerProviderUsageWindow),
+  credits: Schema.optional(ServerProviderCredits),
 });
 export type ProviderUsageLimitsUpdate = typeof ProviderUsageLimitsUpdate.Type;
 
