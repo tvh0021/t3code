@@ -17,7 +17,7 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   claude: "Claude Code",
   codex: "Codex",
   grok: "Grok Build",
-  antigravity: "Anti Gravity",
+  antigravity: "Antigravity",
   abacus: "ChatLLM",
 };
 

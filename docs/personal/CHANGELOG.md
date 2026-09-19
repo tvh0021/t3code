@@ -25,3 +25,4 @@ A concise, chronological record of custom changes made to this personal fork of 
 - **ChatLLM Point Pricing**: Verified compute point conversion rate and local disk logging behavior.
 - **Table & Inline Math**: Added LaTeX rendering support inside markdown tables and bold/italic wrappers.
 - **Unified Gemini 3.8 Flash Accounting**: Unified usage accounting across all Gemini 3.8 Flash tiers (`high`, `medium`, `low`, `tiered`) into a single model entry.
+- **Antigravity Usage Label**: Standardized usage presentation label from "Anti Gravity" to "Antigravity" across web and mobile.
