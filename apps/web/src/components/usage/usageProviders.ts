@@ -31,7 +31,7 @@ export const PROVIDER_PRESENTATION = {
     mark: GrokIcon,
   },
   antigravity: {
-    label: "Anti Gravity",
+    label: "Antigravity",
     color: "#4285f4",
     mark: AntigravityIcon,
   },
