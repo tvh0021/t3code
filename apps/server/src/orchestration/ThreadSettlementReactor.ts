@@ -13,6 +13,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -276,14 +277,19 @@ export const make = Effect.gen(function* () {
             discard: true,
           });
         }).pipe(
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.failCause(cause)
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
+            const error = Option.getOrNull(Cause.findErrorOption(cause));
+            return GitManager.isSourceControlProviderAuthenticationError(error)
+              ? Effect.logDebug(
+                  "automatic thread settlement skipped; source-control provider is unauthenticated",
+                  { threadIds: group.map((thread) => thread.id) },
+                )
               : Effect.logWarning("automatic thread settlement skipped", {
                   threadIds: group.map((thread) => thread.id),
                   cause: Cause.pretty(cause),
-                }),
-          ),
+                });
+          }),
         ),
       { concurrency: 8, discard: true },
     );

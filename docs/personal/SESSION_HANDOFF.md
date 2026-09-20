@@ -1,4 +1,4 @@
-# Session handoff: ChatLLM and Codex credit accounting
+# Session handoff: ChatLLM, Codex, and Zed ACP investigation
 
 ## What changed
 
@@ -23,3 +23,40 @@ A redacted scan of the local rollout corpus found 476 rollout files. The account
 - 151 focused server/shared usage tests pass, including regression tests for concurrent rollouts, duplicate balance snapshots, auto-review, subscription pricing, and cache round trips.
 - Server and shared package typechecks pass. The repository still emits its existing Effect suggestions.
 - `git diff --check` passes.
+
+## Zed ACP integration status
+
+### User need
+
+- Add Zed as a T3 Code provider whose sessions run through a headless ACP server.
+- Keep Claude Sonnet 5 and GPT 5.6 Luna as the built-in Zed model choices.
+- Use the user's stored Zed credentials for hosted `zed.dev` models. The ACP handshake itself does not provide authentication.
+
+### Implementation status
+
+- T3 Code contains a development Zed provider driver, provider snapshot and health probe, ACP session adapter, model selection, streamed content and thought events, tool lifecycle events, permission requests, elicitation, slash-command dispatch, rollback rejection, and cleanup.
+- The built-in catalog contains `zed.dev/claude-sonnet-5` and `zed.dev/gpt-5.6-luna`. The adapter forwards the selected model to the headless Zed binary.
+- The Zed fork adds `zed-acp-server` under `crates/eval_cli`. It reuses Zed's `NativeAgent` and `AcpThread`, communicates over JSON-RPC on standard input and output, and supports worktree, data-directory, and model arguments.
+- The headless server authenticates with stored Zed credentials, waits for the selected model to become available, and sets `agent.default_model` before creating a session.
+- Zed ACP is not listed in the changelog because the live flow is not yet reliable.
+
+### Current verification
+
+- Fake-ACP tests cover streaming, permission requests, elicitation, and context-token updates.
+- The scoped server typecheck exits 0 with no Zed-related TypeScript errors.
+- The real-binary integration test is blocked because this environment cannot resolve `cloud.zed.dev`.
+- A live session previously crashed after the user approved a permission request. The live client must be retested before this integration is called working.
+
+### Repository state
+
+- T3 Code: branch `feat/zed-integration`.
+- Zed fork: branch `integration/zed-abacus`, pushed through commit `3083c5bde9`.
+- The Zed fork still has an uncommitted `README.md` review marker. Leave it untouched unless the user gives separate direction.
+
+### Open questions and pending work
+
+- Fix and verify the approved-permission session crash.
+- Find a supported Zed billing endpoint before showing account spend in Limits.
+- Verify the context-window meter in the live client.
+- Track these items in `docs/personal/ISSUE_TRACKER.md`.
+- If the ACP server changes, rebuild the Zed binary and rerun the focused T3 tests against the real binary.

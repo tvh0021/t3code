@@ -50,6 +50,7 @@ export function barColor(driver: ServerProvider["driver"]): string {
     driver === "codex" ? "codex" : driver === "claudeAgent" ? "claude" : undefined;
   if (driver === "abacus") return "#8b5cf6";
   if (driver === "antigravity") return "#4285f4";
+  if (driver === "zed") return "#70a5ff";
   return kind ? PROVIDER_PRESENTATION[kind].color : "var(--foreground)";
 }
 

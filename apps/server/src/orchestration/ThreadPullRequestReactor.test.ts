@@ -4,6 +4,7 @@ import {
   GitManagerError,
   ProjectId,
   ProviderInstanceId,
+  SourceControlProviderError,
   ThreadId,
   TurnId,
   type OrchestrationCommand,
@@ -21,6 +22,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -28,6 +30,7 @@ import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 
 import { GitManager, type GitBranchPullRequest } from "../git/GitManager.ts";
+import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import { PullRequestService } from "../pullRequest/PullRequestService.ts";
 import { RepositoryIdentityResolver } from "../project/RepositoryIdentityResolver.ts";
 import { ServerActivation } from "../serverActivation.ts";
@@ -242,6 +245,46 @@ const makeHarness = Effect.fn("makeThreadPullRequestHarness")(function* (options
 });
 
 describe("ThreadPullRequestReactor", () => {
+  it.effect("does not warn when branch PR lookup is unauthenticated", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fixture = yield* makeHarness({
+          threads: [thread("unauthenticated")],
+          branchPullRequest: ({ cwd }) =>
+            Effect.fail(
+              new SourceControlProviderError({
+                provider: "github",
+                operation: "listChangeRequests",
+                command: "gh",
+                cwd,
+                detail: "GitHub CLI is not authenticated.",
+                cause: new GitHubCli.GitHubCliAuthenticationError({
+                  command: "gh",
+                  cwd,
+                  cause: new Error("gh is not authenticated"),
+                }),
+              }),
+            ),
+        });
+        const logs: string[] = [];
+        const logger = Logger.make<unknown, void>(({ message }) => {
+          logs.push(String(message));
+        });
+
+        yield* Effect.gen(function* () {
+          yield* fixture.start();
+          expect(
+            logs.filter((message) => message.includes("thread branch pull request lookup failed")),
+          ).toHaveLength(0);
+        }).pipe(
+          Effect.provide(
+            Layer.merge(fixture.layer, Logger.layer([logger], { mergeWithExisting: false })),
+          ),
+        );
+      }),
+    ),
+  );
+
   it.effect("discovers saved branch PRs without a client and shares branch lookups", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -308,10 +308,15 @@ type AcpStartState =
 interface AcpAssistantSegmentState {
   readonly nextSegmentIndex: number;
   readonly activeItemId?: string;
+  readonly activeMessageId?: string;
 }
 
 interface EnsureActiveAssistantSegmentResult {
   readonly itemId: string;
+  readonly completedEvent?: Extract<
+    AcpParsedSessionEvent,
+    { readonly _tag: "AssistantItemCompleted" }
+  >;
   readonly startedEvent?: Extract<AcpParsedSessionEvent, { readonly _tag: "AssistantItemStarted" }>;
 }
 
@@ -1175,10 +1180,16 @@ const handleSessionUpdate = ({
     }
     for (const event of parsed.events) {
       if (event._tag === "ToolCallUpdated") {
-        yield* closeActiveAssistantSegment({
-          queue,
-          assistantSegmentRef,
-        });
+        // ACP agents that provide a messageId may continue the same assistant
+        // message after tool progress updates. Keep that segment open and let
+        // a changed messageId create the next one; older agents without ids
+        // retain the existing tool-boundary behavior.
+        if (!(yield* Ref.get(assistantSegmentRef)).activeMessageId) {
+          yield* closeActiveAssistantSegment({
+            queue,
+            assistantSegmentRef,
+          });
+        }
         const { merged, decision } = yield* Ref.modify(toolCallsRef, (current) => {
           const tracked = current.get(event.toolCall.toolCallId);
           const previous = tracked?.state;
@@ -1225,6 +1236,7 @@ const handleSessionUpdate = ({
           assistantSegmentRef,
           sessionId: params.sessionId,
           assistantItemRuntimeId,
+          ...(event.messageId !== undefined ? { messageId: event.messageId } : {}),
         });
         yield* Queue.offer(queue, {
           ...event,
@@ -1257,22 +1269,48 @@ const ensureActiveAssistantSegment = ({
   assistantSegmentRef,
   sessionId,
   assistantItemRuntimeId,
+  messageId,
 }: {
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
   readonly sessionId: string;
   readonly assistantItemRuntimeId: string;
+  readonly messageId?: string;
 }) =>
   Ref.modify<AcpAssistantSegmentState, EnsureActiveAssistantSegmentResult>(
     assistantSegmentRef,
     (current) => {
-      if (current.activeItemId) {
-        return [{ itemId: current.activeItemId }, current] as const;
+      const canMerge =
+        current.activeItemId !== undefined &&
+        (current.activeMessageId === undefined ||
+          messageId === undefined ||
+          current.activeMessageId === messageId);
+      if (canMerge) {
+        return [
+          { itemId: current.activeItemId! },
+          {
+            ...current,
+            ...(current.activeMessageId === undefined && messageId !== undefined
+              ? { activeMessageId: messageId }
+              : {}),
+          },
+        ] as const;
       }
       const itemId = assistantItemId(sessionId, assistantItemRuntimeId, current.nextSegmentIndex);
       return [
         {
           itemId,
+          ...(current.activeItemId
+            ? {
+                completedEvent: {
+                  _tag: "AssistantItemCompleted",
+                  itemId: current.activeItemId,
+                } satisfies Extract<
+                  AcpParsedSessionEvent,
+                  { readonly _tag: "AssistantItemCompleted" }
+                >,
+              }
+            : {}),
           startedEvent: {
             _tag: "AssistantItemStarted",
             itemId,
@@ -1281,14 +1319,18 @@ const ensureActiveAssistantSegment = ({
         {
           nextSegmentIndex: current.nextSegmentIndex + 1,
           activeItemId: itemId,
+          ...(messageId !== undefined ? { activeMessageId: messageId } : {}),
         } satisfies AcpAssistantSegmentState,
       ] as const;
     },
   ).pipe(
     Effect.flatMap((result) =>
-      result.startedEvent
-        ? Queue.offer(queue, result.startedEvent).pipe(Effect.as(result.itemId))
-        : Effect.succeed(result.itemId),
+      Effect.forEach(
+        [result.completedEvent, result.startedEvent].filter(
+          (event): event is NonNullable<typeof event> => event !== undefined,
+        ),
+        (event) => Queue.offer(queue, event),
+      ).pipe(Effect.as(result.itemId)),
     ),
   );
 

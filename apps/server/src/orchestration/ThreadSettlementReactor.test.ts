@@ -5,6 +5,7 @@ import {
   ProviderInstanceId,
   ProviderDriverKind,
   PullRequestOperationError,
+  SourceControlProviderError,
   ThreadId,
   type OrchestrationCommand,
   type OrchestrationEvent,
@@ -24,6 +25,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -31,6 +33,7 @@ import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 
 import { GitManager, type GitBranchPullRequest } from "../git/GitManager.ts";
+import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import {
   PullRequestService,
   type PullRequestMergeEvent,
@@ -322,6 +325,56 @@ const startHarness = Effect.fn("startThreadSettlementHarness")(function* (
 });
 
 describe("ThreadSettlementReactor", () => {
+  it.effect("does not warn when automatic settlement cannot authenticate the provider", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([makeThread("unauthenticated", { branch: "saved-feature" })]),
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            sidebarAutoSettleAfterDays: null,
+            sidebarAutoSettleOnMerge: true,
+          },
+          branchPullRequest: ({ cwd }) =>
+            Effect.fail(
+              new SourceControlProviderError({
+                provider: "github",
+                operation: "listChangeRequests",
+                command: "gh",
+                cwd,
+                detail: "GitHub CLI is not authenticated.",
+                cause: new GitHubCli.GitHubCliAuthenticationError({
+                  command: "gh",
+                  cwd,
+                  cause: new Error("gh is not authenticated"),
+                }),
+              }),
+            ),
+        });
+        const logs: string[] = [];
+        const logger = Logger.make<unknown, void>(({ message }) => {
+          logs.push(String(message));
+        });
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
+          yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+          assert.deepStrictEqual(yield* Ref.get(fixture.commands), []);
+          assert.strictEqual(
+            logs.filter((message) => message.includes("automatic thread settlement skipped"))
+              .length,
+            0,
+          );
+        }).pipe(
+          Effect.provide(
+            Layer.merge(fixture.layer, Logger.layer([logger], { mergeWithExisting: false })),
+          ),
+        );
+      }),
+    ),
+  );
+
   it("distinguishes a project that inherits the threshold from one that disables it", () => {
     const inherits = ThreadSettlementReactor.autoSettlementSettingsKey({
       ...DEFAULT_SERVER_SETTINGS,

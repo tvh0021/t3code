@@ -344,6 +344,7 @@ describe("AcpRuntimeModel", () => {
       sessionId: "session-1",
       update: {
         sessionUpdate: "agent_thought_chunk",
+        messageId: "thought-1",
         content: { type: "text", text: "Inspect the current implementation first." },
       },
     } satisfies EffectAcpSchema.SessionNotification;
@@ -351,7 +352,50 @@ describe("AcpRuntimeModel", () => {
     expect(parseSessionUpdateEvent(notification).events).toEqual([
       {
         _tag: "ThoughtDelta",
+        messageId: "thought-1",
         text: "Inspect the current implementation first.",
+        rawPayload: notification,
+      },
+    ]);
+  });
+
+  it("preserves ACP cumulative cost updates for provider adapters", () => {
+    const notification = {
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "usage_update",
+        size: 10_000,
+        used: 2_500,
+        cost: { amount: 2.5, currency: "USD" },
+      },
+    } satisfies EffectAcpSchema.SessionNotification;
+
+    expect(parseSessionUpdateEvent(notification).events).toEqual([
+      {
+        _tag: "UsageUpdated",
+        size: 10_000,
+        used: 2_500,
+        cost: { amount: 2.5, currency: "USD" },
+        rawPayload: notification,
+      },
+    ]);
+  });
+
+  it("preserves ACP assistant message ids across streamed chunks", () => {
+    const notification = {
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-1",
+        content: { type: "text", text: "The" },
+      },
+    } satisfies EffectAcpSchema.SessionNotification;
+
+    expect(parseSessionUpdateEvent(notification).events).toEqual([
+      {
+        _tag: "ContentDelta",
+        messageId: "message-1",
+        text: "The",
         rawPayload: notification,
       },
     ]);

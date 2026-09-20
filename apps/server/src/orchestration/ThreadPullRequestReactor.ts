@@ -16,6 +16,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -285,14 +286,20 @@ export const make = Effect.gen(function* () {
             { discard: true },
           );
         }).pipe(
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.failCause(cause)
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
+            const error = Option.getOrNull(Cause.findErrorOption(cause));
+            const report = GitManager.isSourceControlProviderAuthenticationError(error)
+              ? Effect.logDebug(
+                  "thread branch pull request lookup skipped; source-control provider is unauthenticated",
+                  { threadIds: group.map((thread) => thread.id) },
+                )
               : Effect.logWarning("thread branch pull request lookup failed", {
                   threadIds: group.map((thread) => thread.id),
                   cause: Cause.pretty(cause),
-                }).pipe(Effect.tap(() => Effect.sync(() => failBackfill(group)))),
-          ),
+                });
+            return report.pipe(Effect.tap(() => Effect.sync(() => failBackfill(group))));
+          }),
         ),
       { concurrency: 8, discard: true },
     );

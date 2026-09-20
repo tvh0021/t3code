@@ -149,6 +149,23 @@ const PR_LOOKUP_FAILURE_MAX_TTL = Duration.minutes(15);
 const PR_LOOKUP_CACHE_CAPACITY = 2_048;
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
+function isSourceControlAuthenticationCause(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const tag = "_tag" in error && typeof error._tag === "string" ? error._tag : null;
+  if (tag?.endsWith("AuthenticationError") === true) return true;
+  if (tag === "ForgejoCliError" && "reason" in error && error.reason === "authentication") {
+    return true;
+  }
+  return tag === "VcsProcessExitError" && "failureKind" in error
+    ? error.failureKind === "authentication"
+    : false;
+}
+
+/** Background PR reads cannot succeed until the configured source-control CLI is signed in. */
+export function isSourceControlProviderAuthenticationError(error: unknown): boolean {
+  return isSourceControlProviderError(error) && isSourceControlAuthenticationCause(error.cause);
+}
+
 /**
  * How long a failed PR lookup is cached, given the number of consecutive
  * failures for that branch.
@@ -1213,24 +1230,29 @@ export const make = Effect.gen(function* () {
         ),
       ),
       Effect.map(({ pr }) => pr),
-      Effect.catch((error) =>
-        Effect.logWarning("PR lookup failed; keeping last known PR state.").pipe(
-          Effect.annotateLogs({
-            operation: "lookupStatusPr",
-            branch: details.branch,
-            errorTag:
-              typeof error === "object" && error !== null && "_tag" in error
-                ? String(error._tag)
-                : typeof error,
-            ...(isSourceControlProviderError(error)
-              ? {
-                  provider: error.provider,
-                  providerOperation: error.operation,
-                  providerCommand: error.command ?? "unknown",
-                  errorDetail: error.detail,
-                }
-              : {}),
-          }),
+      Effect.catch((error) => {
+        const annotations = {
+          operation: "lookupStatusPr",
+          branch: details.branch,
+          errorTag:
+            typeof error === "object" && error !== null && "_tag" in error
+              ? String(error._tag)
+              : typeof error,
+          ...(isSourceControlProviderError(error)
+            ? {
+                provider: error.provider,
+                providerOperation: error.operation,
+                providerCommand: error.command ?? "unknown",
+                errorDetail: error.detail,
+              }
+            : {}),
+        };
+        const report = isSourceControlProviderAuthenticationError(error)
+          ? Effect.logDebug("PR lookup skipped; source-control provider is unauthenticated.")
+          : Effect.logWarning("PR lookup failed; keeping last known PR state.").pipe(
+              Effect.annotateLogs(annotations),
+            );
+        return report.pipe(
           Effect.andThen(resolveLookupHeadContext(cwd, details)),
           Effect.map(({ headContext }) =>
             resolveLastKnownPr(branchKey, {
@@ -1240,8 +1262,8 @@ export const make = Effect.gen(function* () {
               headRemoteUrlKey: headContext.headRemoteUrlKey,
             }),
           ),
-        ),
-      ),
+        );
+      }),
     );
   });
   const readRemoteStatus = Effect.fn("readRemoteStatus")(function* (

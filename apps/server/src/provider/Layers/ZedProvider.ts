@@ -26,6 +26,7 @@ export const ZED_PRESENTATION = {
   supportsConversationRollback: false,
   badgeLabel: "Preview",
   showInteractionModeToggle: false,
+  reportsContextWindow: true,
 } as const;
 
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({

@@ -2762,7 +2762,6 @@ function ReasoningTraceBlock({
               cwd={ctx.markdownCwd}
               threadRef={ctx.threadRef ?? undefined}
               isStreaming={streaming && reasoningMessage.streaming}
-              lineBreaks
               skills={ctx.skills}
               headingLevelOffset={MESSAGE_HEADING_LEVEL}
               onUseArtifactTemplate={ctx.onUseArtifactTemplate}
@@ -2829,7 +2828,6 @@ const ReasoningTimelineRow = memo(function ReasoningTimelineRow({
             text={message.text}
             cwd={ctx.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
-            lineBreaks
             skills={ctx.skills}
             headingLevelOffset={MESSAGE_HEADING_LEVEL}
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}

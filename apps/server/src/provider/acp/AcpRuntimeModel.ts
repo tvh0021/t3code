@@ -115,13 +115,22 @@ export type AcpParsedSessionEvent =
     }
   | {
       readonly _tag: "ContentDelta";
+      readonly messageId?: string;
       readonly itemId?: string;
       readonly text: string;
       readonly rawPayload: unknown;
     }
   | {
       readonly _tag: "ThoughtDelta";
+      readonly messageId?: string;
       readonly text: string;
+      readonly rawPayload: unknown;
+    }
+  | {
+      readonly _tag: "UsageUpdated";
+      readonly cost?: EffectAcpSchema.Cost;
+      readonly size: number;
+      readonly used: number;
       readonly rawPayload: unknown;
     };
 
@@ -863,6 +872,9 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
           _tag: "ContentDelta",
+          ...(typeof upd.messageId === "string" && upd.messageId.trim().length > 0
+            ? { messageId: upd.messageId.trim() }
+            : {}),
           text: upd.content.text,
           rawPayload: params,
         });
@@ -873,10 +885,23 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
           _tag: "ThoughtDelta",
+          ...(typeof upd.messageId === "string" && upd.messageId.trim().length > 0
+            ? { messageId: upd.messageId.trim() }
+            : {}),
           text: upd.content.text,
           rawPayload: params,
         });
       }
+      break;
+    }
+    case "usage_update": {
+      events.push({
+        _tag: "UsageUpdated",
+        ...(upd.cost ? { cost: upd.cost } : {}),
+        size: upd.size,
+        used: upd.used,
+        rawPayload: params,
+      });
       break;
     }
     default:

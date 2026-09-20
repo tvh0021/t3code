@@ -50,6 +50,8 @@ function runWithServices<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
 async function makeFakeZedCli(options?: {
   readonly onRequestPermission?: boolean;
   readonly onElicitation?: boolean;
+  readonly onMessageIdStreaming?: boolean;
+  readonly onUsageUpdate?: boolean;
 }) {
   const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "fake-zed-test-"));
   const script = `
@@ -101,6 +103,113 @@ rl.on("line", (line) => {
   }
 
   if (method === "session/prompt") {
+    ${
+      options?.onMessageIdStreaming
+        ? `
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: currentSessionId,
+        update: {
+          sessionUpdate: "agent_thought_chunk",
+          messageId: "thought-1",
+          content: { type: "text", text: "Inspecting the docs.\\n" }
+        }
+      }
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: currentSessionId,
+        update: {
+          sessionUpdate: "agent_thought_chunk",
+          messageId: "thought-2",
+          content: { type: "text", text: "Now summarizing." }
+        }
+      }
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: currentSessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "message-1",
+          content: { type: "text", text: "The" }
+        }
+      }
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: currentSessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "tool-1",
+          title: "Read docs",
+          kind: "read",
+          status: "in_progress"
+        }
+      }
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: currentSessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "tool-1",
+          status: "completed"
+        }
+      }
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: currentSessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "message-1",
+          content: { type: "text", text: " docs" }
+        }
+      }
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: currentSessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "message-1",
+          content: { type: "text", text: " directory" }
+        }
+      }
+    });
+    `
+        : options?.onUsageUpdate
+          ? `
+    send({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: currentSessionId,
+        update: {
+          sessionUpdate: "usage_update",
+          size: 10000,
+          used: 2500,
+          cost: { amount: 2.5, currency: "USD" }
+        }
+      }
+    });
+    `
+          : `
     send({
       jsonrpc: "2.0",
       method: "session/update",
@@ -112,6 +221,8 @@ rl.on("line", (line) => {
         }
       }
     });
+    `
+    }
 
     ${
       options?.onRequestPermission
@@ -129,8 +240,8 @@ rl.on("line", (line) => {
           status: "pending"
         },
         options: [
-          { optionId: "allow-once", name: "allow_once", kind: "allow_once" },
-          { optionId: "reject-once", name: "reject_once", kind: "reject_once" }
+          { optionId: "allow", name: "Allow", kind: "allow_once" },
+          { optionId: "deny", name: "Deny", kind: "reject_once" }
         ]
       }
     });
@@ -170,6 +281,11 @@ rl.on("line", (line) => {
   }
 
   if (id === 9001 || id === 9002) {
+    if (id === 9001 && msg.result?.outcome?.optionId !== "allow") {
+      process.stderr.write("unexpected permission option\\n");
+      process.exit(42);
+      return;
+    }
     if (pendingPromptId !== null) {
       send({
         jsonrpc: "2.0",
@@ -226,6 +342,8 @@ describe("ZedProvider Snapshot and Probe", () => {
     expect(snapshot.enabled).toBe(true);
     expect(snapshot.slashCommands?.length).toBe(1);
     expect(snapshot.slashCommands?.[0]?.name).toBe("compact");
+    expect(snapshot.reportsContextWindow).toBe(true);
+    expect(snapshot.usageLimits).toBeUndefined();
     expect(snapshot.models.map((model) => model.slug)).toEqual([
       "zed.dev/claude-sonnet-5",
       "zed.dev/gpt-5.6-luna",
@@ -300,6 +418,106 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
 
         yield* adapter.stopSession(threadId);
         expect(yield* adapter.hasSession(threadId)).toBe(false);
+      }),
+    );
+  });
+
+  it("publishes Zed context usage as a token update, without faking account spend", async () => {
+    await runWithServices(
+      Effect.gen(function* () {
+        const threadId = ThreadId.make("zed-adapter-usage-1");
+        const fakeBinary = yield* Effect.promise(() => makeFakeZedCli({ onUsageUpdate: true }));
+        const adapter = yield* makeZedAdapter(decodeZedSettings({ binaryPath: fakeBinary }));
+        const usageUpdated = yield* Deferred.make<void>();
+        const events: ProviderRuntimeEvent[] = [];
+
+        yield* Stream.runForEach(adapter.streamEvents, (event) =>
+          Effect.gen(function* () {
+            events.push(event);
+            if (event.type === "thread.token-usage.updated") {
+              yield* Deferred.succeed(usageUpdated, undefined);
+            }
+          }),
+        ).pipe(Effect.forkChild);
+
+        yield* adapter.startSession({
+          threadId,
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({ threadId, input: "report usage" });
+        yield* Deferred.await(usageUpdated).pipe(Effect.timeout("5 seconds"));
+
+        const usageEvent = events.find((event) => event.type === "thread.token-usage.updated");
+        expect(usageEvent?.payload.usage).toMatchObject({
+          usedTokens: 2500,
+          maxTokens: 10000,
+          compactsAutomatically: true,
+        });
+        expect(events.some((event) => event.type === "account.rate-limits.updated")).toBe(false);
+
+        yield* adapter.stopSession(threadId);
+      }),
+    );
+  });
+
+  it("keeps ACP message chunks together across tool updates", async () => {
+    await runWithServices(
+      Effect.gen(function* () {
+        const threadId = ThreadId.make("zed-adapter-message-id-1");
+        const fakeBinary = yield* Effect.promise(() =>
+          makeFakeZedCli({ onMessageIdStreaming: true }),
+        );
+        const adapter = yield* makeZedAdapter(decodeZedSettings({ binaryPath: fakeBinary }));
+        const events: ProviderRuntimeEvent[] = [];
+        const contentReceived = yield* Deferred.make<void>();
+        const turnCompleted = yield* Deferred.make<void>();
+
+        yield* Stream.runForEach(adapter.streamEvents, (event) =>
+          Effect.gen(function* () {
+            events.push(event);
+            if (event.type === "content.delta") {
+              yield* Deferred.succeed(contentReceived, undefined);
+            }
+            if (event.type === "turn.completed") {
+              yield* Deferred.succeed(turnCompleted, undefined);
+            }
+          }),
+        ).pipe(Effect.forkChild);
+
+        yield* adapter.startSession({
+          threadId,
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({ threadId, input: "show docs" });
+
+        yield* Deferred.await(contentReceived).pipe(Effect.timeout("5 seconds"));
+        yield* Deferred.await(turnCompleted).pipe(Effect.timeout("5 seconds"));
+
+        const deltas = events.filter((event) => event.type === "content.delta");
+        const assistantDeltas = deltas.filter(
+          (event) => event.payload.streamKind === "assistant_text",
+        );
+        const thoughtDeltas = deltas.filter(
+          (event) => event.payload.streamKind === "reasoning_text",
+        );
+        expect(assistantDeltas.map((event) => event.payload.delta)).toEqual([
+          "The",
+          " docs",
+          " directory",
+        ]);
+        expect(thoughtDeltas.map((event) => event.payload.delta)).toEqual([
+          "Inspecting the docs.\n",
+          "Now summarizing.",
+        ]);
+        expect(new Set(assistantDeltas.map((event) => String(event.itemId))).size).toBe(1);
+        expect(thoughtDeltas.map((event) => String(event.itemId))).toEqual([
+          "thought-1",
+          "thought-2",
+        ]);
+
+        yield* adapter.stopSession(threadId);
       }),
     );
   });

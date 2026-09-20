@@ -15,6 +15,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   RuntimeRequestId,
+  type ThreadTokenUsageSnapshot,
   type ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -38,7 +39,7 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
 } from "../Errors.ts";
-import { acpPermissionOutcome, mapAcpToAdapterError } from "../acp/AcpAdapterSupport.ts";
+import { mapAcpToAdapterError, selectAcpPermissionOptionId } from "../acp/AcpAdapterSupport.ts";
 import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 import {
   makeAcpAssistantItemEvent,
@@ -176,7 +177,6 @@ export function makeZedAdapter(
     const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     const sessions = new Map<ThreadId, ZedSessionContext>();
     const threadLocksRef = yield* SynchronizedRef.make(new Map<ThreadId, Semaphore.Semaphore>());
-
     const getThreadSemaphore = (threadId: ThreadId) =>
       SynchronizedRef.modifyEffect(threadLocksRef, (locks) => {
         const existing: Option.Option<Semaphore.Semaphore> = Option.fromNullishOr(
@@ -331,6 +331,13 @@ export function makeZedAdapter(
                 const resolved = yield* Deferred.await(decision);
                 pendingApprovals.delete(requestId);
 
+                const optionId = selectAcpPermissionOptionId(params, resolved);
+                if (resolved !== "cancel" && optionId === undefined) {
+                  return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+                    `Zed did not provide a permission option for decision '${resolved}'.`,
+                  );
+                }
+
                 yield* offerRuntimeEvent(
                   makeAcpRequestResolvedEvent({
                     stamp: yield* makeEventStamp(),
@@ -349,7 +356,7 @@ export function makeZedAdapter(
                       ? ({ outcome: "cancelled" } as const)
                       : {
                           outcome: "selected" as const,
-                          optionId: acpPermissionOutcome(resolved),
+                          optionId: optionId!,
                         },
                 };
               }),
@@ -482,6 +489,9 @@ export function makeZedAdapter(
                         ...(event._tag === "ContentDelta" && event.itemId
                           ? { itemId: event.itemId }
                           : {}),
+                        ...(event._tag === "ThoughtDelta" && event.messageId
+                          ? { itemId: event.messageId }
+                          : {}),
                         ...(event._tag === "ThoughtDelta" ? { streamKind: "reasoning_text" } : {}),
                         text: event.text,
                         rawPayload: event.rawPayload,
@@ -514,6 +524,33 @@ export function makeZedAdapter(
                       }),
                     );
                     return;
+                  case "UsageUpdated": {
+                    if (!Number.isInteger(event.used) || event.used < 0) {
+                      return;
+                    }
+                    const maxTokens =
+                      Number.isInteger(event.size) && event.size > 0 ? event.size : undefined;
+                    const usage: ThreadTokenUsageSnapshot = {
+                      usedTokens: event.used,
+                      ...(maxTokens !== undefined ? { maxTokens } : {}),
+                      compactsAutomatically: true,
+                    };
+                    const stamp = yield* makeEventStamp();
+                    yield* offerRuntimeEvent({
+                      type: "thread.token-usage.updated",
+                      ...stamp,
+                      provider: PROVIDER,
+                      threadId: ctx.threadId,
+                      ...(ctx.activeTurnId ? { turnId: ctx.activeTurnId } : {}),
+                      payload: { usage },
+                      raw: {
+                        source: "acp.jsonrpc",
+                        method: "session/update",
+                        payload: event.rawPayload,
+                      },
+                    });
+                    return;
+                  }
                   default:
                     return;
                 }
