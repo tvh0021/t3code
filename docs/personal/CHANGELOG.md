@@ -34,3 +34,8 @@ A concise, chronological record of custom changes made to this personal fork of 
 - **Usage Breakdowns**: Separated subscription models from credit-based models and excluded credit usage from token totals and cost charts.
 - **Codex Credit Accounting**: Added Codex credit balances, credit-based model reporting, and spillover billing at $0.04 per credit.
 - **Codex History Backfill**: Reconciled 90 days of transcript history, including forks and duplicate events. Updated the scan cache to v5 and excluded `codex-auto-review` from credit usage. The corrected backfill is about 1,334 credits.
+
+### 2026-09-21
+
+- **Zed streaming repair**: Suppressed repeated completed-tool snapshots that split answers mid-word and flooded the activity list. Verified one intact Markdown answer after a real Sonnet file-read turn in an isolated client. Existing conversation history remains unchanged; the wider Zed integration is still under development.
+- **Zed verification**: Tested Zed Luna approval and decline flows in the browser without a crash. Confirmed that the headless bridge does not supply the context meter with usage data. Converted the adapter tests to the standard Effect test runner and cleared their lint warnings.

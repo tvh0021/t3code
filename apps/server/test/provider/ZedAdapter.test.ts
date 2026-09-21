@@ -4,13 +4,14 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect } from "vite-plus/test";
 
 import {
   ApprovalRequestId,
@@ -32,18 +33,27 @@ const decodeZedSettings = Schema.decodeSync(ZedSettings);
 
 const REAL_ZED_BIN = "/Users/tvh0021/git_repos/zed-dev/target/debug/zed-acp-server";
 const hasRealZed = NodeFS.existsSync(REAL_ZED_BIN);
-const REAL_ZED_MODELS = ["zed.dev/claude-sonnet-5", "zed.dev/gpt-5.6-luna"] as const;
+// Hosted Zed models require network access and credentials, so the live test is explicit.
+const runLiveZedTests = process.env.T3_RUN_LIVE_ZED_TESTS === "1";
+const realZedDataDir = process.env.T3_ZED_DATA_DIR?.trim();
+// One live smoke request is enough to exercise ACP startup and streaming.
+const realZedModel = process.env.T3_ZED_MODEL?.trim() || "zed.dev/gpt-5.6-luna";
 
-function runWithServices<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
-  return Effect.runPromise(
-    effect.pipe(
-      Effect.provide(
-        ServerConfig.layerTest(process.cwd(), {
-          prefix: "t3code-zed-adapter-test-",
-        }).pipe(Layer.provideMerge(NodeServices.layer)),
-      ),
-      Effect.scoped,
+function decodeRealZedSettings() {
+  return decodeZedSettings({
+    binaryPath: REAL_ZED_BIN,
+    ...(realZedDataDir ? { dataDir: realZedDataDir } : {}),
+  });
+}
+
+function withTestServices<A, E, R>(effect: Effect.Effect<A, E, R>) {
+  return effect.pipe(
+    Effect.provide(
+      ServerConfig.layerTest(process.cwd(), {
+        prefix: "t3code-zed-adapter-test-",
+      }).pipe(Layer.provideMerge(NodeServices.layer)),
     ),
+    Effect.scoped,
   );
 }
 
@@ -52,6 +62,9 @@ async function makeFakeZedCli(options?: {
   readonly onElicitation?: boolean;
   readonly onMessageIdStreaming?: boolean;
   readonly onUsageUpdate?: boolean;
+  readonly onRepeatedToolCompletion?: boolean;
+  readonly terminalStatus?: "completed" | "failed";
+  readonly onLateToolOutput?: boolean;
 }) {
   const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "fake-zed-test-"));
   const script = `
@@ -104,8 +117,25 @@ rl.on("line", (line) => {
 
   if (method === "session/prompt") {
     ${
-      options?.onMessageIdStreaming
+      options?.onRepeatedToolCompletion
         ? `
+    const update = (update) => send({ jsonrpc: "2.0", method: "session/update", params: { sessionId: currentSessionId, update } });
+    update({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Checking conventions." } });
+    update({ sessionUpdate: "tool_call", toolCallId: "read-1", title: "Read ledger", kind: "read", status: "in_progress" });
+    const completed = { sessionUpdate: "tool_call_update", toolCallId: "read-1", status: "${options?.terminalStatus ?? "completed"}", rawOutput: { text: "ledger contents" } };
+    update(completed);
+    for (const text of ["The sp", "ecific choices", " this lesson locks in."]) {
+      update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
+      update(completed);
+    }
+    if (${options?.onLateToolOutput ?? false}) {
+      completed.rawOutput = { text: "updated ledger contents" };
+      update(completed);
+      update(completed);
+    }
+    `
+        : options?.onMessageIdStreaming
+          ? `
     send({
       jsonrpc: "2.0",
       method: "session/update",
@@ -193,8 +223,8 @@ rl.on("line", (line) => {
       }
     });
     `
-        : options?.onUsageUpdate
-          ? `
+          : options?.onUsageUpdate
+            ? `
     send({
       jsonrpc: "2.0",
       method: "session/update",
@@ -209,7 +239,7 @@ rl.on("line", (line) => {
       }
     });
     `
-          : `
+            : `
     send({
       jsonrpc: "2.0",
       method: "session/update",
@@ -327,52 +357,60 @@ rl.on("line", (line) => {
 }
 
 describe("ZedProvider Snapshot and Probe", () => {
-  it("builds disabled snapshot when enabled is false", async () => {
-    const snapshot = await runWithServices(
-      buildInitialZedProviderSnapshot(decodeZedSettings({ enabled: false })),
-    );
-    expect(snapshot.enabled).toBe(false);
-    expect(snapshot.installed).toBe(false);
-  });
+  it.effect("builds disabled snapshot when enabled is false", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* withTestServices(
+        buildInitialZedProviderSnapshot(decodeZedSettings({ enabled: false })),
+      );
+      expect(snapshot.enabled).toBe(false);
+      expect(snapshot.installed).toBe(false);
+    }),
+  );
 
-  it("builds initial ready snapshot when enabled is true", async () => {
-    const snapshot = await runWithServices(
-      buildInitialZedProviderSnapshot(decodeZedSettings({ enabled: true })),
-    );
-    expect(snapshot.enabled).toBe(true);
-    expect(snapshot.slashCommands?.length).toBe(1);
-    expect(snapshot.slashCommands?.[0]?.name).toBe("compact");
-    expect(snapshot.reportsContextWindow).toBe(true);
-    expect(snapshot.usageLimits).toBeUndefined();
-    expect(snapshot.models.map((model) => model.slug)).toEqual([
-      "zed.dev/claude-sonnet-5",
-      "zed.dev/gpt-5.6-luna",
-    ]);
-  });
+  it.effect("builds initial ready snapshot when enabled is true", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* withTestServices(
+        buildInitialZedProviderSnapshot(decodeZedSettings({ enabled: true })),
+      );
+      expect(snapshot.enabled).toBe(true);
+      expect(snapshot.slashCommands?.length).toBe(1);
+      expect(snapshot.slashCommands?.[0]?.name).toBe("compact");
+      expect(snapshot.reportsContextWindow).toBe(true);
+      expect(snapshot.usageLimits).toBeUndefined();
+      expect(snapshot.models.map((model) => model.slug)).toEqual([
+        "zed.dev/claude-sonnet-5",
+        "zed.dev/gpt-5.6-luna",
+      ]);
+    }),
+  );
 
-  it("reports uninstalled when binary is not found", async () => {
-    const status = await runWithServices(
-      checkZedProviderStatus(
-        decodeZedSettings({ enabled: true, binaryPath: "nonexistent-zed-binary" }),
-      ),
-    );
-    expect(status.installed).toBe(false);
-  });
+  it.effect("reports uninstalled when binary is not found", () =>
+    Effect.gen(function* () {
+      const status = yield* withTestServices(
+        checkZedProviderStatus(
+          decodeZedSettings({ enabled: true, binaryPath: "nonexistent-zed-binary" }),
+        ),
+      );
+      expect(status.installed).toBe(false);
+    }),
+  );
 
   if (hasRealZed) {
-    it("reports installed and ready when pointing to real binary", async () => {
-      const status = await runWithServices(
-        checkZedProviderStatus(decodeZedSettings({ enabled: true, binaryPath: REAL_ZED_BIN })),
-      );
-      expect(status.installed).toBe(true);
-      expect(status.status).toBe("ready");
-    });
+    it.effect("reports installed and ready when pointing to real binary", () =>
+      Effect.gen(function* () {
+        const status = yield* withTestServices(
+          checkZedProviderStatus(decodeZedSettings({ enabled: true, binaryPath: REAL_ZED_BIN })),
+        );
+        expect(status.installed).toBe(true);
+        expect(status.status).toBe("ready");
+      }),
+    );
   }
 });
 
 describe("ZedAdapter Lifecycle and Turn Streaming", () => {
-  it("starts session and sends turn with content deltas", async () => {
-    await runWithServices(
+  it.effect("starts session and sends turn with content deltas", () =>
+    withTestServices(
       Effect.gen(function* () {
         const threadId = ThreadId.make("zed-adapter-turn-1");
         const fakeBinary = yield* Effect.promise(() => makeFakeZedCli());
@@ -419,11 +457,11 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
         yield* adapter.stopSession(threadId);
         expect(yield* adapter.hasSession(threadId)).toBe(false);
       }),
-    );
-  });
+    ),
+  );
 
-  it("publishes Zed context usage as a token update, without faking account spend", async () => {
-    await runWithServices(
+  it.effect("publishes Zed context usage as a token update, without faking account spend", () =>
+    withTestServices(
       Effect.gen(function* () {
         const threadId = ThreadId.make("zed-adapter-usage-1");
         const fakeBinary = yield* Effect.promise(() => makeFakeZedCli({ onUsageUpdate: true }));
@@ -458,11 +496,11 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
 
         yield* adapter.stopSession(threadId);
       }),
-    );
-  });
+    ),
+  );
 
-  it("keeps ACP message chunks together across tool updates", async () => {
-    await runWithServices(
+  it.effect("keeps ACP message chunks together across tool updates", () =>
+    withTestServices(
       Effect.gen(function* () {
         const threadId = ThreadId.make("zed-adapter-message-id-1");
         const fakeBinary = yield* Effect.promise(() =>
@@ -519,11 +557,67 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
 
         yield* adapter.stopSession(threadId);
       }),
-    );
-  });
+    ),
+  );
 
-  it("routes permission requests through T3 approval flow", async () => {
-    await runWithServices(
+  it.effect.each([
+    { terminalStatus: "completed", onLateToolOutput: false },
+    { terminalStatus: "failed", onLateToolOutput: false },
+    { terminalStatus: "completed", onLateToolOutput: true },
+  ] as const)(
+    "keeps answer chunks together with repeated $terminalStatus snapshots, late output=$onLateToolOutput",
+    ({ terminalStatus, onLateToolOutput }) =>
+      withTestServices(
+        Effect.gen(function* () {
+          const threadId = ThreadId.make("zed-repeated-completion");
+          const fakeBinary = yield* Effect.promise(() =>
+            makeFakeZedCli({ onRepeatedToolCompletion: true, terminalStatus, onLateToolOutput }),
+          );
+          const adapter = yield* makeZedAdapter(decodeZedSettings({ binaryPath: fakeBinary }));
+          const events: ProviderRuntimeEvent[] = [];
+          const completed = yield* Deferred.make<void>();
+          yield* Stream.runForEach(adapter.streamEvents, (event) =>
+            Effect.gen(function* () {
+              events.push(event);
+              if (event.type === "turn.completed") yield* Deferred.succeed(completed, undefined);
+            }),
+          ).pipe(Effect.forkChild);
+          yield* adapter.startSession({
+            threadId,
+            cwd: process.cwd(),
+            runtimeMode: "full-access",
+          });
+          yield* adapter.sendTurn({ threadId, input: "Explain the ledger." });
+          yield* Deferred.await(completed).pipe(Effect.timeout("5 seconds"));
+          const answer = events.filter(
+            (e) => e.type === "content.delta" && e.payload.streamKind === "assistant_text",
+          );
+          expect(answer.map((e) => e.payload.delta).join("")).toBe(
+            "The specific choices this lesson locks in.",
+          );
+          expect(new Set(answer.map((e) => e.itemId)).size).toBe(1);
+          expect(
+            events.filter((e) => e.type === "item.completed" && e.itemId === "read-1"),
+          ).toHaveLength(onLateToolOutput ? 2 : 1);
+          if (onLateToolOutput) {
+            expect(
+              events.findLast((e) => e.type === "item.completed" && e.itemId === "read-1")?.payload,
+            ).toMatchObject({ data: { rawOutput: { text: "updated ledger contents" } } });
+          }
+          expect(
+            events
+              .filter(
+                (e) => e.type === "content.delta" && e.payload.streamKind === "reasoning_text",
+              )
+              .map((e) => e.payload.delta),
+          ).toEqual(["Checking conventions."]);
+          yield* adapter.stopSession(threadId);
+        }),
+      ),
+  );
+
+  it.effect("routes permission requests through T3 approval flow", () =>
+    withTestServices(
       Effect.gen(function* () {
         const threadId = ThreadId.make("zed-adapter-approval-1");
         const fakeBinary = yield* Effect.promise(() =>
@@ -567,11 +661,11 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
         yield* Fiber.join(turnFiber);
         yield* adapter.stopSession(threadId);
       }),
-    );
-  });
+    ),
+  );
 
-  it("routes elicitation requests through T3 user-input flow", async () => {
-    await runWithServices(
+  it.effect("routes elicitation requests through T3 user-input flow", () =>
+    withTestServices(
       Effect.gen(function* () {
         const threadId = ThreadId.make("zed-adapter-elicit-1");
         const fakeBinary = yield* Effect.promise(() => makeFakeZedCli({ onElicitation: true }));
@@ -613,11 +707,11 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
         yield* Fiber.join(turnFiber);
         yield* adapter.stopSession(threadId);
       }),
-    );
-  });
+    ),
+  );
 
-  it("dispatches /compact and /skill to zed/invoke_skill", async () => {
-    await runWithServices(
+  it.effect("dispatches /compact and /skill to zed/invoke_skill", () =>
+    withTestServices(
       Effect.gen(function* () {
         const threadId = ThreadId.make("zed-adapter-skill-1");
         const fakeBinary = yield* Effect.promise(() => makeFakeZedCli());
@@ -680,11 +774,11 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
 
         yield* adapter.stopSession(threadId);
       }),
-    );
-  });
+    ),
+  );
 
-  it("rejects rollback without altering stored thread history", async () => {
-    await runWithServices(
+  it.effect("rejects rollback without altering stored thread history", () =>
+    withTestServices(
       Effect.gen(function* () {
         const threadId = ThreadId.make("zed-adapter-rollback-1");
         const fakeBinary = yield* Effect.promise(() => makeFakeZedCli());
@@ -712,21 +806,24 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
 
         yield* adapter.stopSession(threadId);
       }),
-    );
-  });
+    ),
+  );
 
   if (hasRealZed) {
-    it("executes end-to-end against real zed-acp-server binary", async () => {
-      await runWithServices(
-        Effect.gen(function* () {
-          for (const [index, model] of REAL_ZED_MODELS.entries()) {
-            const threadId = ThreadId.make(`zed-adapter-real-bin-${index + 1}`);
-            const adapter = yield* makeZedAdapter(decodeZedSettings({ binaryPath: REAL_ZED_BIN }));
+    it.effect.skipIf(!runLiveZedTests)(
+      "executes end-to-end against real zed-acp-server binary",
+      () =>
+        withTestServices(
+          Effect.gen(function* () {
+            const threadId = ThreadId.make("zed-adapter-real-bin-smoke");
+            const adapter = yield* makeZedAdapter(decodeRealZedSettings());
             const contentReceived = yield* Deferred.make<void>();
             const turnCompleted = yield* Deferred.make<void>();
+            const content: string[] = [];
             yield* Stream.runForEach(adapter.streamEvents, (event) =>
               Effect.gen(function* () {
                 if (event.type === "content.delta") {
+                  content.push(event.payload.delta);
                   yield* Deferred.succeed(contentReceived, undefined);
                 }
                 if (event.type === "turn.completed") {
@@ -741,7 +838,7 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
               runtimeMode: "full-access",
               modelSelection: {
                 instanceId: ProviderInstanceId.make("zed"),
-                model,
+                model: realZedModel,
               },
             });
 
@@ -750,23 +847,18 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
 
             const turn = yield* adapter.sendTurn({
               threadId,
-              input: "ping real zed agent",
+              input: "Reply with exactly OK.",
             });
 
             expect(turn.threadId).toBe(threadId);
             yield* Deferred.await(turnCompleted).pipe(Effect.timeout("20 seconds"));
             yield* Deferred.await(contentReceived).pipe(Effect.timeout("20 seconds"));
+            expect(content.join("").trim()).toBe("OK");
+            expect(content.join("").length).toBeLessThan(64);
 
-            const skillTurn = yield* adapter.sendTurn({
-              threadId,
-              input: "/compact",
-            });
-
-            expect(skillTurn.threadId).toBe(threadId);
             yield* adapter.stopSession(threadId);
-          }
-        }),
-      );
-    });
+          }),
+        ),
+    );
   }
 });

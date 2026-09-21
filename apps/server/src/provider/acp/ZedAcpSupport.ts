@@ -1,3 +1,5 @@
+import * as NodeCrypto from "node:crypto";
+
 import type { ZedSettings } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -63,9 +65,32 @@ export const makeZedAcpRuntime = (
   Crypto.Crypto | Scope.Scope
 > =>
   Effect.gen(function* () {
+    // Zed scans historical entries on each text update and resends completed
+    // tools. Suppress identical snapshots before they close an assistant segment.
+    // Keep only digests, not tool output, for the lifetime of this ACP session.
+    const completedSnapshots = new Map<string, string>();
     const acpContext = yield* Layer.build(
       AcpSessionRuntime.layer({
         ...input,
+        transformSessionUpdate: (notification) => {
+          const normalized = input.transformSessionUpdate?.(notification) ?? notification;
+          const update = normalized.update;
+          if (
+            (update.sessionUpdate !== "tool_call" && update.sessionUpdate !== "tool_call_update") ||
+            (update.status !== "completed" && update.status !== "failed")
+          ) {
+            return normalized;
+          }
+          const key = JSON.stringify([normalized.sessionId, update.toolCallId]);
+          const digest = NodeCrypto.createHash("sha256")
+            .update(JSON.stringify(update))
+            .digest("hex");
+          if (completedSnapshots.get(key) === digest) {
+            return { ...normalized, _meta: { ...normalized._meta, isReplay: true } };
+          }
+          completedSnapshots.set(key, digest);
+          return normalized;
+        },
         spawn: buildZedAcpSpawnInput(input.zedSettings, input.cwd, input.environment),
         clientCapabilities: ZED_CLIENT_CAPABILITIES,
         clientInfo: {

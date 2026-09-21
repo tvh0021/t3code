@@ -246,7 +246,7 @@ Mixing ChatLLM into the top-level token and cost figures skewed subscription tok
 ## 19. Zed ACP integration status
 
 Status: Partial. The adapter is present for investigation, but Zed ACP is not
-release-ready and is not listed in the changelog.
+release-ready. The changelog records the verified streaming repair only.
 
 ### Verification Scope
 
@@ -255,7 +255,7 @@ release-ready and is not listed in the changelog.
   dispatch, and rollback protection for investigation.
 - The protocol harness targets
   `/Users/tvh0021/git_repos/zed-dev/target/debug/zed-acp-server`, but the
-  live integration is not currently verified.
+  streaming path is now verified in an isolated web client.
 - Limited the built-in Zed model catalog to `zed.dev/claude-sonnet-5` (Claude Sonnet 5) and `zed.dev/gpt-5.6-luna` (GPT 5.6 Luna), while retaining support for explicitly configured custom models.
 
 ### Modifications
@@ -272,16 +272,21 @@ release-ready and is not listed in the changelog.
 - The fake-ACP adapter tests cover streaming, permissions, elicitation, and
   context-token updates.
 - The scoped server typecheck exits 0 with no Zed-related TypeScript errors.
-- The real-binary integration test is currently blocked because this
-  environment cannot resolve `cloud.zed.dev`.
-- The live client still needs verification after the reported crash that
-  followed an approved permission request.
+- The real-binary Luna smoke test passes with network access. Sandboxed DNS
+  cannot resolve `cloud.zed.dev`.
+- The September 21 streaming repair filters identical completed or failed tool
+  snapshots before message segmentation. A real Sonnet file-read turn produced
+  one completion and one intact Markdown answer in an isolated web client.
+- Real Zed Luna approval and decline flows pass in an isolated web client.
+  Both paths finish without a session crash.
+- The enabled meter remains absent for real Luna turns. The headless bridge
+  does not emit context usage, although fake-ACP usage tests pass.
+- Zed adapter tests use `@effect/vitest`; scoped lint and typecheck pass.
 
 ### Current status
 
-- Zed ACP remains a development integration. Do not describe it as a working
-  released provider until the approval flow and real-binary path pass in the
-  live client.
+- Zed streaming and permission flows are verified. Context usage still needs
+  forwarding from the headless bridge.
 - The Zed account-spend limit is not implemented. ACP session cost must not be
   presented as account spend.
 - Follow-up work is tracked in `docs/personal/ISSUE_TRACKER.md`.

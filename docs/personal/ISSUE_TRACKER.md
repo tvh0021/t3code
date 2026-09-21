@@ -1,6 +1,6 @@
 # Issue tracker
 
-Updated September 19, 2026.
+Updated September 21, 2026.
 
 ## ZED-001: Read Zed account usage from the billing service
 
@@ -44,16 +44,21 @@ cost must not be labeled as account spend.
 
 ## CHAT-002: Show context-window usage in the composer
 
-Status: Implemented, pending live-client verification
+Status: Open for Zed, live-client verification failed September 21, 2026
 
 The composer now shows a circular context-window meter when a provider reports
 the current context token count. The meter shows the used share of the model's
 context window and exposes the token counts on hover.
 
-The server converts Codex, Claude, and Zed runtime usage events into the shared
-`context-window.updated` activity. Zed ACP `usage_update` reports `used` and
-`size`, so it can feed the meter without being treated as billing data.
+The server converts provider usage events into the shared
+`context-window.updated` activity. The Zed adapter accepts ACP `usage_update`
+with `used` and `size`, but the current headless Zed bridge does not emit it.
 
-The meter is enabled by default. Users can turn it off in Settings under
-Legacy features. Providers that do not report context usage do not reserve a
-meter slot.
+Enable the meter in Settings under Legacy features. The isolated browser
+initially had it disabled. After enabling it and completing a real
+`zed.dev/gpt-5.6-luna` turn, the meter was absent and the thread had zero
+context-usage activities.
+
+Forward real context usage from the headless Zed ACP bridge, rebuild that
+binary, and verify the displayed token count and capacity in the client.
+Do not substitute billing cost or character estimates for context tokens.

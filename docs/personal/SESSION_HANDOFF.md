@@ -38,14 +38,30 @@ A redacted scan of the local rollout corpus found 476 rollout files. The account
 - The built-in catalog contains `zed.dev/claude-sonnet-5` and `zed.dev/gpt-5.6-luna`. The adapter forwards the selected model to the headless Zed binary.
 - The Zed fork adds `zed-acp-server` under `crates/eval_cli`. It reuses Zed's `NativeAgent` and `AcpThread`, communicates over JSON-RPC on standard input and output, and supports worktree, data-directory, and model arguments.
 - The headless server authenticates with stored Zed credentials, waits for the selected model to become available, and sets `agent.default_model` before creating a session.
-- Zed ACP is not listed in the changelog because the live flow is not yet reliable.
+- The changelog records the verified streaming repair. The wider integration
+  remains under development.
 
 ### Current verification
 
 - Fake-ACP tests cover streaming, permission requests, elicitation, and context-token updates.
 - The scoped server typecheck exits 0 with no Zed-related TypeScript errors.
-- The real-binary integration test is blocked because this environment cannot resolve `cloud.zed.dev`.
-- A live session previously crashed after the user approved a permission request. The live client must be retested before this integration is called working.
+- The real-binary Luna smoke test passes with network access. Sandboxed DNS
+  cannot resolve `cloud.zed.dev`.
+- The September 21 streaming regression came from repeated completed-tool
+  snapshots, which split assistant output mid-word and flooded the activity list.
+  The Zed adapter now filters identical terminal snapshots before segmentation
+  and preserves changed output. An isolated Sonnet web-client turn produced one
+  file-read completion and one intact answer.
+- The desktop server bundle was rebuilt.
+- Real Zed Luna approval and decline flows pass in an isolated web client.
+  An approved synthetic command returned `LUNA-APPROVAL-OK`; a declined command
+  reported permission denied and the session remained usable.
+- The enabled context meter failed the real Luna check: no meter appeared and
+  no context-usage events arrived. The headless Zed bridge does not forward
+  `usage_update`.
+- Zed adapter tests now use `@effect/vitest` instead of a manual Effect runtime.
+  The test file passes lint without warnings; 14 tests and the scoped server
+  typecheck pass. The hosted smoke test remains opt-in.
 
 ### Repository state
 
@@ -55,8 +71,7 @@ A redacted scan of the local rollout corpus found 476 rollout files. The account
 
 ### Open questions and pending work
 
-- Fix and verify the approved-permission session crash.
 - Find a supported Zed billing endpoint before showing account spend in Limits.
-- Verify the context-window meter in the live client.
+- Forward context usage from the headless Zed bridge, rebuild, and retest the meter.
 - Track these items in `docs/personal/ISSUE_TRACKER.md`.
 - If the ACP server changes, rebuild the Zed binary and rerun the focused T3 tests against the real binary.
