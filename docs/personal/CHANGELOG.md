@@ -34,3 +34,9 @@ A concise, chronological record of custom changes made to this personal fork of 
 - **Usage Breakdowns**: Separated subscription models from credit-based models and excluded credit usage from token totals and cost charts.
 - **Codex Credit Accounting**: Added Codex credit balances, credit-based model reporting, and spillover billing at $0.04 per credit.
 - **Codex History Backfill**: Reconciled 90 days of transcript history, including forks and duplicate events. Updated the scan cache to v5 and excluded `codex-auto-review` from credit usage. The corrected backfill is about 1,334 credits.
+
+### 2026-09-22
+
+- **Performance Guardrail**: Added a timed 20,000-bucket usage-merge regression test and removed an extra aggregation pass.
+- **Markdown Fast Path**: Skipped math preprocessing and plugins for messages without math delimiters.
+- **Upstream Sync**: Merged the latest `upstream/main` without conflicts.

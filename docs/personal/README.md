@@ -19,7 +19,7 @@ This folder documents the changes, features, and architecture decisions that dis
 ## Overview
 
 - **Base Repository**: `https://github.com/pingdotgg/t3code`
-- **Active Branch**: `integration/zed-abacus`
+- **Active Branch**: `release/chatllm`
 - **Core Goal**: Maintain a personalized, powerful engineering harness in T3 Code that includes:
   - Custom visual identity and layout tweaks.
   - Personalized font and readability defaults configured out-of-the-box.
