@@ -46,5 +46,6 @@ A concise, chronological record of custom changes made to this personal fork of 
 - **Zed Streaming Repair**: Suppressed repeated completed-tool snapshots that split answers mid-word and flooded the activity list.
 - **Zed Streaming Verification**: Verified one intact Markdown answer after a real Sonnet file-read turn in an isolated client, though the wider Zed integration remains under development.
 - **Zed Approval Flow Verification**: Tested Zed Luna approval and decline flows in the browser without a crash.
-- **Zed Context Meter Gap**: Confirmed that the headless bridge does not supply the context meter with usage data.
+- **Zed Context Meter**: Resolved context-window reporting for the headless Zed bridge.
+- **Zed Account Usage**: Reports account spend as unavailable because Zed's billing routes reject the native credential and require a dashboard browser session. The Limits view no longer shows a zeroed or session-derived account bar.
 - **Zed Test Suite Migration**: Converted the adapter tests to the standard Effect test runner and cleared their lint warnings.

@@ -38,6 +38,12 @@ A redacted scan of the local rollout corpus found 476 rollout files. The account
 - The built-in catalog contains `zed.dev/claude-sonnet-5` and `zed.dev/gpt-5.6-luna`. The adapter forwards the selected model to the headless Zed binary.
 - The Zed fork adds `zed-acp-server` under `crates/eval_cli`. It reuses Zed's `NativeAgent` and `AcpThread`, communicates over JSON-RPC on standard input and output, and supports worktree, data-directory, and model arguments.
 - The headless server authenticates with stored Zed credentials, waits for the selected model to become available, and sets `agent.default_model` before creating a session.
+- The Zed bridge forwards context-token usage. The T3 adapter maps ACP
+  `usage_update.used` and `usage_update.size` to the shared context-window
+  activity.
+- Zed account spend no longer appears as `$0 / $10` or as a sum of ACP session
+  costs. The provider snapshot reports account spend as unavailable and directs
+  the user to the Zed dashboard.
 - The changelog records the verified streaming repair. The wider integration
   remains under development.
 
@@ -56,12 +62,44 @@ A redacted scan of the local rollout corpus found 476 rollout files. The account
 - Real Zed Luna approval and decline flows pass in an isolated web client.
   An approved synthetic command returned `LUNA-APPROVAL-OK`; a declined command
   reported permission denied and the session remained usable.
-- The enabled context meter failed the real Luna check: no meter appeared and
-  no context-usage events arrived. The headless Zed bridge does not forward
-  `usage_update`.
+- The context-window issue is resolved. The headless bridge forwards real token
+  usage, and T3 keeps billing cost separate from context usage.
 - Zed adapter tests now use `@effect/vitest` instead of a manual Effect runtime.
   The test file passes lint without warnings; 14 tests and the scoped server
   typecheck pass. The hosted smoke test remains opt-in.
+- `ZedProvider.test.ts` checks that account usage has no windows when billing
+  data is unavailable. The focused test passes.
+- The earlier unused-import lint finding has been fixed.
+
+- September 22 follow-up: 18 focused Zed tests pass, with the opt-in hosted
+  smoke test skipped. Targeted lint, server typecheck, and `git diff --check`
+  pass. T3 UI verification remains pending because the required Browser panel
+  tools are unavailable in this session. No app rebuild or reload was performed.
+
+### Account-usage findings
+
+- The usage tracker does not work because T3 has no authenticated source for
+  account-wide token spend. ACP reports cumulative cost for one session, while
+  the Limits view needs the account total for the current billing period.
+- September 22 recheck: the stored native credential returns `200` for
+  `/client/users/me`, but `401` for all four tested billing routes.
+- The current organization dashboard uses
+  `/frontend/organizations/{id}/billing/usage` and
+  `/frontend/organizations/{id}/subscription`. The older account routes are
+  `/frontend/billing/usage` and `/frontend/billing/subscriptions/current`.
+- Safari showed `$5.20` used of `$10`. The public dashboard client requests
+  billing routes with browser-session credentials. Organization usage exposes
+  `current_usage.token_spend.spend_in_cents`, `limit_in_cents`, and `updated_at`.
+- The native account response includes the subscription period, but no token
+  spend. Native account-update events re-fetch that response.
+- T3 must not copy a dashboard cookie into server state. Native billing support
+  requires a change to Zed's hosted service. An explicit dashboard sign-in
+  integration would be separate work.
+- Until T3 has a supported billing read, it must show account spend as
+  unavailable. It must not construct an account total from ACP session costs.
+- Provider-refresh tests exposed a separate defect: a CLI probe that exited
+  nonzero still marked Zed ready. The probe now reports an error and keeps
+  account spend unavailable.
 
 ### Repository state
 
@@ -71,7 +109,12 @@ A redacted scan of the local rollout corpus found 476 rollout files. The account
 
 ### Open questions and pending work
 
-- Find a supported Zed billing endpoint before showing account spend in Limits.
-- Forward context usage from the headless Zed bridge, rebuild, and retest the meter.
-- Track these items in `docs/personal/ISSUE_TRACKER.md`.
+- Obtain a Zed billing API that accepts native credentials, or add an explicit
+  dashboard sign-in integration.
+- Read account spend and the billing-period end from the dashboard responses
+  after supported authentication exists.
+- Add tests for account scope, billing-period boundaries, failed reads, stale
+  data, and repeated cumulative ACP session updates.
+- Keep the account-usage issue in `docs/personal/ISSUE_TRACKER.md` open until
+  the displayed amount and reset date come from Zed's billing responses.
 - If the ACP server changes, rebuild the Zed binary and rerun the focused T3 tests against the real binary.

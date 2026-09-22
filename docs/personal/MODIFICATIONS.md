@@ -279,14 +279,15 @@ release-ready. The changelog records the verified streaming repair only.
   one completion and one intact Markdown answer in an isolated web client.
 - Real Zed Luna approval and decline flows pass in an isolated web client.
   Both paths finish without a session crash.
-- The enabled meter remains absent for real Luna turns. The headless bridge
-  does not emit context usage, although fake-ACP usage tests pass.
+- The headless bridge forwards context usage for real Luna turns, and the
+  composer meter uses the reported token count and capacity.
 - Zed adapter tests use `@effect/vitest`; scoped lint and typecheck pass.
 
 ### Current status
 
-- Zed streaming and permission flows are verified. Context usage still needs
-  forwarding from the headless bridge.
-- The Zed account-spend limit is not implemented. ACP session cost must not be
-  presented as account spend.
+- Zed streaming, permission, and context-window usage flows are verified.
+- Zed account spend is reported as unavailable. T3's stored native credential
+  can read `/client/users/me`, but Zed's billing routes return `401` because
+  they require a dashboard browser session. ACP session cost cannot replace
+  the missing account-wide billing total.
 - Follow-up work is tracked in `docs/personal/ISSUE_TRACKER.md`.

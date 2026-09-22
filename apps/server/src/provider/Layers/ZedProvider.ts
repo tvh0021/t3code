@@ -1,6 +1,5 @@
 import {
   type ModelCapabilities,
-  type ServerProvider,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
   type ZedSettings,
@@ -19,6 +18,7 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
 import { buildZedAcpSpawnInput } from "../acp/ZedAcpSupport.ts";
 
 export const ZED_PRESENTATION = {
@@ -32,6 +32,17 @@ export const ZED_PRESENTATION = {
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
+
+const ZED_ACCOUNT_USAGE_UNAVAILABLE_MESSAGE =
+  "Zed account spend is unavailable here. Check the Zed dashboard.";
+
+function unavailableZedAccountUsage(checkedAt: string) {
+  return makeUnavailableUsageLimits({
+    checkedAt,
+    reason: "probeFailed",
+    message: ZED_ACCOUNT_USAGE_UNAVAILABLE_MESSAGE,
+  });
+}
 
 export const ZED_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
@@ -81,6 +92,7 @@ export function buildInitialZedProviderSnapshot(
           status: "warning",
           auth: { status: "unknown" },
           message: "Zed is disabled in T3 Code settings.",
+          usageLimits: unavailableZedAccountUsage(checkedAt),
         },
       });
     }
@@ -96,6 +108,7 @@ export function buildInitialZedProviderSnapshot(
         version: null,
         status: "ready",
         auth: { status: "authenticated" },
+        usageLimits: unavailableZedAccountUsage(checkedAt),
       },
     });
   });
@@ -122,6 +135,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
         status: "warning",
         auth: { status: "unknown" },
         message: "Zed is disabled in T3 Code settings.",
+        usageLimits: unavailableZedAccountUsage(checkedAt),
       },
     });
   }
@@ -137,9 +151,9 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
     }),
   ).pipe(Effect.result);
 
-  if (Result.isFailure(probeResult)) {
-    const error = probeResult.failure;
-    const commandMissing = isCommandMissingCause(error);
+  if (Result.isFailure(probeResult) || probeResult.success.code !== 0) {
+    const commandMissing =
+      Result.isFailure(probeResult) && isCommandMissingCause(probeResult.failure);
     return buildServerProvider({
       presentation: ZED_PRESENTATION,
       enabled: true,
@@ -154,6 +168,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
         message: commandMissing
           ? `Zed ACP server binary '${spawnInput.command}' was not found. Configure binaryPath in Zed settings.`
           : "Failed to execute Zed ACP server probe.",
+        usageLimits: unavailableZedAccountUsage(checkedAt),
       },
     });
   }
@@ -169,6 +184,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
       version: "0.1.0",
       status: "ready",
       auth: { status: "authenticated" },
+      usageLimits: unavailableZedAccountUsage(checkedAt),
     },
   });
 });

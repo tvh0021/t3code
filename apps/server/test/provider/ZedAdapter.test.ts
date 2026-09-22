@@ -376,7 +376,10 @@ describe("ZedProvider Snapshot and Probe", () => {
       expect(snapshot.slashCommands?.length).toBe(1);
       expect(snapshot.slashCommands?.[0]?.name).toBe("compact");
       expect(snapshot.reportsContextWindow).toBe(true);
-      expect(snapshot.usageLimits).toBeUndefined();
+      expect(snapshot.usageLimits).toMatchObject({
+        windows: [],
+        unavailable: { reason: "probeFailed" },
+      });
       expect(snapshot.models.map((model) => model.slug)).toEqual([
         "zed.dev/claude-sonnet-5",
         "zed.dev/gpt-5.6-luna",
