@@ -492,12 +492,31 @@ const CHAT_MARKDOWN_REMARK_PLUGINS = [
   remarkGithubAlerts,
   remarkNormalizeListItemIndentation,
   remarkCodexDirectives,
+  remarkPreserveCodeMeta,
+  remarkNormalizeLinksAndTagInlineCode,
+] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
+
+const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_MATH = [
+  remarkGfm,
+  remarkGithubAlerts,
+  remarkNormalizeListItemIndentation,
+  remarkCodexDirectives,
   [remarkMath, { singleDollarTextMath: false }],
   remarkPreserveCodeMeta,
   remarkNormalizeLinksAndTagInlineCode,
 ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
 
 const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
+  remarkGfm,
+  remarkGithubAlerts,
+  remarkNormalizeListItemIndentation,
+  remarkCodexDirectives,
+  remarkBreaks,
+  remarkPreserveCodeMeta,
+  remarkNormalizeLinksAndTagInlineCode,
+] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
+
+const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS_AND_MATH = [
   remarkGfm,
   remarkGithubAlerts,
   remarkNormalizeListItemIndentation,
@@ -512,6 +531,10 @@ const CHAT_MARKDOWN_REHYPE_PLUGINS = [
   rehypeRaw,
   rehypePreserveImageSourceMeta,
   [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
+] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
+
+const CHAT_MARKDOWN_REHYPE_PLUGINS_WITH_MATH = [
+  ...CHAT_MARKDOWN_REHYPE_PLUGINS,
   rehypeKatex,
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
@@ -3310,6 +3333,8 @@ function looksLikeMath(content: string): boolean {
  * Code blocks and inline code are preserved verbatim.
  */
 export function preprocessMarkdownMath(text: string): string {
+  if (!text.includes("$") && !text.includes("\\(") && !text.includes("\\[")) return text;
+
   const parts = text.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
   return parts
     .map((part, index) => {
@@ -3344,6 +3369,7 @@ function ChatMarkdown({
   ...props
 }: ChatMarkdownProps) {
   const preparedText = useMemo(() => preprocessMarkdownMath(text), [text]);
+  const hasMath = preparedText.includes("$$");
   const {
     componentState,
     handleCopy,
@@ -3358,11 +3384,17 @@ function ChatMarkdown({
     /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(preparedText);
   const remarkPlugins = useMemo(
     () => [
-      ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
+      ...(lineBreaks
+        ? hasMath
+          ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS_AND_MATH
+          : CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS
+        : hasMath
+          ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_MATH
+          : CHAT_MARKDOWN_REMARK_PLUGINS),
       ...extraRemarkPlugins,
       ...(incrementalParsing ? [createIncrementalMarkdownPlugin()] : []),
     ],
-    [extraRemarkPlugins, incrementalParsing, lineBreaks],
+    [extraRemarkPlugins, hasMath, incrementalParsing, lineBreaks],
   );
 
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.
@@ -3382,7 +3414,13 @@ function ChatMarkdown({
       <ChatMarkdownRendererContext value={componentState}>
         <ReactMarkdown
           remarkPlugins={remarkPlugins}
-          rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
+          rehypePlugins={
+            parseRawHtml
+              ? hasMath
+                ? CHAT_MARKDOWN_REHYPE_PLUGINS_WITH_MATH
+                : CHAT_MARKDOWN_REHYPE_PLUGINS
+              : undefined
+          }
           skipHtml={false}
           components={CHAT_MARKDOWN_COMPONENTS}
           urlTransform={markdownUrlTransform}

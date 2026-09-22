@@ -9,7 +9,6 @@
 import {
   ABACUS_CREDIT_COST_USD,
   abacusCreditsToUsd,
-  CODEX_CREDIT_COST_USD,
   codexCreditsToUsd,
   normalizeUsageModel,
   USAGE_MERGE_COMPATIBLE_SINCE,
@@ -81,6 +80,25 @@ export interface CostQuality {
   readonly modelPricedShare: number;
   readonly unpricedShare: number;
   readonly cacheSavingsUsd: number;
+}
+
+interface ProviderAccumulator {
+  costUsd: number;
+  credits: number;
+  totalTokens: number;
+  records: number;
+  sessions: number;
+}
+
+interface ModelAccumulator {
+  model: string;
+  provider: UsageProviderKind;
+  costUsd: number;
+  credits: number;
+  totalTokens: number;
+  records: number;
+  unpricedRecords: number;
+  isCreditBased: boolean;
 }
 
 export interface MergedUsage {
@@ -297,22 +315,9 @@ export function mergeUsage(
   let providerReportedRecords = 0;
   let unpricedRecords = 0;
 
-  const providerAccumulator = new Map<
-    UsageProviderKind,
-    { costUsd: number; credits: number; totalTokens: number; records: number; sessions: number }
-  >();
-  const modelAccumulator = new Map<
-    string,
-    {
-      provider: UsageProviderKind;
-      costUsd: number;
-      credits: number;
-      totalTokens: number;
-      records: number;
-      unpricedRecords: number;
-      isCreditBased?: boolean;
-    }
-  >();
+  let totalCreditCostUsd = 0;
+  const providerAccumulator = new Map<UsageProviderKind, ProviderAccumulator>();
+  const modelAccumulator = new Map<string, ModelAccumulator>();
   const dailyAccumulator = new Map<
     string,
     {
@@ -394,6 +399,7 @@ export function mergeUsage(
 
       const modelKey = `${isCreditBased ? "credit" : "sub"} ${bucket.provider} ${modelName}`;
       const model = modelAccumulator.get(modelKey) ?? {
+        model: modelName,
         provider: bucket.provider,
         costUsd: 0,
         credits: 0,
@@ -410,6 +416,7 @@ export function mergeUsage(
             ? abacusCreditsToUsd(bucketCredits)
             : bucketCostUsd;
 
+      if (isCreditBased) totalCreditCostUsd += bucketCost;
       model.costUsd += bucketCost;
       if (isSubscription) {
         model.totalTokens += tokens;
@@ -496,9 +503,6 @@ export function mergeUsage(
     totalTokens: subscriptionTotalTokens,
   };
 
-  const totalCreditCostUsd = [...modelAccumulator.values()]
-    .filter((m) => m.isCreditBased)
-    .reduce((sum, m) => sum + m.costUsd, 0);
   const totalCostUsd = subscriptionCostUsd + totalCreditCostUsd;
 
   const providers: ProviderTotals[] = [...providerAccumulator.entries()]
@@ -529,8 +533,8 @@ export function mergeUsage(
     })
     .sort((a, b) => b.costUsd - a.costUsd);
 
-  const models: ModelTotals[] = [...modelAccumulator.entries()]
-    .map(([key, totals]) => {
+  const models: ModelTotals[] = [...modelAccumulator.values()]
+    .map((totals) => {
       const modelCostShare = totals.isCreditBased
         ? totalCreditCostUsd === 0
           ? 0
@@ -539,12 +543,8 @@ export function mergeUsage(
           ? 0
           : totals.costUsd / subscriptionCostUsd;
 
-      const firstSpace = key.indexOf(" ");
-      const secondSpace = key.indexOf(" ", firstSpace + 1);
-      const modelName = secondSpace !== -1 ? key.slice(secondSpace + 1) : key;
-
       return {
-        model: modelName,
+        model: totals.model,
         provider: totals.provider,
         costUsd: totals.costUsd,
         ...(totals.isCreditBased ? { isCreditBased: true } : {}),
