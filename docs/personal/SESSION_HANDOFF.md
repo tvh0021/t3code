@@ -118,3 +118,11 @@ A redacted scan of the local rollout corpus found 476 rollout files. The account
 - Keep the account-usage issue in `docs/personal/ISSUE_TRACKER.md` open until
   the displayed amount and reset date come from Zed's billing responses.
 - If the ACP server changes, rebuild the Zed binary and rerun the focused T3 tests against the real binary.
+
+### Shared performance and synchronization
+
+- The 20,000-bucket usage-merge regression test completes in about 20 ms against a 1,000 ms ceiling.
+- Plain-message math preprocessing improved from about 0.107 ms to 0.008 ms per call in the focused benchmark.
+- The branch merged the latest `upstream/main` without conflicts on September 22, 2026.
+- Server and shared package typechecks pass. The repository still emits its existing Effect suggestions.
+- `git diff --check` passes.

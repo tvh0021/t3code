@@ -49,3 +49,9 @@ A concise, chronological record of custom changes made to this personal fork of 
 - **Zed Context Meter**: Resolved context-window reporting for the headless Zed bridge.
 - **Zed Account Usage**: Reports account spend as unavailable because Zed's billing routes reject the native credential and require a dashboard browser session. The Limits view no longer shows a zeroed or session-derived account bar.
 - **Zed Test Suite Migration**: Converted the adapter tests to the standard Effect test runner and cleared their lint warnings.
+
+### 2026-09-22
+
+- **Performance Guardrail**: Added a timed 20,000-bucket usage-merge regression test and removed an extra aggregation pass.
+- **Markdown Fast Path**: Skipped math preprocessing and plugins for messages without math delimiters.
+- **Upstream Sync**: Merged the latest `upstream/main` without conflicts.

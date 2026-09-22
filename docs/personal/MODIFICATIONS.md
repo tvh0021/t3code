@@ -291,3 +291,10 @@ release-ready. The changelog records the verified streaming repair only.
   they require a dashboard browser session. ACP session cost cannot replace
   the missing account-wide billing total.
 - Follow-up work is tracked in `docs/personal/ISSUE_TRACKER.md`.
+
+## 20. Performance guardrails and upstream synchronization
+
+- Added a timed 20,000-bucket usage-merge regression test with a 1,000 ms ceiling.
+- Added a fast path that skips math preprocessing and plugins for messages without math delimiters.
+- The focused benchmark improved plain-message math preprocessing from about 0.107 ms to 0.008 ms per call.
+- Merged the latest `upstream/main` on September 22, 2026.
