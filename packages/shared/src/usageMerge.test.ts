@@ -75,6 +75,35 @@ function environment(id: string, usageSummary: UsageSummary): EnvironmentUsage {
 }
 
 describe("mergeUsage", () => {
+  it("merges a large mixed-provider report within the regression budget", () => {
+    const providers = ["claude", "codex", "antigravity", "abacus"] as const;
+    const buckets = Array.from({ length: 20_000 }, (_, index) => {
+      const provider = providers[index % providers.length]!;
+      return bucket({
+        provider,
+        model: `${provider}-model-${index % 20}`,
+        ...(provider === "abacus" || (provider === "codex" && index % 8 === 1)
+          ? { credits: 0.25 }
+          : {}),
+      });
+    });
+    const sources = providers.map((provider) => ({
+      provider,
+      hostId: "benchmark-host",
+      homePath: `/benchmark/${provider}`,
+    }));
+
+    const started = performance.now();
+    const merged = mergeUsage(
+      [environment("benchmark", summary(buckets, sources))],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.records).toBe(100_000);
+    expect(merged.models).toHaveLength(25);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   it("sums environments that read different transcript directories", () => {
     const merged = mergeUsage(
       [
