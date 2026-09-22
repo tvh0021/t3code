@@ -33,9 +33,18 @@ A concise, chronological record of custom changes made to this personal fork of 
 - **ChatLLM Usage Accounting**: Confirmed compute-point pricing at $0.0005 per credit and fixed turn-level usage tracking.
 - **Usage Breakdowns**: Separated subscription models from credit-based models and excluded credit usage from token totals and cost charts.
 - **Codex Credit Accounting**: Added Codex credit balances, credit-based model reporting, and spillover billing at $0.04 per credit.
-- **Codex History Backfill**: Reconciled 90 days of transcript history, including forks and duplicate events. Updated the scan cache to v5 and excluded `codex-auto-review` from credit usage. The corrected backfill is about 1,334 credits.
+- **Codex History Backfill**: Reconciled 90 days of Codex transcript history (including forks and duplicate events) using scan-cache v5, excluding `codex-auto-review` from credit usage, for a corrected backfill of about 1,334 credits.
+- **Zed ACP Provider**: Added headless Zed agent support over ACP with Claude Sonnet 5 and GPT 5.6 Luna model selection, marked as an in-development integration not yet listed as release-ready.
+- **Zed Permission & Usage Fixes**: Corrected ACP permission-option selection and started forwarding Zed's context-token usage into the shared usage meter.
+
+### 2026-09-20
+
+- **Zed Live-Test Gating**: Gated the real-binary Zed smoke test behind an opt-in environment variable so it no longer requires network access to run by default.
 
 ### 2026-09-21
 
-- **Zed streaming repair**: Suppressed repeated completed-tool snapshots that split answers mid-word and flooded the activity list. Verified one intact Markdown answer after a real Sonnet file-read turn in an isolated client. Existing conversation history remains unchanged; the wider Zed integration is still under development.
-- **Zed verification**: Tested Zed Luna approval and decline flows in the browser without a crash. Confirmed that the headless bridge does not supply the context meter with usage data. Converted the adapter tests to the standard Effect test runner and cleared their lint warnings.
+- **Zed Streaming Repair**: Suppressed repeated completed-tool snapshots that split answers mid-word and flooded the activity list.
+- **Zed Streaming Verification**: Verified one intact Markdown answer after a real Sonnet file-read turn in an isolated client, though the wider Zed integration remains under development.
+- **Zed Approval Flow Verification**: Tested Zed Luna approval and decline flows in the browser without a crash.
+- **Zed Context Meter Gap**: Confirmed that the headless bridge does not supply the context meter with usage data.
+- **Zed Test Suite Migration**: Converted the adapter tests to the standard Effect test runner and cleared their lint warnings.

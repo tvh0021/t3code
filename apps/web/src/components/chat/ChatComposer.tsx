@@ -1154,9 +1154,6 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 
 const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
-  activeContextWindow: ContextWindowSnapshot | null;
-  reserveContextWindowMeter: boolean;
-  activeThreadModelDisplayName: string | null;
   isPreparingWorktree: boolean;
   pendingAction: {
     questionIndex: number;
@@ -1177,23 +1174,11 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
-  onCompactContext?: (() => void) | undefined;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
 }) {
   return (
     <>
-      {props.activeContextWindow ? (
-        <ContextWindowMeter
-          usage={props.activeContextWindow}
-          modelDisplayName={props.activeThreadModelDisplayName}
-          onCompact={props.onCompactContext}
-          compactDisabled={props.compactDisabled}
-          compactDisabledReason={props.compactDisabledReason}
-        />
-      ) : props.reserveContextWindowMeter ? (
-        <ContextWindowMeterPlaceholder />
-      ) : null}
       <ComposerPrimaryActions
         compact={props.compact}
         pendingAction={props.pendingAction}
@@ -1213,6 +1198,27 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
       />
     </>
   );
+});
+
+const ComposerFooterContextWindowMeter = memo(function ComposerFooterContextWindowMeter(props: {
+  activeContextWindow: ContextWindowSnapshot | null;
+  reserveContextWindowMeter: boolean;
+  activeThreadModelDisplayName: string | null;
+  onCompactContext?: (() => void) | undefined;
+  compactDisabled: boolean;
+  compactDisabledReason: string | null;
+}) {
+  return props.activeContextWindow ? (
+    <ContextWindowMeter
+      usage={props.activeContextWindow}
+      modelDisplayName={props.activeThreadModelDisplayName}
+      onCompact={props.onCompactContext}
+      compactDisabled={props.compactDisabled}
+      compactDisabledReason={props.compactDisabledReason}
+    />
+  ) : props.reserveContextWindowMeter ? (
+    <ContextWindowMeterPlaceholder />
+  ) : null;
 });
 
 // --------------------------------------------------------------------------
@@ -6930,6 +6936,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  <ComposerFooterContextWindowMeter
+                    activeContextWindow={
+                      settings.contextWindowMeterEnabled ? activeContextWindow : null
+                    }
+                    reserveContextWindowMeter={reserveContextWindowMeter}
+                    activeThreadModelDisplayName={activeThreadModelDisplayName}
+                    compactDisabled={
+                      compactDisabled || noProviderAvailable || isSendBusy || isConnecting
+                    }
+                    compactDisabledReason={resolvedCompactDisabledReason}
+                    {...(compactCommandAvailable ? { onCompactContext: compactThreadContext } : {})}
+                  />
                   {showComposerAttachAction ? (
                     <>
                       <input
@@ -6969,11 +6987,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ) : null}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
-                    activeContextWindow={
-                      settings.contextWindowMeterEnabled ? activeContextWindow : null
-                    }
-                    reserveContextWindowMeter={reserveContextWindowMeter}
-                    activeThreadModelDisplayName={activeThreadModelDisplayName}
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}
                     showPlanFollowUpPrompt={
@@ -6998,7 +7011,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       compactDisabled || noProviderAvailable || isSendBusy || isConnecting
                     }
                     compactDisabledReason={resolvedCompactDisabledReason}
-                    {...(compactCommandAvailable ? { onCompactContext: compactThreadContext } : {})}
                   />
                 </div>
               </div>
