@@ -98,7 +98,7 @@ publish a zeroed bar, and ACP session cost is never labeled as account spend.
 
 ## CHAT-002: Show context-window usage in the composer
 
-Status: Resolved September 21, 2026
+Status: Reopened September 22, 2026 after desktop verification.
 
 The composer now shows a circular context-window meter when a provider reports
 the current context token count. The meter shows the used share of the model's
@@ -110,6 +110,94 @@ token usage, and the adapter maps the ACP `usage_update` fields `used` and
 `size` to the shared context-window meter. Billing cost and character estimates
 remain separate from context usage.
 
-No further T3 context-window work is tracked here. If the headless Zed bridge
-changes again, rebuild the binary and repeat the focused adapter and live-client
-checks.
+Live verification in T3 Code - Personal 0.0.42 found no context meter after
+three completed turns using Zed's `zed.dev/gpt-5.6-luna`. The meter was also
+absent after navigating away and reopening the thread. The composer showed
+the model, Full access, attachment, and send controls, with no context count.
+
+Reproduction thread: `46981a74-b5c1-4a15-804f-44eb30d8ec00`, titled `ZED_OK`.
+Send `Reply only: ZED_OK. Do not use tools.`, then a short follow-up. Inspect
+the composer after completion and after reopening the thread.
+
+The configured bridge is `zed-dev/target/debug/zed-acp-server`, reported as
+v0.1.0. Its build freshness and emitted usage events were not verified. Check
+whether this running binary emits `usage_update`, then trace delivery to the
+composer. The UI observation does not establish which component is responsible.
+
+Acceptance: a completed Luna turn supplies a visible context meter with real
+used and total token counts, including after navigating back to the thread.
+
+## ZED-003: Full access still blocks a read-only command for approval
+
+Status: Open. Observed September 22, 2026 in T3 Code - Personal 0.0.42.
+
+In thread `46981a74-b5c1-4a15-804f-44eb30d8ec00`, select Zed GPT-5.6 Luna
+with Full access and send `Run pwd once. Reply with only the directory name.`
+The thread enters Approval, shows a Command approval card for `pwd`, and
+replaces the composer with `Resolve this approval request to continue`.
+Approving the command succeeds and produces `t3code-dev`. Full access remains
+selected afterward.
+
+The displayed permission mode does not match the effective behavior.
+`ZedAdapter.ts` stores `input.runtimeMode` on the session, but its permission
+callback always opens a request and waits for a decision. The adapter does not
+otherwise reference `runtimeMode`.
+
+Acceptance: map supported permission modes to Zed's actual behavior, or clearly
+show the provider's limitation instead of presenting an ineffective Full access
+mode. Verify approval-required behavior separately. Do not bypass permissions
+merely to hide the mismatch.
+
+## ZED-004: Completed Zed turns are absent from the usage summary
+
+Status: Open investigation. Observed September 22, 2026.
+
+After the three successful Luna turns in the `ZED_OK` thread, open Usage and
+select Tokens with the 90-day period and All environments. The provider summary
+lists Codex, Antigravity, and ChatLLM, but no Zed. No Zed entry explains whether
+its session usage is unavailable or still loading. The Limits view does show
+Zed's dashboard link, so Zed is present elsewhere in Usage.
+
+This concerns session usage visibility, separate from ZED-001's account billing
+authentication. No claim is made that ACP supplies itemized token totals or
+that its session cost equals account spend. Investigate available bridge events
+and the summary's provider coverage before choosing a fix.
+
+Acceptance: show supported Zed session usage, or explicitly identify unavailable
+metrics. Keep session usage separate from account limits.
+
+## Desktop verification scope, September 22, 2026
+
+Used the already-running personal desktop app through computer use. Sent three
+short Zed GPT-5.6 Luna prompts and one ChatLLM GLM-5.3-Flash prompt. Zed passed
+basic response, follow-up memory, approved command execution, and conversation
+persistence checks. ChatLLM returned `CHAT_OK` to
+`Reply only: CHAT_OK. Do not use tools.` in thread
+`405dca5a-683b-4de4-bce1-25ecd145d85e`, titled `Chat Acknowledgment`.
+No further ChatLLM prompts were sent because Limits showed 10 credits remaining
+before the test.
+
+Settings navigation, provider configuration views, Usage Limits and Tokens,
+the new-thread project picker, and the Files panel loaded. No additional
+confirmed defect was found in that cursory pass. Computer-use window and
+accessibility errors occurred initially and recovered. They are not classified
+as T3 defects. Historical failed threads were not reproduced or filed as new
+issues. Mobile, remote connections, cancellation, and quota exhaustion were not
+tested. No app restart or configuration change was required.
+
+## CHATLLM-001: The running desktop server does not refresh its model list
+
+Status: Fix built September 22, 2026. Desktop restart and UI verification remain.
+
+The worktree's desktop server showed seven fixed ChatLLM models after a manual
+refresh and omitted `gpt-6-sol` and `gpt-6-luna`. Its running server bundle was
+built before the model updater. The older ChatLLM driver contained those seven
+models and had no `refreshModels` handler, so the refresh request could report
+"Checked just now" without updating ChatLLM.
+
+The RouteLLM `/v1/models` endpoint returned both missing IDs for the configured
+API key. The current driver reads that endpoint on manual refresh and checks it
+weekly while the server runs. It keeps the previous list if the request fails.
+The worktree's desktop and server bundles were rebuilt, but the running desktop
+server has not been restarted. After restarting, refresh the provider list and
+confirm that both IDs appear in Settings and the model picker.
