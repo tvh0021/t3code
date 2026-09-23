@@ -139,15 +139,6 @@ export function UsagePage() {
     () => (isPast24Hours ? merged.hourly : merged.daily).toReversed(),
     [isPast24Hours, merged.daily, merged.hourly],
   );
-  const breakdownModels = useMemo(
-    () =>
-      breakdown === "model" && metric === "tokens"
-        ? merged.models.toSorted(
-            (left, right) => right.totalTokens - left.totalTokens || right.costUsd - left.costUsd,
-          )
-        : merged.models,
-    [breakdown, merged.models, metric],
-  );
   const activeProviders = useMemo(() => providersWithUsage(merged.providers), [merged.providers]);
   const timeValueColumnWidth = `${60 / (activeProviders.length + 2)}%`;
 
@@ -558,10 +549,8 @@ export function UsagePage() {
 
                       {breakdown === "model" ? (
                         (() => {
-                          const subscriptionModels = breakdownModels.filter(
-                            (m) => !m.isCreditBased,
-                          );
-                          const creditModels = breakdownModels.filter((m) => m.isCreditBased);
+                          const subscriptionModels = merged.models.filter((m) => !m.isCreditBased);
+                          const creditModels = merged.models.filter((m) => m.isCreditBased);
 
                           return (
                             <div className="flex flex-col gap-6">

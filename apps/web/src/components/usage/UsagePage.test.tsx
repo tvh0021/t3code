@@ -213,14 +213,14 @@ describe("UsagePage model breakdown", () => {
     expect(unpricedRow).not.toContain("$0.00");
   });
 
-  it("sorts models by token usage when the token metric is selected", () => {
+  it("keeps models sorted by cost when the token metric is selected", () => {
     testState.metric = "tokens";
     testState.breakdown = "model";
 
     const markup = renderToStaticMarkup(<UsagePage />);
     const body = markup.match(/<tbody>(.*?)<\/tbody>/)?.[1] ?? "";
 
-    expect(body).toMatch(/token-heavy-model.*token-heavy-cheaper-model.*expensive-model/);
+    expect(body).toMatch(/expensive-model.*token-heavy-model.*token-heavy-cheaper-model/);
     expect(modelTotals.map((model) => model.model)).toEqual([
       "expensive-model",
       "token-heavy-model",

@@ -6,6 +6,8 @@
 environments. It shows token use, cache savings, model breakdowns, and estimated API-equivalent
 cost. These estimates are not your subscription bill.
 
+The model breakdown lists models by estimated cost, highest first, even when you view tokens.
+
 Totals depend on the history available on each server. Grok turns without a saved completed-turn
 record are missing from the totals.
 
