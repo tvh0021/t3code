@@ -10,6 +10,7 @@ import {
   type LimitPoolWindow,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
+import { ProviderDriverKind } from "@t3tools/contracts";
 import { AlertTriangleIcon, TicketIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
@@ -29,6 +30,10 @@ import {
   resetCreditsSummary,
   useResetCredit,
 } from "./UsageLimits";
+
+const ZED_DASHBOARD_URL = "https://dashboard.zed.dev";
+const ZED_DASHBOARD_NOTICE = "Zed account spend is unavailable here. Check the Zed dashboard.";
+const ZED_DRIVER = ProviderDriverKind.make("zed");
 
 /** `someone@example.com` → `SE`: enough to tell accounts apart, too little to identify one. */
 function accountInitials(email: string): string {
@@ -556,6 +561,33 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   );
 }
 
+function ZedDashboardSection() {
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <ProviderInstanceIcon
+          driverKind={ZED_DRIVER}
+          displayName="Zed"
+          indicatorBackground="var(--background)"
+          className="size-5"
+          iconClassName="size-4 text-foreground/80"
+        />
+        Zed
+      </h2>
+      <div className="rounded-lg border border-border/60 p-4">
+        <a
+          href={ZED_DASHBOARD_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-sm font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
+        >
+          Check the Zed dashboard.
+        </a>
+      </div>
+    </section>
+  );
+}
+
 /**
  * Accounts pooled per provider: what is open across all of them, who resets
  * next, and how much of the pool that hands back. Answers "can I keep going"
@@ -569,10 +601,12 @@ export function UsageLimitsPooled({
   readonly now: number;
 }) {
   const pools = collectLimitPools(collectLimitAccounts(presentations), now);
-  const notices = collectLimitNotices(presentations);
+  const allNotices = collectLimitNotices(presentations);
+  const showZedDashboard = allNotices.some((notice) => notice.endsWith(ZED_DASHBOARD_NOTICE));
+  const notices = allNotices.filter((notice) => !notice.endsWith(ZED_DASHBOARD_NOTICE));
   return (
     <div className="flex flex-col gap-8">
-      {pools.length === 0 && notices.length === 0 ? (
+      {pools.length === 0 && notices.length === 0 && !showZedDashboard ? (
         <p className="text-sm text-muted-foreground">
           No provider on the selected environments reports subscription limits.
         </p>
@@ -580,6 +614,7 @@ export function UsageLimitsPooled({
       {pools.map((pool) => (
         <PoolSection key={pool.driver} pool={pool} now={now} />
       ))}
+      {showZedDashboard ? <ZedDashboardSection /> : null}
       <LimitNotices notices={notices} />
     </div>
   );

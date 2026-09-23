@@ -619,7 +619,7 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
       ),
   );
 
-  it.effect("routes permission requests through T3 approval flow", () =>
+  it.effect("routes permission requests through T3 approval flow in approval-required mode", () =>
     withTestServices(
       Effect.gen(function* () {
         const threadId = ThreadId.make("zed-adapter-approval-1");
@@ -645,7 +645,7 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
         yield* adapter.startSession({
           threadId,
           cwd: process.cwd(),
-          runtimeMode: "auto",
+          runtimeMode: "approval-required",
         });
 
         const turnFiber = yield* adapter
@@ -662,6 +662,40 @@ describe("ZedAdapter Lifecycle and Turn Streaming", () => {
         yield* Deferred.await(requestResolved).pipe(Effect.timeout("5 seconds"));
 
         yield* Fiber.join(turnFiber);
+        yield* adapter.stopSession(threadId);
+      }),
+    ),
+  );
+
+  it.effect("auto-approves Zed permission requests in full-access mode", () =>
+    withTestServices(
+      Effect.gen(function* () {
+        const threadId = ThreadId.make("zed-adapter-full-access-1");
+        const fakeBinary = yield* Effect.promise(() =>
+          makeFakeZedCli({ onRequestPermission: true }),
+        );
+        const adapter = yield* makeZedAdapter(decodeZedSettings({ binaryPath: fakeBinary }));
+        const events: ProviderRuntimeEvent[] = [];
+
+        yield* Stream.runForEach(adapter.streamEvents, (event) =>
+          Effect.sync(() => {
+            events.push(event);
+          }),
+        ).pipe(Effect.forkChild);
+
+        yield* adapter.startSession({
+          threadId,
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+        });
+
+        yield* adapter.sendTurn({
+          threadId,
+          input: "run tool",
+        });
+
+        expect(events.some((event) => event.type === "request.opened")).toBe(false);
+        expect(events.some((event) => event.type === "request.resolved")).toBe(false);
         yield* adapter.stopSession(threadId);
       }),
     ),

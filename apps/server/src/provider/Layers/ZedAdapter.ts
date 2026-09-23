@@ -306,6 +306,18 @@ export function makeZedAdapter(
           yield* acp.handleRequestPermission((params) =>
             mapAcpCallbackFailure(
               Effect.gen(function* () {
+                if (input.runtimeMode === "full-access") {
+                  const optionId = selectAcpPermissionOptionId(params, "acceptForSession");
+                  if (optionId !== undefined) {
+                    return {
+                      outcome: {
+                        outcome: "selected" as const,
+                        optionId,
+                      },
+                    };
+                  }
+                }
+
                 const permissionRequest = parsePermissionRequest(params);
                 const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
                 const runtimeRequestId = RuntimeRequestId.make(requestId);
