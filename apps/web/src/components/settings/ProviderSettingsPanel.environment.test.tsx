@@ -154,7 +154,7 @@ function isRefreshButton(element: ReactElement<Record<string, unknown>>): boolea
         child !== null &&
         (child as ReactElement<Record<string, unknown>>).props?.className === "sr-only" &&
         (child as ReactElement<Record<string, unknown>>).props?.children ===
-          "Refresh provider status",
+          "Refresh providers and models",
     )
   );
 }

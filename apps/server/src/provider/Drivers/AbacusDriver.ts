@@ -9,14 +9,17 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
+import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
 import { ServerConfig } from "../../config.ts";
 import * as Schema from "effect/Schema";
 
 import { makeAbacusAdapter } from "../Layers/AbacusAdapter.ts";
+import { readAbacusModels } from "../Layers/abacusModels.ts";
 import { readAbacusUsageLimits } from "../Layers/abacusUsageLimits.ts";
 import { defaultProviderContinuationIdentity, type ProviderDriver } from "../ProviderDriver.ts";
+import { ProviderDriverError } from "../Errors.ts";
 import { withInstanceIdentity } from "./instanceIdentity.ts";
 import type { ServerProviderShape } from "../Services/ServerProvider.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
@@ -42,6 +45,8 @@ const MAINTENANCE_CAPABILITIES = makeManualOnlyProviderMaintenanceCapabilities({
   provider: DRIVER_KIND,
   packageName: null,
 });
+const MODEL_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60 * 1_000;
+const MODEL_REFRESH_CHECK_INTERVAL = "1 hour";
 
 export type AbacusDriverEnv = never;
 
@@ -115,10 +120,65 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
       const rawSnapshot: ServerProvider = stampIdentity(draft);
 
       const snapshotRef = yield* Ref.make(rawSnapshot);
+      const changes = yield* PubSub.unbounded<ServerProvider>();
+      const lastModelRefreshAt = yield* Ref.make<number | null>(null);
+      const refreshModels = Effect.fn("AbacusDriver.refreshModels")(function* () {
+        if (!apiKey) return;
+        const discovered = yield* readAbacusModels({
+          apiBaseUrl: config.apiBaseUrl || "https://routellm.abacus.ai/v1",
+          apiKey,
+        }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderDriverError({
+                driver: DRIVER_KIND,
+                instanceId,
+                detail: "Could not refresh ChatLLM models. The previous model list is unchanged.",
+                cause,
+              }),
+          ),
+        );
+        const discoveredSlugs = new Set(discovered.map((model) => model.slug));
+        const updated = yield* Ref.updateAndGet(snapshotRef, (current) => ({
+          ...current,
+          models: [
+            ...ABACUS_BUILT_IN_MODELS,
+            ...discovered.filter(
+              (model) => !ABACUS_BUILT_IN_MODELS.some((builtIn) => builtIn.slug === model.slug),
+            ),
+            ...customModelEntries.filter((model) => !discoveredSlugs.has(model.slug)),
+          ],
+        }));
+        yield* PubSub.publish(changes, updated);
+        const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+        yield* Ref.set(lastModelRefreshAt, nowMs);
+      });
+      const refreshModelsIfDue = Effect.gen(function* () {
+        const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+        const lastRefreshMs = yield* Ref.get(lastModelRefreshAt);
+        if (
+          enabled &&
+          apiKey &&
+          (lastRefreshMs === null || nowMs - lastRefreshMs >= MODEL_REFRESH_INTERVAL_MS)
+        ) {
+          yield* Ref.set(lastModelRefreshAt, nowMs);
+          yield* refreshModels().pipe(Effect.orElseSucceed(() => undefined));
+        }
+      });
+      if (enabled && apiKey) {
+        yield* Effect.gen(function* () {
+          yield* Effect.sleep("1 minute");
+          yield* refreshModelsIfDue;
+          return yield* Effect.forever(
+            Effect.sleep(MODEL_REFRESH_CHECK_INTERVAL).pipe(Effect.andThen(refreshModelsIfDue)),
+          );
+        }).pipe(Effect.forkScoped);
+      }
       const snapshotShape: ServerProviderShape = {
         resolveMaintenance: () => Effect.succeed(MAINTENANCE_CAPABILITIES),
         getSnapshot: Ref.get(snapshotRef),
         refresh: Effect.gen(function* () {
+          yield* refreshModelsIfDue;
           const current = yield* Ref.get(snapshotRef);
           if (!apiKey && !sessionCookie) {
             return current;
@@ -134,7 +194,10 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
           yield* Ref.set(snapshotRef, updated);
           return updated;
         }),
-        streamChanges: Stream.fromEffect(Ref.get(snapshotRef)),
+        streamChanges: Stream.concat(
+          Stream.fromEffect(Ref.get(snapshotRef)),
+          Stream.fromPubSub(changes),
+        ),
         applyUsageLimits: (update) =>
           Ref.update(snapshotRef, (current) => ({
             ...current,
@@ -180,6 +243,7 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
         accentColor,
         enabled,
         snapshot: snapshotShape,
+        refreshModels,
         adapter,
         textGeneration,
       };
