@@ -310,6 +310,11 @@ export function parseCodexLine(
 
   const info = payloadRecord["info"];
   if (typeof info !== "object" || info === null) return null;
+  // Older Antigravity JSONL may contain prompt-length estimates. Only the
+  // explicit ACP measurements are safe to include when no database is present.
+  if (provider === "antigravity" && (info as Record<string, unknown>)["usage_source"] !== "acp") {
+    return null;
+  }
   const last = (info as Record<string, unknown>)["last_token_usage"];
   if (typeof last !== "object" || last === null) return null;
   const lastRecord = last as Record<string, unknown>;

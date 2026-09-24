@@ -48,6 +48,11 @@ import * as ServerSettings from "../serverSettings.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { mergeProviderInstanceEnvironment } from "../provider/ProviderInstanceEnvironment.ts";
 import { UsageAggregator } from "./usageAggregation.ts";
+import {
+  listAntigravityConversationDirs,
+  listAntigravityConversationFiles,
+  readAntigravityConversation,
+} from "./antigravityConversations.ts";
 import { createOverrideRateTable, parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
   listTranscriptFiles,
@@ -384,7 +389,18 @@ export const make = Effect.gen(function* () {
         Effect.catchCause(() => Effect.succeed(null)),
       );
       if (document === null) return;
-      for (const [path, entry] of decodeScanCache(document)) fileCache.set(path, entry);
+      const hasVerifiedAntigravityCache =
+        typeof document === "object" &&
+        document !== null &&
+        "antigravityUsageVersion" in document &&
+        document.antigravityUsageVersion === 1;
+      for (const [path, entry] of decodeScanCache(document)) {
+        if (entry.provider === "antigravity" && !hasVerifiedAntigravityCache) {
+          cacheDirty = true;
+          continue;
+        }
+        fileCache.set(path, entry);
+      }
       const sources = decodeCachedSources(document);
       if (Option.isSome(sources)) {
         for (const [key, source] of Object.entries(sources.value.sources))
@@ -400,6 +416,7 @@ export const make = Effect.gen(function* () {
     yield* encodeScanCacheFile({
       ...encodeScanCache(fileCache),
       sources: Object.fromEntries(sourceCache),
+      antigravityUsageVersion: 1,
     }).pipe(
       Effect.flatMap((serialized) => fileSystem.writeFileString(scanCachePath, serialized)),
       Effect.map(() => {
@@ -480,6 +497,7 @@ export const make = Effect.gen(function* () {
     readonly provider: UsageProviderKind;
     readonly dir: string;
     readonly volumeId: string;
+    readonly database?: boolean;
     /** Parsed records per file, or `null` when the directory does not exist. */
     readonly files:
       | readonly { readonly path: string; readonly records: readonly UsageRecord[] }[]
@@ -514,6 +532,35 @@ export const make = Effect.gen(function* () {
         parsedFiles.push({ path: file.path, records });
       }
       scanned.push({ provider, dir, volumeId, files: parsedFiles });
+    }
+    const databaseDirs = yield* Effect.promise(() =>
+      listAntigravityConversationDirs(
+        config.stateDir,
+        hostEnvironment.HOME?.trim() || NodeOS.homedir(),
+      ),
+    );
+    for (const directory of databaseDirs) {
+      const exists = yield* fileSystem
+        .exists(directory)
+        .pipe(Effect.catchCause(() => Effect.succeed(false)));
+      const dir = yield* fileSystem.realPath(directory).pipe(Effect.orElseSucceed(() => directory));
+      const volumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
+      if (!exists) {
+        scanned.push({ provider: "antigravity", dir, volumeId, database: true, files: null });
+        continue;
+      }
+      const files = yield* Effect.promise(() =>
+        listAntigravityConversationFiles(dir, windowStartMs),
+      );
+      const parsedFiles = yield* Effect.promise(() =>
+        Promise.all(
+          files.map(async (file) => ({
+            path: file.path,
+            records: readAntigravityConversation(file.path) ?? [],
+          })),
+        ),
+      );
+      scanned.push({ provider: "antigravity", dir, volumeId, database: true, files: parsedFiles });
     }
     return scanned;
   });
@@ -589,7 +636,14 @@ export const make = Effect.gen(function* () {
 
     const sources: UsageSource[] = [];
 
-    for (const { provider, dir, volumeId, files } of scannedDirs) {
+    const databaseSessions = new Set(
+      scannedDirs
+        .filter((source) => source.database)
+        .flatMap((source) => source.files ?? [])
+        .flatMap((file) => file.records.map((record) => record.sessionId)),
+    );
+
+    for (const { provider, dir, volumeId, files, database } of scannedDirs) {
       const retainedFiles = [...(files ?? [])];
       const livePaths = new Set(retainedFiles.map((file) => file.path));
       // Cleanup may remove transcripts, but the usage we already saved still
@@ -605,7 +659,13 @@ export const make = Effect.gen(function* () {
         retainedFiles.push({ path: filePath, records: [...entry.records, ...entry.tailRecords] });
       }
       const filesToAggregate =
-        provider === "codex" ? reconcileCodexCreditUsage(retainedFiles) : retainedFiles;
+        provider === "codex"
+          ? reconcileCodexCreditUsage(retainedFiles)
+          : provider === "antigravity" && !database
+            ? retainedFiles.filter(
+                (file) => !file.records.some((record) => databaseSessions.has(record.sessionId)),
+              )
+            : retainedFiles;
       let scannedFiles = 0;
       let skippedFiles = 0;
       // Distinct per directory. Buckets carry per-cell session counts, but a
@@ -622,6 +682,7 @@ export const make = Effect.gen(function* () {
         for (const record of file.records) {
           let usageRecord = record;
           if (
+            record.dedupeKey === null &&
             (record.provider === "codex" ||
               record.provider === "antigravity" ||
               record.provider === "abacus") &&

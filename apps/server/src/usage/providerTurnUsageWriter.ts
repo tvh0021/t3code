@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off - writes directly to session log on disk
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
@@ -45,7 +45,7 @@ export async function appendProviderTurnUsage(input: RecordProviderTurnUsageInpu
 
   const safeSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
   const dir = NodePath.join(stateDir, "usage", provider, "sessions");
-  await NodeFS.mkdir(dir, { recursive: true });
+  await NodeFSP.mkdir(dir, { recursive: true });
   const filePath = NodePath.join(dir, `${safeSessionId}.jsonl`);
 
   const rawTimestamp = input.timestamp ?? input.timestampMs;
@@ -61,7 +61,7 @@ export async function appendProviderTurnUsage(input: RecordProviderTurnUsageInpu
 
   let exists = false;
   try {
-    const stat = await NodeFS.stat(filePath);
+    const stat = await NodeFSP.stat(filePath);
     exists = stat.size > 0;
   } catch {
     exists = false;
@@ -94,6 +94,7 @@ export async function appendProviderTurnUsage(input: RecordProviderTurnUsageInpu
       payload: {
         type: "token_count",
         info: {
+          ...(provider === "antigravity" ? { usage_source: "acp" } : {}),
           last_token_usage: {
             input_tokens: totalInputTokens,
             cached_input_tokens: cachedInput,
@@ -108,5 +109,5 @@ export async function appendProviderTurnUsage(input: RecordProviderTurnUsageInpu
     }),
   );
 
-  await NodeFS.appendFile(filePath, lines.join("\n") + "\n", "utf8");
+  await NodeFSP.appendFile(filePath, lines.join("\n") + "\n", "utf8");
 }

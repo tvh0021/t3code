@@ -3,6 +3,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeSqlite from "node:sqlite";
 
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -33,6 +34,34 @@ import * as UsageService from "./UsageService.ts";
 import { appendProviderTurnUsage } from "./providerTurnUsageWriter.ts";
 
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+
+function protoVarint(value: number): Buffer {
+  const bytes: number[] = [];
+  while (value >= 128) {
+    bytes.push((value % 128) | 128);
+    value = Math.floor(value / 128);
+  }
+  bytes.push(value);
+  return Buffer.from(bytes);
+}
+
+function protoField(field: number, value: number | Buffer): Buffer {
+  return typeof value === "number"
+    ? Buffer.concat([protoVarint(field * 8), protoVarint(value)])
+    : Buffer.concat([protoVarint(field * 8 + 2), protoVarint(value.length), value]);
+}
+
+function antigravityGeneration(input: number, cached: number, output: number): Buffer {
+  return protoField(
+    9,
+    Buffer.concat([
+      protoField(2, input),
+      protoField(5, cached),
+      protoField(3, output),
+      protoField(9, 3),
+    ]),
+  );
+}
 
 function claudeLine(id: number, outputTokens: number, model = "claude-fable-5"): string {
   return `${JSON.stringify({
@@ -80,13 +109,14 @@ const setup = Effect.gen(function* () {
 const serviceLayers = (input: {
   readonly prefix: string;
   readonly home: string;
+  readonly baseDir?: string;
   readonly settings: Parameters<typeof ServerSettings.layerTest>[0];
   readonly onRatesFetch?: () => void;
   /** Defaults to an unparsable document so every scan retries the fetch. */
   readonly ratesDocument?: unknown;
   readonly environment?: NodeJS.ProcessEnv;
 }) =>
-  ServerConfig.layerTest(process.cwd(), { prefix: input.prefix }).pipe(
+  ServerConfig.layerTest(process.cwd(), input.baseDir ?? { prefix: input.prefix }).pipe(
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(ServerSettings.layerTest(input.settings)),
     Layer.provideMerge(
@@ -104,6 +134,7 @@ const serviceLayers = (input: {
     ),
     Layer.provideMerge(
       Layer.succeed(HostProcessEnvironment, {
+        HOME: input.home,
         GROK_HOME: NodePath.join(input.home, "grok"),
         ...input.environment,
       }),
@@ -777,5 +808,152 @@ describe("UsageService", () => {
         Effect.provide(serviceLayers({ prefix: "usage-service-ag-abacus-test", home, settings })),
       );
     }).pipe(Effect.scoped),
+  );
+
+  it.live("uses Antigravity conversation metrics instead of a prompt estimate", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      yield* Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const sessionId = "ag-metrics-session";
+        const dbDir = NodePath.join(home, ".gemini", "antigravity", "conversations");
+        yield* Effect.promise(async () => {
+          await NodeFSP.mkdir(dbDir, { recursive: true });
+          const db = new NodeSqlite.DatabaseSync(NodePath.join(dbDir, `${sessionId}.db`));
+          try {
+            db.exec(
+              "CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, metadata BLOB)",
+            );
+            db.exec("CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)");
+            db.prepare("INSERT INTO gen_metadata VALUES (?, ?)").run(
+              1,
+              Buffer.from("gemini-3.8-flash-high"),
+            );
+            const at = Math.floor(Date.parse("2026-08-01T10:00:00Z") / 1000);
+            const generation = (input: number, cached: number, output: number) =>
+              Buffer.concat([
+                antigravityGeneration(input, cached, output),
+                protoField(6, protoField(1, at)),
+              ]);
+            const insert = db.prepare("INSERT INTO steps VALUES (?, ?, ?)");
+            insert.run(1, 14, null);
+            insert.run(2, 15, generation(100, 200, 50));
+            insert.run(3, 15, generation(80, 300, 40));
+          } finally {
+            db.close();
+          }
+          await appendProviderTurnUsage({
+            stateDir: config.stateDir,
+            provider: "antigravity",
+            sessionId,
+            model: "gemini-3.8-flash-high",
+            timestampMs: Date.parse("2026-08-01T10:00:00Z"),
+            tokens: { inputTokens: 122, outputTokens: 0 },
+          });
+        });
+        const service = yield* UsageService.make;
+        const summary = yield* service.readSummary(WINDOW);
+        const totals = summary.buckets
+          .filter((bucket) => bucket.provider === "antigravity")
+          .reduce(
+            (sum, bucket) => ({
+              input: sum.input + bucket.totals.uncachedInputTokens,
+              cached: sum.cached + bucket.totals.cachedInputTokens,
+              output: sum.output + bucket.totals.outputTokens,
+            }),
+            { input: 0, cached: 0, output: 0 },
+          );
+        assert.deepEqual(totals, { input: 180, cached: 500, output: 90 });
+      }).pipe(
+        Effect.provide(
+          serviceLayers({
+            prefix: "usage-service-ag-database-test",
+            home,
+            settings,
+            environment: { HOME: home },
+          }),
+        ),
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.live(
+    "includes legacy Personal Antigravity history without counting copied conversations twice",
+    () =>
+      Effect.gen(function* () {
+        const { settings, home } = yield* setup;
+        const baseDir = NodePath.join(home, ".t3-personal");
+        yield* Effect.gen(function* () {
+          const config = yield* ServerConfig.ServerConfig;
+          const oldDir = NodePath.join(
+            home,
+            ".t3",
+            "userdata",
+            "providers",
+            "antigravity",
+            "profile",
+            "antigravity-acp",
+            "conversations",
+          );
+          const currentDir = NodePath.join(
+            config.stateDir,
+            "providers",
+            "antigravity",
+            "profile",
+            "antigravity-acp",
+            "conversations",
+          );
+          yield* Effect.promise(async () => {
+            const at = Math.floor(Date.parse("2026-08-01T10:00:00Z") / 1000);
+            const makeStep = (input: number, cached: number, output: number) =>
+              Buffer.concat([
+                antigravityGeneration(input, cached, output),
+                protoField(6, protoField(1, at)),
+              ]);
+            for (const [dir, includeNewStep] of [
+              [oldDir, false],
+              [currentDir, true],
+            ] as const) {
+              await NodeFSP.mkdir(dir, { recursive: true });
+              const db = new NodeSqlite.DatabaseSync(NodePath.join(dir, "shared.db"));
+              try {
+                db.exec(
+                  "CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, metadata BLOB)",
+                );
+                db.exec("CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)");
+                db.prepare("INSERT INTO gen_metadata VALUES (?, ?)").run(
+                  1,
+                  Buffer.from("gemini-3.8-flash-high"),
+                );
+                const insert = db.prepare("INSERT INTO steps VALUES (?, ?, ?)");
+                insert.run(1, 15, makeStep(100, 200, 50));
+                if (includeNewStep) insert.run(2, 15, makeStep(80, 30, 10));
+              } finally {
+                db.close();
+              }
+            }
+          });
+          const service = yield* UsageService.make;
+          const summary = yield* service.readSummary(WINDOW);
+          const antigravity = summary.buckets.filter((bucket) => bucket.provider === "antigravity");
+          assert.equal(antigravity.length, 1);
+          assert.deepEqual(antigravity[0]?.totals, {
+            uncachedInputTokens: 180,
+            cachedInputTokens: 230,
+            cacheCreationTokens: 0,
+            outputTokens: 60,
+            reasoningTokens: 6,
+          });
+        }).pipe(
+          Effect.provide(
+            serviceLayers({
+              prefix: "usage-service-ag-legacy-test",
+              baseDir,
+              home,
+              settings,
+            }),
+          ),
+        );
+      }).pipe(Effect.scoped),
   );
 });

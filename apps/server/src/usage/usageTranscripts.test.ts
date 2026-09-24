@@ -71,6 +71,18 @@ describe("parseClaudeLine", () => {
 });
 
 describe("parseCodexLine", () => {
+  it("excludes old Antigravity prompt estimates without an ACP source marker", () => {
+    const state = initialCodexScanState();
+    parseCodexLine(sessionMeta, state, "antigravity");
+    parseCodexLine(turnContext, state, "antigravity");
+    const unmarked = tokenCount(122, 0, 0, 0);
+    expect(parseCodexLine(unmarked, state, "antigravity")).toBeNull();
+    const marked = JSON.parse(unmarked) as { payload: { info: Record<string, unknown> } };
+    marked.payload.info["usage_source"] = "acp";
+    expect(
+      parseCodexLine(JSON.stringify(marked), state, "antigravity")?.totals.uncachedInputTokens,
+    ).toBe(122);
+  });
   const sessionMeta = JSON.stringify({
     type: "session_meta",
     timestamp: "2026-08-01T05:17:41.289Z",

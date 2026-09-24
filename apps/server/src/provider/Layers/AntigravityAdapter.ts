@@ -231,11 +231,38 @@ const resolveClientFilePath = Effect.fn("AntigravityAdapter.resolveClientFilePat
   }) {
     const { path } = input;
     const resolved = path.resolve(input.requestPath);
-    // Follow symlinks on the parent so a link out of the workspace cannot escape it.
-    const parent = yield* input.fileSystem
-      .realPath(path.dirname(resolved))
-      .pipe(Effect.orElseSucceed(() => path.dirname(resolved)));
-    const real = path.join(parent, path.basename(resolved));
+    // A new file may have missing parent directories. Resolve the nearest
+    // existing ancestor so aliases and symlinks are checked before creating it.
+    const missing = [path.basename(resolved)];
+    let ancestor = path.dirname(resolved);
+    let real: string;
+    while (true) {
+      const canonical = yield* input.fileSystem
+        .realPath(ancestor)
+        .pipe(
+          Effect.catch((error) =>
+            error.reason._tag === "NotFound"
+              ? Effect.succeed(undefined)
+              : Effect.fail(
+                  EffectAcpErrors.AcpRequestError.invalidParams(
+                    `Could not resolve path '${input.requestPath}'.`,
+                  ),
+                ),
+          ),
+        );
+      if (canonical !== undefined) {
+        real = path.join(canonical, ...missing);
+        break;
+      }
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) {
+        return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+          `Could not resolve path '${input.requestPath}'.`,
+        );
+      }
+      missing.unshift(path.basename(ancestor));
+      ancestor = parent;
+    }
     const roots = yield* Effect.forEach(input.allowedRoots, (root) =>
       input.fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root)),
     );
@@ -1121,17 +1148,13 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
       const sessionId = context.nativeSessionId || input.threadId;
       if (sessionId && serverConfig?.stateDir) {
         const usage = (result as { usage?: EffectAcpSchema.PromptResponse["usage"] }).usage;
-        let inputTokens = usage?.inputTokens ?? 0;
+        const inputTokens = usage?.inputTokens ?? 0;
         const cachedInputTokens = usage?.cachedReadTokens ?? 0;
         const cacheCreationTokens = usage?.cachedWriteTokens ?? 0;
         const outputTokens = usage?.outputTokens ?? 0;
         const reasoningTokens = usage?.thoughtTokens ?? 0;
 
-        if (inputTokens === 0 && outputTokens === 0 && typeof input.input === "string") {
-          inputTokens = Math.max(1, Math.ceil(input.input.length / 4));
-        }
-
-        if (inputTokens > 0 || outputTokens > 0) {
+        if (usage && (inputTokens > 0 || cachedInputTokens > 0 || outputTokens > 0)) {
           yield* Effect.promise(() =>
             appendProviderTurnUsage({
               stateDir: serverConfig.stateDir,

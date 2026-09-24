@@ -1263,6 +1263,14 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       }).pipe(Effect.flip);
       expect(escape._tag).toBe("AcpRequestError");
       expect(yield* fs.exists(path.join(outside, "escape.txt"))).toBe(false);
+      yield* fs.symlink(outside, path.join(cwd, "linked-outside"));
+      const linkedEscape = yield* write({
+        sessionId: nativeSessionId,
+        path: path.join(cwd, "linked-outside", "nested", "escape.txt"),
+        content: "nope",
+      }).pipe(Effect.flip);
+      expect(linkedEscape._tag).toBe("AcpRequestError");
+      expect(yield* fs.exists(path.join(outside, "nested", "escape.txt"))).toBe(false);
       const missing = yield* read({
         sessionId: nativeSessionId,
         path: path.join(cwd, "missing.txt"),

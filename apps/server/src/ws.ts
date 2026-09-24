@@ -155,6 +155,7 @@ import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import { projectUsageSummaryForClient } from "./usage/usageClientCompatibility.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
@@ -2639,9 +2640,13 @@ const makeWsRpcLayer = (
             },
           ),
         [WS_METHODS.serverGetUsageSummary]: (input) =>
-          observeRpcEffect(WS_METHODS.serverGetUsageSummary, usage.readSummary(input), {
-            "rpc.aggregate": "server",
-          }),
+          observeRpcEffect(
+            WS_METHODS.serverGetUsageSummary,
+            usage
+              .readSummary(input)
+              .pipe(Effect.map((summary) => projectUsageSummaryForClient(summary, clientOrigin))),
+            { "rpc.aggregate": "server" },
+          ),
         [WS_METHODS.serverRefreshUsageRates]: (_input) =>
           observeRpcEffect(WS_METHODS.serverRefreshUsageRates, usage.refreshRates, {
             "rpc.aggregate": "server",
