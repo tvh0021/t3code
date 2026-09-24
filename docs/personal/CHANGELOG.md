@@ -55,3 +55,8 @@ A concise, chronological record of custom changes made to this personal fork of 
 - **Performance Guardrail**: Added a timed 20,000-bucket usage-merge regression test and removed an extra aggregation pass.
 - **Markdown Fast Path**: Skipped math preprocessing and plugins for messages without math delimiters.
 - **Upstream Sync**: Merged the latest `upstream/main` without conflicts.
+
+### 2026-09-24
+
+- **Mobile Usage Compatibility**: The personal host sends Usage contract v5 to App Store mobile 1.2.x and 1.3.x clients. This restores supported Claude, Codex, and Grok usage without changing the signed iOS app; newer clients still receive v6.
+- **Mobile Usage Scope**: Codex usage billing is working on the phone. Antigravity and ChatLLM usage remain absent from the 1.3.0 Usage tab because that app release has no provider entries for them. Their Limits data is separate.

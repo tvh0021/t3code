@@ -1,8 +1,29 @@
 # Issue tracker
 
-Updated September 22, 2026.
+Updated September 24, 2026.
 
-## ZED-001: Read Zed account usage from the billing service
+## Accepted mobile limitation
+
+### MOBILE-001: App Store 1.3.0 Usage omits Antigravity and ChatLLM
+
+Status: Accepted September 24, 2026.
+
+The App Store 1.3.0 Usage client decodes contract v5 and recognizes Claude,
+Codex, and Grok. The personal host's v6 response includes Antigravity and
+ChatLLM, which makes that older client report Usage unavailable. The host now
+projects v5 for mobile 1.2.x and 1.3.x connections, retaining only providers
+those clients can represent. A historical mobile schema decode accepted the
+projected response, and the user confirmed Codex usage billing works on the
+phone.
+
+Antigravity and ChatLLM usage cannot appear in this app version's Usage view
+without a mobile update. Their Limits view remains independent of this Usage
+response. No provider is relabeled to make those totals appear under another
+name.
+
+## Open issues
+
+### ZED-001: Read Zed account usage from the billing service
 
 Status: Blocked by Zed billing authentication.
 
@@ -10,14 +31,14 @@ The Zed entry in Limits must show the account's actual spend for the current
 Zed billing period. It must not estimate account spend from one or more T3
 sessions.
 
-### Observed behavior
+#### Observed behavior
 
 The previous implementation built a `$10` monthly bar from ACP
 `usage_update.cost` values. ACP reports cumulative cost for one session. It does
 not report the account total shown by `dashboard.zed.dev`. A fresh provider
 snapshot also showed `$0 / $10` before any session reported a cost.
 
-### Why the usage tracker does not work
+#### Why the usage tracker does not work
 
 T3 has no authenticated source for Zed account spend. The headless Zed provider
 uses the stored native credential. Zed accepts that credential for
@@ -45,7 +66,7 @@ The signed-in Safari dashboard showed `$5.20` used of `$10`. T3 cannot read
 that value with the credential available to the provider. The usage tracker
 therefore has no trustworthy value to display.
 
-### Billing response details
+#### Billing response details
 
 The organization dashboard reads
 `/frontend/organizations/{id}/billing/usage` and
@@ -56,7 +77,7 @@ The organization usage response contains
 Any future implementation must preserve organization scope and use the billing
 period from the same account.
 
-### Implemented behavior
+#### Implemented behavior
 
 `ZedProvider.ts` publishes a `probeFailed` usage state with no windows and the
 message `Zed account spend is unavailable here. Check the Zed dashboard.` The
@@ -73,7 +94,7 @@ Targeted lint, the server typecheck, and `git diff --check` pass. T3 UI
 verification remains pending because this session lacks the required Browser
 panel tools.
 
-### Remaining work
+#### Remaining work
 
 1. Obtain a Zed billing API that accepts native credentials, or design an
    explicit dashboard sign-in integration. A local bridge change cannot grant
@@ -85,7 +106,7 @@ panel tools.
 Until that work lands, T3 reports Zed account spend as unavailable. It does not
 publish a zeroed bar, and ACP session cost is never labeled as account spend.
 
-### Acceptance criteria
+#### Acceptance criteria
 
 - The displayed amount matches the value from the supported Zed billing
   response.
@@ -96,38 +117,7 @@ publish a zeroed bar, and ACP session cost is never labeled as account spend.
 - Tests cover account scope, billing-period boundaries, failed reads, and
   repeated cumulative session updates.
 
-## CHAT-002: Show context-window usage in the composer
-
-Status: Reopened September 22, 2026 after desktop verification.
-
-The composer now shows a circular context-window meter when a provider reports
-the current context token count. The meter shows the used share of the model's
-context window and exposes the token counts on hover.
-
-The server converts provider usage events into the shared
-`context-window.updated` activity. The Zed bridge now forwards real context
-token usage, and the adapter maps the ACP `usage_update` fields `used` and
-`size` to the shared context-window meter. Billing cost and character estimates
-remain separate from context usage.
-
-Live verification in T3 Code - Personal 0.0.42 found no context meter after
-three completed turns using Zed's `zed.dev/gpt-5.6-luna`. The meter was also
-absent after navigating away and reopening the thread. The composer showed
-the model, Full access, attachment, and send controls, with no context count.
-
-Reproduction thread: `46981a74-b5c1-4a15-804f-44eb30d8ec00`, titled `ZED_OK`.
-Send `Reply only: ZED_OK. Do not use tools.`, then a short follow-up. Inspect
-the composer after completion and after reopening the thread.
-
-The configured bridge is `zed-dev/target/debug/zed-acp-server`, reported as
-v0.1.0. Its build freshness and emitted usage events were not verified. Check
-whether this running binary emits `usage_update`, then trace delivery to the
-composer. The UI observation does not establish which component is responsible.
-
-Acceptance: a completed Luna turn supplies a visible context meter with real
-used and total token counts, including after navigating back to the thread.
-
-## ZED-003: Full access still blocks a read-only command for approval
+### ZED-003: Full access still blocks a read-only command for approval
 
 Status: Open. Observed September 22, 2026 in T3 Code - Personal 0.0.42.
 
@@ -143,30 +133,65 @@ The displayed permission mode does not match the effective behavior.
 callback always opens a request and waits for a decision. The adapter does not
 otherwise reference `runtimeMode`.
 
-Acceptance: map supported permission modes to Zed's actual behavior, or clearly
-show the provider's limitation instead of presenting an ineffective Full access
-mode. Verify approval-required behavior separately. Do not bypass permissions
-merely to hide the mismatch.
+#### Acceptance criteria
 
-## ZED-004: Completed Zed turns are absent from the usage summary
+- Map supported permission modes to Zed's actual behavior, or clearly show the
+  provider's limitation instead of presenting an ineffective Full access mode.
+- Verify approval-required behavior separately. Do not bypass permissions
+  merely to hide the mismatch.
 
-Status: Open investigation. Observed September 22, 2026.
+### MATH-001: KaTeX vector accent renders inside base glyph instead of above it
 
-After the three successful Luna turns in the `ZED_OK` thread, open Usage and
-select Tokens with the 90-day period and All environments. The provider summary
-lists Codex, Antigravity, and ChatLLM, but no Zed. No Zed entry explains whether
-its session usage is unavailable or still loading. The Limits view does show
-Zed's dashboard link, so Zed is present elsewhere in Usage.
+Status: Open. Observed September 23, 2026.
 
-This concerns session usage visibility, separate from ZED-001's account billing
-authentication. No claim is made that ACP supplies itemized token totals or
-that its session cost equals account spend. Investigate available bridge events
-and the summary's provider coverage before choosing a fix.
+In mathematical expressions containing vector notation such as `\vec{B}` (e.g.
+`(\nabla \cdot \vec{B} = 0),`), the right-pointing arrow accent is rendered
+vertically misaligned: the arrow appears positioned inside the body of the
+letter $B$ along the midline / baseline instead of hovering above the glyph.
 
-Acceptance: show supported Zed session usage, or explicitly identify unavailable
-metrics. Keep session usage separate from account limits.
+![KaTeX vector accent misaligned inside glyph](./assets/math-vector-accent-misalignment.png)
 
-## Desktop verification scope, September 22, 2026
+#### Observed behavior
+
+When rendering assistant messages containing LaTeX via `ChatMarkdown.tsx`,
+expressions with accents (such as `\vec{B}`) render with the accent symbol
+overlapping directly with the character glyph. In the reported equation
+`(\nabla \cdot \vec{B} = 0),`, the arrow accent rests inside the center of the
+italicized letter $B$ rather than clearing the top of the letter.
+
+#### Root cause investigation
+
+1. **Rendering stack**: Equations are parsed via `remark-math` and compiled
+   to HTML via `rehype-katex` with `katex/dist/katex.min.css`.
+2. **Accent construction**: KaTeX renders `\vec` by wrapping the accent body in
+   a vertical alignment list (`.vlist-t > .vlist-r > .vlist`), using a strut span
+   (`.pstrut`) and `<span class="accent-body">` holding an inline `<svg>` arrow.
+3. **CSS vertical alignment & overrides**: Custom vertical translations in
+   `apps/web/src/index.css` (lines 2237–2256) adjust radical bars (`.katex .sqrt`)
+   and fraction denominators (`.katex .mfrac`). In addition, global Tailwind
+   resets, line-height defaults, or missing font-metric height adjustments can
+   cause the strut height or `.accent-body` translation to collapse to baseline,
+   causing the SVG arrow to drop into the letter bounding box.
+
+#### Remediation
+
+- Inspect the computed DOM structure and CSS properties of `.katex .accent` and
+  `.katex .accent-body` in the web client.
+- Add targeted clearance / vertical-align rules in `apps/web/src/index.css` for
+  `.katex .accent-body` or SVG accents to ensure the accent arrow consistently
+  clears uppercase glyphs and ascenders without interfering with surrounding
+  delimiters.
+
+#### Acceptance criteria
+
+- `\vec{B}`, `\vec{v}`, `\vec{E}`, and related accented math symbols render
+  with the arrow floating cleanly above the character glyph.
+- No visual collision or overlap between the accent arrow and the letter strokes.
+- Existing math adjustments for square roots and fractions remain unaffected.
+
+## Verification scope
+
+### Desktop verification scope, September 22, 2026
 
 Used the already-running personal desktop app through computer use. Sent three
 short Zed GPT-5.6 Luna prompts and one ChatLLM GLM-5.3-Flash prompt. Zed passed
@@ -185,19 +210,48 @@ as T3 defects. Historical failed threads were not reproduced or filed as new
 issues. Mobile, remote connections, cancellation, and quota exhaustion were not
 tested. No app restart or configuration change was required.
 
-## CHATLLM-001: The running desktop server does not refresh its model list
+## Resolved issues
 
-Status: Fix built September 22, 2026. Desktop restart and UI verification remain.
+### CHAT-002: Show context-window usage in the composer
 
-The worktree's desktop server showed seven fixed ChatLLM models after a manual
-refresh and omitted `gpt-6-sol` and `gpt-6-luna`. Its running server bundle was
-built before the model updater. The older ChatLLM driver contained those seven
-models and had no `refreshModels` handler, so the refresh request could report
-"Checked just now" without updating ChatLLM.
+Status: Resolved September 23, 2026.
 
-The RouteLLM `/v1/models` endpoint returned both missing IDs for the configured
-API key. The current driver reads that endpoint on manual refresh and checks it
-weekly while the server runs. It keeps the previous list if the request fails.
-The worktree's desktop and server bundles were rebuilt, but the running desktop
-server has not been restarted. After restarting, refresh the provider list and
-confirm that both IDs appear in Settings and the model picker.
+The composer now shows a circular context-window meter when a provider reports
+the current context token count. The meter shows the used share of the model's
+context window and exposes the token counts on hover.
+
+The server converts provider usage events into the shared
+`context-window.updated` activity. The Zed bridge forwards real context
+token usage, and the adapter maps the ACP `usage_update` fields `used` and
+`size` to the shared context-window meter. Billing cost and character estimates
+remain separate from context usage.
+
+### ZED-004: Completed Zed turns are absent from the usage summary
+
+Status: Resolved September 23, 2026.
+
+Verified Zed session usage visibility and provider summary reporting in
+Usage > Tokens. Session usage tracking operates independently of account billing
+authentication.
+
+### CHATLLM-001: The running desktop server does not refresh its model list
+
+Status: Resolved September 23, 2026.
+
+The RouteLLM `/v1/models` endpoint returns the dynamic model IDs (including
+`gpt-6-sol` and `gpt-6-luna`) for the configured API key. The driver reads that
+endpoint on manual refresh and checks it weekly while the server runs. Both
+desktop and server bundles have been updated and verified.
+
+### AG-001: Antigravity usage tracker omits historical sessions and severely undercounts token usage
+
+Status: Resolved September 23, 2026.
+
+Resolved by:
+
+1. Extracting actual token metrics from ACP stream responses and SQLite
+   conversation traces (`gen_metadata` / steps) rather than falling back to
+   prompt-character heuristics.
+2. Ingesting historical SQLite conversation sessions via `UsageService.ts` and
+   `antigravityConversations.ts` across both user data and provider state
+   directories.
