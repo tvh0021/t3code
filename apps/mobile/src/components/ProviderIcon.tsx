@@ -3,6 +3,7 @@ import { Path, Svg } from "react-native-svg";
 import { View } from "react-native";
 import { providerInstanceInitials } from "@t3tools/client-runtime/state/provider-instance-display";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
+import { AbacusIcon } from "./AbacusIcon";
 import { AppText as Text } from "./AppText";
 
 type ProviderIconProps = {
@@ -15,8 +16,9 @@ export function ProviderIcon(props: ProviderIconProps) {
   const isDarkMode = themeAppearance === "dark";
   const size = props.size ?? 16;
   const mono = isDarkMode ? "#e5e5e5" : "#171717";
+  const normalizedProvider = props.provider?.trim().toLowerCase();
 
-  if (props.provider?.trim().toLowerCase() === "antigravity") {
+  if (normalizedProvider === "antigravity") {
     return (
       <Image
         source={require("../../assets/antigravity.png")}
@@ -24,6 +26,10 @@ export function ProviderIcon(props: ProviderIconProps) {
         contentFit="contain"
       />
     );
+  }
+
+  if (normalizedProvider === "abacus" || normalizedProvider === "chatllm") {
+    return <AbacusIcon size={size} />;
   }
 
   if (props.provider === "claudeAgent") {

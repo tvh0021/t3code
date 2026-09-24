@@ -5,7 +5,19 @@ import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { AccountLimits, ResetCredits } from "../usage/UsageLimitsSection";
 
-const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
+const DRIVER_LABEL: Record<string, string> = {
+  codex: "Codex",
+  claudeAgent: "Claude",
+  antigravity: "Antigravity",
+  abacus: "ChatLLM",
+  chatllm: "ChatLLM",
+};
+
+function getDriverLabel(driver: string): string {
+  const normalized = driver.trim().toLowerCase();
+  if (normalized === "claudeagent") return "Claude";
+  return DRIVER_LABEL[normalized] ?? driver;
+}
 
 /**
  * The /usage-limits result, docked above the composer. It is the Usage → Limits
@@ -45,7 +57,7 @@ export function ComposerUsageLimits({
           const resetCreditInput =
             account.resetCreditInput ??
             (account.instanceId ? { instanceId: account.instanceId } : undefined);
-          const driverLabel = DRIVER_LABEL[account.driver] ?? String(account.driver);
+          const driverLabel = getDriverLabel(account.driver);
           return (
             <AccountLimits
               key={account.id}
