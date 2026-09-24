@@ -35,8 +35,17 @@ type Driver = ServerProvider["driver"];
 function useBarColor(driver: Driver): string | null {
   const colors = useProviderColors();
   if (driver === "zed") return "#70a5ff";
+  const normalized = driver.toLowerCase();
   const kind: UsageProviderKind | null =
-    driver === "codex" ? "codex" : driver === "claudeAgent" ? "claude" : null;
+    normalized === "codex"
+      ? "codex"
+      : normalized === "claudeagent" || normalized === "claude"
+        ? "claude"
+        : normalized === "antigravity"
+          ? "antigravity"
+          : normalized === "abacus" || normalized === "chatllm"
+            ? "abacus"
+            : null;
   return kind ? colors[kind] : null;
 }
 

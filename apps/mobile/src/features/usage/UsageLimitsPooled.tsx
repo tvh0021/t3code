@@ -24,16 +24,25 @@ import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
 import { useProviderColors } from "./usageProviders";
 
-const DRIVER_LABEL: Partial<Record<string, string>> = {
+const DRIVER_LABEL: Record<string, string> = {
   codex: "Codex",
   claudeAgent: "Claude",
   zed: "Zed",
+  antigravity: "Antigravity",
+  abacus: "ChatLLM",
+  chatllm: "ChatLLM",
 };
 const PACE_LABEL = { ahead: "Ahead of pace", on: "On pace", under: "Under pace" } as const;
 
+function driverLabel(driver: string): string {
+  const normalized = driver.trim().toLowerCase();
+  if (normalized === "claudeagent") return "Claude";
+  return DRIVER_LABEL[normalized] ?? DRIVER_LABEL[driver] ?? driver;
+}
+
 function accountName(account: LimitAccount) {
   if (account.displayName) return account.displayName;
-  if (!account.email) return DRIVER_LABEL[account.driver] ?? String(account.driver);
+  if (!account.email) return driverLabel(account.driver);
   const [local = "", domain = ""] = account.email.split("@");
   return `${local[0] ?? ""}${domain[0] ?? ""}`.toUpperCase() || "Account";
 }
@@ -114,7 +123,7 @@ function PoolWindowCard({
       </View>
       {nextRefill ? (
         <Text className="text-xs tabular-nums text-foreground-muted">
-          ↻ +{nextRefill.restoresPercent}%{" "}
+          ↺ +{nextRefill.restoresPercent}%{" "}
           {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
         </Text>
       ) : null}
@@ -175,7 +184,7 @@ function PoolWindowCard({
               <View className="flex-row items-center gap-1">
                 {resetsIn ? (
                   <Text className="text-xs tabular-nums text-foreground-muted">
-                    {resetsIn.replace("resets in ", "↻ ")}
+                    {resetsIn.replace("resets in ", "↺ ")}
                   </Text>
                 ) : null}
                 {credits ? (
@@ -227,7 +236,7 @@ export function UsageLimitsSection({
           <View className="flex-row items-center gap-2 px-1">
             <ProviderIcon provider={pool.driver} size={18} />
             <Text className="text-base font-t3-medium text-foreground">
-              {DRIVER_LABEL[pool.driver] ?? pool.driver}
+              {driverLabel(pool.driver)}
             </Text>
           </View>
           {pool.windows.map((window) => (
@@ -239,7 +248,12 @@ export function UsageLimitsSection({
                   ? colors.claude
                   : pool.driver === "zed"
                     ? "#70a5ff"
-                    : colors.codex
+                    : pool.driver.toLowerCase() === "antigravity"
+                      ? colors.antigravity
+                      : pool.driver.toLowerCase() === "abacus" ||
+                          pool.driver.toLowerCase() === "chatllm"
+                        ? colors.abacus
+                        : colors.codex
               }
               now={now}
               environmentIds={selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]}
@@ -321,7 +335,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               <View className="flex-row items-center gap-2">
                 <ProviderIcon provider={account.driver} size={24} />
                 <Text className="flex-1 text-xl font-t3-bold text-foreground">
-                  {account.displayName ?? DRIVER_LABEL[account.driver] ?? account.driver}
+                  {account.displayName ?? driverLabel(account.driver)}
                 </Text>
               </View>
               {account.email ? (
