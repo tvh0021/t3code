@@ -473,7 +473,7 @@ export function makeZedAdapter(
               provider: PROVIDER,
               operation: "startSession",
               issue:
-                "Rebuild zed-acp-server with T3 thread MCP forwarding before using it as a workflow parent.",
+                "Rebuild zed-acp-server with T3 thread MCP forwarding before using it as a T3 orchestration layer parent.",
             });
           }
           const createdAt = yield* Effect.map(DateTime.now, DateTime.formatIso);

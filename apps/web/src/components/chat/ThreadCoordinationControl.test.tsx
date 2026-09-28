@@ -51,13 +51,17 @@ const parent: ThreadCoordinationSummary = {
   policyUpdatedAt: "2026-09-27T00:00:00.000Z",
   blockedReason: null,
 };
-const snapshot = (status = parent.status, adopted = false) => ({
+const snapshot = (
+  status = parent.status,
+  adopted = false,
+  quotaHandoff?: Extract<ThreadCoordinationSummary, { role: "parent" }>["quotaHandoff"],
+) => ({
   threads: [
     {
       id: parentId,
       title: "Parent",
       modelSelection: { instanceId: "codex", model: "gpt-6-sol" },
-      coordination: { ...parent, status },
+      coordination: { ...parent, status, ...(quotaHandoff ? { quotaHandoff } : {}) },
     },
     {
       id: childId,
@@ -108,7 +112,7 @@ it("preserves reports after a failed pause, then follows persisted pause and com
   });
   expect(state.toast).toHaveBeenCalledWith(
     expect.objectContaining({
-      title: "Could not update workflow",
+      title: "Could not update T3 orchestration layer",
       description: "Error: Disconnected",
     }),
   );
@@ -161,5 +165,41 @@ it("shows a child report and parent navigation without exposing parent controls"
     renderer.root
       .findAllByType("a")
       .some((node) => node.children.join("").includes("Return to Parent")),
+  ).toBe(true);
+});
+
+it("opts a parent into quota handoff and shows reset status with a source link", async () => {
+  state.control.mockResolvedValue({ _tag: "Success" });
+  await render();
+  await act(async () => button("Enable quota handoff").props.onClick());
+  expect(state.control).toHaveBeenCalledWith({
+    environmentId,
+    input: { threadId: parentId, action: "enable-quota-handoff" },
+  });
+
+  state.snapshot = snapshot("paused", false, {
+    enabled: true,
+    switchCount: 0,
+    status: "waiting-reset",
+    affectedThreadId: childId,
+    sourceThreadId: childId,
+    resetAt: "2026-09-27T01:00:00.000Z",
+    reason: "Waiting for quota to reset.",
+  });
+  await act(async () =>
+    renderer.update(
+      <ThreadCoordinationControl environmentId={environmentId} threadId={parentId} />,
+    ),
+  );
+  expect(button("Disable quota handoff")).toBeDefined();
+  expect(
+    renderer.root
+      .findAllByProps({ role: "status" })
+      .some((node) => node.children.join("").includes("Waiting for quota to reset.")),
+  ).toBe(true);
+  expect(
+    renderer.root
+      .findAllByType("a")
+      .some((node) => node.children.join("").includes("Open source thread for this handoff")),
   ).toBe(true);
 });

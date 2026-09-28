@@ -61,11 +61,11 @@ This folder documents the changes, features, and architecture decisions that dis
 
 ### 4. Agent-created threads and workflows
 
-Included in the Personal 0.0.42.2 source release. Some provider and remote
-flows remain to be verified.
+Included in the Personal 0.0.42.2 source release and extended in Personal
+0.1.0. Some provider and remote flows remain to be verified.
 
-Agents can create handoff threads with a different model or provider. Flat
-workflows add queued child assignments, durable reports, shared model budgets,
+Agents can create handoff threads with a different model or provider. T3
+orchestration layers add queued child assignments, durable reports, shared model budgets,
 and parent wakeups after reports. Web, desktop, and mobile have workflow controls
 and model-limit settings. Monthly maintenance refreshes catalogs and pricing
 without changing active session budgets.
@@ -76,8 +76,10 @@ parent used them to repair a fixture, and its tests passed 10/10. ChatLLM
 parent tools are verified; Zed native discovery and mobile/remote UI checks
 remain pending. Native worker restrictions cover Codex, Claude,
 ChatLLM, and a worker-aware Zed binary, but the allowlist does not prove every
-harness exposes the parent MCP tools. Antigravity supports workflow children,
-but not parents. GPT-6 Astra, Sol, and Luna are classified as
+harness exposes the parent MCP tools. The managed Antigravity runtime has
+started a Gemini parent; its full child and report cycle remains unverified.
+An opted-in layer can hand off near a quota limit or resume after reset.
+GPT-6 Astra, Sol, and Luna are classified as
 current models; GPT-5.6 Sol and Luna are legacy.
 
 See [workflow capabilities and limits](./MODIFICATIONS.md#21-agent-created-threads-and-flat-workflows),

@@ -1,6 +1,8 @@
 import {
   formatCoordinationLimits,
+  formatCoordinationQuotaHandoffs,
   parseCoordinationLimits,
+  parseCoordinationQuotaHandoffs,
 } from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId, ServerSettings } from "@t3tools/contracts";
 import { useState } from "react";
@@ -23,23 +25,40 @@ export function CoordinationPolicySettings({
   const persist = useAtomCommand(serverEnvironment.updateSettings);
   const refresh = useAtomCommand(serverEnvironment.refreshProviders);
   const [draft, setDraft] = useState<string | null>(null);
+  const [fallbackDraft, setFallbackDraft] = useState<string | null>(null);
+  const [thresholdDraft, setThresholdDraft] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const save = async () => {
     try {
       const limits = parseCoordinationLimits(
         draft ?? formatCoordinationLimits(settings.coordinationModelLimits ?? {}),
       );
+      const fallbacks = parseCoordinationQuotaHandoffs(
+        fallbackDraft ??
+          formatCoordinationQuotaHandoffs(settings.coordinationQuotaHandoffFallbacks),
+      );
+      const threshold = Number(thresholdDraft ?? settings.coordinationQuotaHandoffThresholdPercent);
+      if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100)
+        throw new Error("Choose a threshold from 1 to 100.");
       setPending(true);
       const result = await persist({
         environmentId,
-        input: { patch: { coordinationModelLimits: limits } },
+        input: {
+          patch: {
+            coordinationModelLimits: limits,
+            coordinationQuotaHandoffFallbacks: fallbacks,
+            coordinationQuotaHandoffThresholdPercent: threshold,
+          },
+        },
       });
       if (result._tag === "Failure") Alert.alert("Could not save limits", "Reconnect and retry.");
       else {
         setDraft(null);
+        setFallbackDraft(null);
+        setThresholdDraft(null);
         Alert.alert(
           "Limits saved",
-          "Future workflows use these limits. Active session budgets are unchanged.",
+          "Future T3 orchestration layers use these limits. Active session budgets are unchanged.",
         );
       }
     } catch (error) {
@@ -61,7 +80,7 @@ export function CoordinationPolicySettings({
       Alert.alert(
         result._tag === "Success" ? "Model policy refreshed" : "Refresh failed",
         result._tag === "Success"
-          ? "Future workflows use updated models and prices."
+          ? "Future T3 orchestration layers use updated models and prices."
           : "The previous policy remains available.",
       );
     } finally {
@@ -69,7 +88,7 @@ export function CoordinationPolicySettings({
     }
   };
   return (
-    <SettingsSection title={`Thread workflow limits · ${environmentLabel}`}>
+    <SettingsSection title={`T3 orchestration layer limits · ${environmentLabel}`}>
       <View className="gap-3 p-4">
         <AppText>
           Monthly maintenance refreshes models and pricing. Output prices above $10 per million
@@ -90,6 +109,36 @@ export function CoordinationPolicySettings({
           className="min-h-24 rounded-lg border border-border-subtle p-3 text-foreground"
         />
         <MaterialButton label="Save limits" disabled={pending} onPress={() => void save()} />
+        <AppText>
+          Interrupt opted-in T3 orchestration layers when any reported quota window reaches this
+          percentage.
+        </AppText>
+        <TextInput
+          accessibilityLabel="Quota handoff threshold"
+          keyboardType="number-pad"
+          editable={!pending}
+          value={thresholdDraft ?? String(settings.coordinationQuotaHandoffThresholdPercent)}
+          onChangeText={setThresholdDraft}
+          className="rounded-lg border border-border-subtle p-3 text-foreground"
+        />
+        <AppText>
+          Ordered provider fallbacks, one source-model=target-model,target-model per line. Leave
+          blank to wait for quota resets without switching. Defaults map Sol to Opus, Astra to
+          Fable, and Luna to Gemini Flash High.
+        </AppText>
+        <TextInput
+          accessibilityLabel="Quota handoff fallback mappings"
+          multiline
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!pending}
+          value={
+            fallbackDraft ??
+            formatCoordinationQuotaHandoffs(settings.coordinationQuotaHandoffFallbacks)
+          }
+          onChangeText={setFallbackDraft}
+          className="min-h-24 rounded-lg border border-border-subtle p-3 text-foreground"
+        />
         <MaterialButton
           label="Refresh model policy"
           disabled={pending}

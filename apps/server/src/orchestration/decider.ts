@@ -1484,11 +1484,22 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail:
             "Only the parent can assign work to a child. Complete the workflow and start a fresh thread for independent work.",
         });
+      const quotaHandoffPending =
+        targetThread.coordination?.role === "parent" &&
+        (targetThread.coordination.quotaHandoff?.status === "waiting-reset" ||
+          targetThread.coordination.quotaHandoff?.status === "handing-off" ||
+          targetThread.coordination.quotaHandoff?.status === "summarizing");
       if (
         targetThread.coordination?.role === "parent" &&
-        targetThread.coordination.status === "active" &&
+        (targetThread.coordination.status === "active" ||
+          (targetThread.coordination.status === "paused" && quotaHandoffPending)) &&
         !command.coordinationAutomatic
       ) {
+        const quota = targetThread.coordination.quotaHandoff;
+        const cancelsPendingQuotaAction =
+          quota?.status === "waiting-reset" ||
+          quota?.status === "handing-off" ||
+          quota?.status === "summarizing";
         return yield* decideCommandSequence({
           readModel,
           commands: [
@@ -1499,7 +1510,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               coordination: {
                 ...targetThread.coordination,
                 status: "paused",
-                blockedReason: "Paused by a user prompt.",
+                blockedReason: cancelsPendingQuotaAction
+                  ? "Paused by a user prompt; the pending quota action was canceled."
+                  : "Paused by a user prompt.",
+                ...(cancelsPendingQuotaAction && quota
+                  ? {
+                      quotaHandoff: {
+                        ...quota,
+                        status: "paused" as const,
+                        reason: "Canceled by user activity.",
+                      },
+                    }
+                  : {}),
               },
               createdAt: command.createdAt,
             },
@@ -1675,9 +1697,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
 
     case "thread.turn.interrupt": {
       const interrupted = readModel.threads.find((thread) => thread.id === command.threadId);
+      const quota =
+        interrupted?.coordination?.role === "parent"
+          ? interrupted.coordination.quotaHandoff
+          : undefined;
+      const cancelsPendingQuotaAction =
+        quota?.status === "waiting-reset" ||
+        quota?.status === "handing-off" ||
+        quota?.status === "summarizing";
       if (
         interrupted?.coordination?.role === "parent" &&
-        interrupted.coordination.status === "active"
+        (interrupted.coordination.status === "active" ||
+          (interrupted.coordination.status === "paused" && cancelsPendingQuotaAction))
       )
         return yield* decideCommandSequence({
           readModel,
@@ -1689,7 +1720,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               coordination: {
                 ...interrupted.coordination,
                 status: "paused",
-                blockedReason: "Paused by an interrupt.",
+                blockedReason: cancelsPendingQuotaAction
+                  ? "Paused by an interrupt; the pending quota action was canceled."
+                  : "Paused by an interrupt.",
+                ...(cancelsPendingQuotaAction && quota
+                  ? {
+                      quotaHandoff: {
+                        ...quota,
+                        status: "paused" as const,
+                        reason: "Canceled by user activity.",
+                      },
+                    }
+                  : {}),
               },
               createdAt: command.createdAt,
             },

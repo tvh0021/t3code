@@ -67,17 +67,63 @@ export const make = Effect.gen(function* () {
         yield* engine.dispatch({
           type: "thread.coordination",
           threadId,
-          commandId: CommandId.make(`coordination:finish:${workerState.assignmentId}`),
-          action: {
-            type: "finish",
-            assignmentId: workerState.assignmentId,
-            text: terminal.payload.text,
-          },
+          commandId: CommandId.make(
+            `coordination:${workerState.handoffStage === "summarize" ? "summary" : "finish"}:${workerState.assignmentId}`,
+          ),
+          action:
+            workerState.handoffStage === "summarize"
+              ? { type: "handoff-summary-complete", text: terminal.payload.text }
+              : {
+                  type: "finish",
+                  assignmentId: workerState.assignmentId,
+                  text: terminal.payload.text,
+                },
           createdAt: DateTime.formatIso(yield* DateTime.now),
         });
       }
     }
   });
+  const completeParentSummary = Effect.fn("ThreadCoordinationReactor.completeParentSummary")(
+    function* (threadId: ThreadId) {
+      const shell = yield* snapshots.getThreadShellById(threadId);
+      if (Option.isNone(shell)) return;
+      const state = shell.value.coordination;
+      const latestTurn = shell.value.latestTurn;
+      if (
+        state?.role !== "parent" ||
+        state.quotaHandoff?.status !== "summarizing" ||
+        !latestTurn ||
+        latestTurn.state === "running" ||
+        latestTurn.state === "interrupted" ||
+        shell.value.session?.status === "starting" ||
+        shell.value.session?.status === "running"
+      )
+        return;
+      const detail = yield* snapshots
+        .getThreadDetailById(threadId)
+        .pipe(Effect.map(Option.getOrUndefined));
+      const summary = detail?.messages
+        .filter((message) => message.role === "assistant" && message.turnId === latestTurn.turnId)
+        .map((message) => message.text)
+        .join("\n\n")
+        .trim()
+        .slice(0, 8_000);
+      yield* engine.dispatch({
+        type: "thread.coordination",
+        threadId,
+        commandId: CommandId.make(
+          `coordination:quota-summary-complete:${threadId}:${latestTurn.turnId}`,
+        ),
+        action: {
+          type: "handoff-summary-complete",
+          text:
+            summary ||
+            `The destination summary turn ended with ${latestTurn.state} and produced no summary text. Inspect the linked source thread and current workspace before continuing.`,
+        },
+        createdAt: DateTime.formatIso(yield* DateTime.now),
+      });
+    },
+  );
   const process = Effect.fn("ThreadCoordinationReactor.process")(function* (
     event: OrchestrationEvent,
   ) {
@@ -86,6 +132,13 @@ export const make = Effect.gen(function* () {
     const shell = yield* snapshots.getThreadShellById(threadId);
     if (Option.isNone(shell) || !shell.value.coordination) return;
     const state = shell.value.coordination;
+    if (
+      state.role === "parent" &&
+      (event.type === "thread.coordination-updated" ||
+        event.type === "thread.session-set" ||
+        event.type === "thread.activity-appended")
+    )
+      yield* completeParentSummary(threadId);
     if (
       state.role === "child" &&
       state.phase === "running" &&
@@ -172,6 +225,13 @@ export const make = Effect.gen(function* () {
     for (const thread of snapshot.threads) {
       if (thread.coordination?.role === "child" && thread.coordination.phase === "running")
         yield* reconcile(thread.id).pipe(Effect.orDie);
+    }
+    for (const thread of snapshot.threads) {
+      if (
+        thread.coordination?.role === "parent" &&
+        thread.coordination.quotaHandoff?.status === "summarizing"
+      )
+        yield* completeParentSummary(thread.id).pipe(Effect.orDie);
     }
     yield* Deferred.succeed(recovered, undefined);
   });

@@ -46,19 +46,28 @@ The desktop pass used Computer Use against `vp run dev:desktop`. See
 
 ### WORKFLOW-002: Enable strict Antigravity workflows
 
-Status: Partially resolved; Antigravity is supported as a child, but not as a parent.
+Status: Parent startup verified with the managed Antigravity runtime. A full
+Gemini parent and child report cycle remains unverified.
 
-Antigravity can run as a workflow child because it does not receive T3 workflow
-tools. The server rejects attempts by any workflow child to start another T3
-workflow or create T3 threads, so those attempts cannot reset the shared model
-budget. Provider-native subagents remain allowed. Antigravity still cannot be a
-parent because its ACP adapter does not forward T3 workflow tools. Cursor, Grok,
-and OpenCode remain unavailable as strict workflow children and parents.
+The managed Antigravity ACP runtime received T3 MCP tools in an isolated dev
+thread. Gemini 3.8 Flash High called `read_thread` and then
+`start_orchestration_layer`; the latter persisted an active parent with quota
+handoff enabled. The provider policy now allows Antigravity as either role.
+The server still rejects attempts by any child to start another layer or create
+T3 threads. Cursor, Grok, and OpenCode remain unavailable as strict workflow
+children and parents.
 
 Focused tests cover the role gate and nested-thread rejection. A live Sol parent
 assigned substantive work to two Gemini children and received their reports.
 An attempted nested spawn stopped at Codex provider approval before reaching
-T3; the server guard passed a focused MCP toolkit test.
+T3; the server guard passed a focused MCP toolkit test. The policy, MCP
+coordination, and Luna-to-Gemini parent routing tests passed 13 focused cases
+after the Antigravity parent change. The server typecheck passed.
+
+Remaining: run a Gemini parent through child assignment, report, and parent
+wake. Confirm quota-triggered parent handoff to Gemini with a real provider
+turn. Older or custom Antigravity binaries have not been checked for MCP tool
+forwarding.
 
 ChatLLM now forwards parent coordination tools; its tool loop and the real MCP
 HTTP protocol are tested. Zed forwards the scoped server and restricts worker

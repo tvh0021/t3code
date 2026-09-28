@@ -85,36 +85,57 @@ include a handoff or clear review instructions. The source thread stays intact.
 For repeated reviews, authorize the agent to read the reviewer's results and send
 follow-up work. You can open and stop either thread from any connected client.
 
-## Coordinate child threads
+## Start a T3 orchestration layer
 
-Ask your agent to start a thread workflow, choose each child's model and provider,
-and assign work. For example: "Use Sol as the parent. Have Luna and a Gemini model
-review this revision independently, then combine their reports."
+Ask your agent to start a T3 orchestration layer, choose each child's model and
+provider, and assign work. For example: "Start a T3 orchestration layer with
+parent GPT 6 Sol Medium and children GPT 6 Luna XHigh to review this revision
+independently, then combine their reports." If the current thread uses another
+parent model or effort, the agent creates a new parent thread with the requested
+selection. It resolves child models and options from the configured providers.
 
-Choose models available in your configured providers. Workflow parents need a
-provider that exposes T3 workflow tools. Children can use Codex, Claude,
-ChatLLM, Antigravity, and Zed with a worker-aware ACP binary. Provider-native
-subagents are allowed, but a T3 child cannot start another workflow or create
-T3 child threads, so it cannot reset the shared model budget. Four T3 children
+Choose models available in your configured providers. Parents need a
+provider that exposes T3 orchestration layer tools. Children can use Codex,
+Claude, ChatLLM, Antigravity, and Zed with a worker-aware ACP binary.
+Provider-native subagents are allowed, but a T3 child cannot start another layer
+or create T3 child threads, so it cannot reset the shared model budget. Four T3 children
 run concurrently; additional assignments queue until a slot opens. Initial
 assignments start after the parent's planning turn ends. Reports wait while the
 parent is busy, then resume it within the remaining budget. Reviews stay
 read-only and target a fixed Git revision. Editing children require separate
 existing worktrees.
 
-Open **Workflow** in the thread to inspect reports and model budgets. Pause stops
-new automatic work. Resume keeps the same counters. Complete ends automatic work
-and retains late reports. Cancel also interrupts running children. A manual
-parent message or interrupt pauses coordination. Server restarts pause workflows
-for explicit resume, so uncertain paid work is not replayed.
+Open **T3 orchestration layer** in the thread to inspect reports and model
+budgets. Pause stops new automatic work. Resume keeps the same counters.
+Complete ends automatic work and retains late reports. Cancel also interrupts
+running children. A manual parent message or interrupt pauses coordination.
+Server restarts pause orchestration layers for explicit resume, so uncertain
+paid work is not replayed.
 
-For example, select **GPT 6 Sol** as the parent model and send:
+Quota handoff is off until you enable it in the layer controls. Configure its
+threshold and ordered provider mappings under **Settings → Providers → T3
+orchestration layer limits** on web and desktop, or **Settings → Maintenance**
+on mobile. The default threshold is 95% used in any reported quota window. The
+default mappings are Sol to Opus, Astra to Fable, and Luna to Gemini Flash High.
+When a running parent or child crosses the threshold, T3 interrupts its turn and
+creates a linked thread on the first mapped provider with a healthy login and a
+fresh quota reading below the threshold. That model summarizes the source
+history, then continues the unfinished task. A layer can switch providers once.
+If no fallback qualifies, T3 waits for the source quota reset and creates a new
+linked thread on the same model. Missing quota or reset information pauses the
+layer with a reason. A manual prompt, interrupt, or resume takes precedence over
+a pending automatic action. The destination summary is an additional provider-billed
+turn; the unfinished assignment or continuation uses the layer's normal model
+budget.
+
+For example, send:
 
 ```text
-Start a flat T3 workflow for this repository. Confirm Codex GPT 6 Luna is
-available, then create two Luna review children for HEAD: one checks correctness,
+Start a T3 orchestration layer for this repository with parent GPT 6 Sol Medium
+and two Codex GPT 6 Luna XHigh review children for HEAD. Confirm the parent
+selection and child models are available. One child checks correctness,
 the other checks tests and edge cases. Do not edit files or delegate further.
-Wait for their reports, combine the findings, then complete the workflow.
+Wait for their reports, combine the findings, then complete the orchestration layer.
 ```
 
 `HEAD` reviews the committed revision. Commit or choose a checkpoint to include
@@ -124,11 +145,11 @@ it automatically. Another parent model works the same way within its limits.
 
 Automatic turn limits are shared by model across the parent and all children.
 Initial user planning does not count. Astra has one turn, Sol has two, and Luna
-and Gemini 3.8 Flash are unlimited. Sonnet 5, Opus 5.5, and Fable 5.1 have one
-turn each. GLM 5.3 Flash is unlimited. Unlimited means no turn limit; provider
+and Gemini 3.8 Flash are unlimited. Sonnet 5, Opus 5, Opus 5.5, and Fable 5.1
+have one turn each. GLM 5.3 Flash is unlimited. Unlimited means no turn limit; provider
 charges and rate limits still apply.
 
-To change limits, open **Settings > Providers > Thread workflow limits** on web
+To change limits, open **Settings > Providers > T3 orchestration layer limits** on web
 or desktop, or **Settings > Maintenance** on mobile. Monthly maintenance refreshes
 model catalogs and output pricing while the server runs. Unnamed models above
 $10 per million output tokens get one turn; below $1, unlimited; from $1 through

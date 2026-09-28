@@ -298,6 +298,11 @@ describe("resolveWorkEntryToolPresentation", () => {
     ["t3_thread_read", "Reading a T3 thread", "Read a T3 thread"],
     ["t3_thread_send", "Sending to a T3 thread", "Sent to a T3 thread"],
     [
+      "start_orchestration_layer",
+      "Starting a T3 orchestration layer",
+      "Started a T3 orchestration layer",
+    ],
+    [
       "t3_worktree_handoff",
       "Handing off thread to a git worktree",
       "Handed off thread to a git worktree",

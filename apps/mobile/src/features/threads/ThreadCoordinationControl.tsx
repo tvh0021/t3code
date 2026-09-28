@@ -33,7 +33,10 @@ export function ThreadCoordinationControl({
     try {
       const result = await control({ environmentId, input: { threadId: view.parentId, action } });
       if (result._tag === "Failure")
-        Alert.alert("Could not update workflow", "Reconnect this environment and try again.");
+        Alert.alert(
+          "Could not update T3 orchestration layer",
+          "Reconnect this environment and try again.",
+        );
     } finally {
       setPending(false);
     }
@@ -46,7 +49,7 @@ export function ThreadCoordinationControl({
     <>
       <View className="px-4 py-2">
         <MaterialButton
-          label={`Workflow · ${view.state.status}${view.pendingReports ? ` · ${view.pendingReports} reports` : ""}`}
+          label={`T3 orchestration layer · ${view.state.status}${view.pendingReports ? ` · ${view.pendingReports} reports` : ""}`}
           onPress={() => setOpen(true)}
         />
       </View>
@@ -54,7 +57,7 @@ export function ThreadCoordinationControl({
         <SafeAreaView className="flex-1 bg-screen">
           <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
             <AppText accessibilityRole="header" className="text-lg font-semibold text-foreground">
-              Thread workflow
+              T3 orchestration layer
             </AppText>
             <AppText>
               {view.state.status} · {view.active}/{view.state.maxChildren} active · {view.queued}{" "}
@@ -66,6 +69,26 @@ export function ThreadCoordinationControl({
                 onPress={() => visit(view.parentId)}
               />
             )}
+            {ownState?.role === "child" && ownState.handoffFromThreadId && (
+              <MaterialButton
+                label="Open source thread for this handoff"
+                onPress={() => visit(ownState.handoffFromThreadId!)}
+              />
+            )}
+            {view.state.quotaHandoff?.destinationThreadId &&
+              view.state.quotaHandoff.destinationThreadId !== view.parentId && (
+                <MaterialButton
+                  label="Open quota handoff thread"
+                  onPress={() => visit(view.state.quotaHandoff!.destinationThreadId!)}
+                />
+              )}
+            {view.state.quotaHandoff?.sourceThreadId &&
+              view.state.quotaHandoff.sourceThreadId !== view.parentId && (
+                <MaterialButton
+                  label="Open source thread for this handoff"
+                  onPress={() => visit(view.state.quotaHandoff!.sourceThreadId!)}
+                />
+              )}
             {ownState?.role === "child" && ownState.report && (
               <AppText selectable>{ownState.report.text}</AppText>
             )}
@@ -78,8 +101,35 @@ export function ThreadCoordinationControl({
             {view.state.blockedReason && (
               <AppText accessibilityLiveRegion="polite">{view.state.blockedReason}</AppText>
             )}
+            {view.state.quotaHandoff && (
+              <AppText accessibilityLiveRegion="polite">
+                Quota handoff: {view.state.quotaHandoff.status}
+                {view.state.quotaHandoff.destinationModel
+                  ? ` · ${view.state.quotaHandoff.destinationModel}`
+                  : ""}
+                {view.state.quotaHandoff.resetAt
+                  ? ` · resumes after ${new Date(view.state.quotaHandoff.resetAt).toLocaleString()}`
+                  : ""}
+                {view.state.quotaHandoff.reason ? ` · ${view.state.quotaHandoff.reason}` : ""}
+              </AppText>
+            )}
             {view.isParent && !ended && (
               <View className="flex-row flex-wrap gap-2">
+                <MaterialButton
+                  label={
+                    view.state.quotaHandoff?.enabled
+                      ? "Disable quota handoff"
+                      : "Enable quota handoff"
+                  }
+                  disabled={pending}
+                  onPress={() =>
+                    void act(
+                      view.state.quotaHandoff?.enabled
+                        ? "disable-quota-handoff"
+                        : "enable-quota-handoff",
+                    )
+                  }
+                />
                 <MaterialButton
                   label={view.state.status === "paused" ? "Resume" : "Pause"}
                   disabled={pending}
@@ -121,7 +171,7 @@ export function ThreadCoordinationControl({
                 </AppText>
               </View>
             ))}
-            <MaterialButton label="Close workflow" onPress={() => setOpen(false)} />
+            <MaterialButton label="Close orchestration layer" onPress={() => setOpen(false)} />
           </ScrollView>
         </SafeAreaView>
       </Modal>

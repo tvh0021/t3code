@@ -51,6 +51,19 @@ describe("serverSettings helpers", () => {
     expect(applyServerSettingsPatch(edited, { deviceHosts: [] }).deviceHosts).toEqual([]);
   });
 
+  it("replaces quota handoff mappings so users can remove defaults", () => {
+    const custom = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      coordinationQuotaHandoffFallbacks: { "gpt-6-sol": ["claude-opus-5.5"] },
+    });
+    expect(custom.coordinationQuotaHandoffFallbacks).toEqual({
+      "gpt-6-sol": ["claude-opus-5.5"],
+    });
+    expect(
+      applyServerSettingsPatch(custom, { coordinationQuotaHandoffFallbacks: {} })
+        .coordinationQuotaHandoffFallbacks,
+    ).toEqual({});
+  });
+
   it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {
     const project = { id: ProjectId.make("project-actions"), scripts: [] };
     const action = {

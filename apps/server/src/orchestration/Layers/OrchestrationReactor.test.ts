@@ -1,4 +1,5 @@
 import { ThreadCoordinationReactor } from "../ThreadCoordinationReactor.ts";
+import { ThreadCoordinationQuotaReactor } from "../ThreadCoordinationQuotaReactor.ts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -40,6 +41,14 @@ describe("OrchestrationReactor", () => {
               return Effect.void;
             },
             drainThrough: () => Effect.void,
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(ThreadCoordinationQuotaReactor, {
+            start: () => {
+              started.push("thread-coordination-quota");
+              return Effect.void;
+            },
           }),
         ),
         Layer.provideMerge(
@@ -133,6 +142,7 @@ describe("OrchestrationReactor", () => {
 
     expect(started).toEqual([
       "thread-coordination",
+      "thread-coordination-quota",
       "provider-runtime-ingestion",
       "provider-command-reactor",
       "checkpoint-reactor",

@@ -1,4 +1,5 @@
 import * as ThreadCoordinationReactor from "../src/orchestration/ThreadCoordinationReactor.ts";
+import * as ThreadCoordinationQuotaReactor from "../src/orchestration/ThreadCoordinationQuotaReactor.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
 
@@ -383,6 +384,7 @@ export const makeOrchestrationIntegrationHarness = (
     );
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
       Layer.provideMerge(ThreadCoordinationReactor.layer),
+      Layer.provideMerge(ThreadCoordinationQuotaReactor.layer),
       Layer.provideMerge(
         Layer.succeed(StorageCleanup.StorageCleanup, {
           start: () => Effect.void,

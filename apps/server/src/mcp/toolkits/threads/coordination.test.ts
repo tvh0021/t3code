@@ -243,7 +243,7 @@ it.effect(
     Effect.gen(function* () {
       const app = yield* fixture();
       try {
-        expect((yield* app.call("start_thread_workflow")).isError).toBe(false);
+        expect((yield* app.call("start_orchestration_layer")).isError).toBe(false);
         yield* app.session(parentId, "running");
         const a = yield* app.spawn("A");
         const b = yield* app.spawn("B");
@@ -283,7 +283,7 @@ it.effect(
               event.type === "thread.turn-start-requested" && event.payload.threadId === parentId,
           ),
         ).toHaveLength(1);
-        expect((yield* app.call("start_thread_workflow", undefined, a)).isError).toBe(true);
+        expect((yield* app.call("start_orchestration_layer", undefined, a)).isError).toBe(true);
         expect(
           (yield* app.call(
             "spawn_child",
@@ -335,8 +335,8 @@ it.effect(
     Effect.gen(function* () {
       const app = yield* fixture();
       try {
-        yield* app.call("start_thread_workflow");
-        yield* app.call("control_thread_workflow", { action: "pause" });
+        yield* app.call("start_orchestration_layer");
+        yield* app.call("control_orchestration_layer", { action: "pause" });
         const queued = yield* app.call("spawn_child", {
           title: "Paused",
           prompt: "Review",
@@ -344,7 +344,7 @@ it.effect(
           reviewRef: "HEAD",
         });
         expect(queued.isError).toBe(true);
-        yield* app.call("control_thread_workflow", { action: "resume" });
+        yield* app.call("control_orchestration_layer", { action: "resume" });
         yield* app.session(parentId, "running");
         const children = [];
         for (let i = 0; i < 5; i++) children.push(yield* app.spawn(String(i)));
@@ -377,15 +377,15 @@ it.effect(
         const before = (yield* app.read()).threads.find(
           (thread) => thread.id === parentId,
         )?.coordination;
-        yield* app.call("control_thread_workflow", { action: "pause" });
-        yield* app.call("control_thread_workflow", { action: "resume" });
+        yield* app.call("control_orchestration_layer", { action: "pause" });
+        yield* app.call("control_orchestration_layer", { action: "resume" });
         const after = (yield* app.read()).threads.find(
           (thread) => thread.id === parentId,
         )?.coordination;
         expect(after?.role === "parent" && after.budgets).toEqual(
           before?.role === "parent" && before.budgets,
         );
-        yield* app.call("control_thread_workflow", { action: "cancel" });
+        yield* app.call("control_orchestration_layer", { action: "cancel" });
         yield* app.drain();
         expect(
           (yield* app.read()).threads.filter(
@@ -405,7 +405,7 @@ it.effect("queues initial assignments until planning ends, without spending a pa
     const app = yield* fixture();
     try {
       yield* app.session(parentId, "running");
-      yield* app.call("start_thread_workflow");
+      yield* app.call("start_orchestration_layer");
       const child = yield* app.spawn("queued-during-planning");
       expect((yield* app.assignment(child)).phase).toBe("queued");
       yield* app.session(parentId, "ready");
@@ -430,7 +430,7 @@ it.effect(
     Effect.gen(function* () {
       const app = yield* fixture(false);
       try {
-        yield* app.call("start_thread_workflow");
+        yield* app.call("start_orchestration_layer");
         const result = yield* app.call("spawn_child", {
           title: "Recovered",
           prompt: "Review",
@@ -446,7 +446,7 @@ it.effect(
           (yield* app.read()).threads.find((thread) => thread.id === parentId)?.coordination,
         ).toMatchObject({ status: "paused" });
         expect((yield* app.assignment(child)).phase).toBe("queued");
-        yield* app.call("control_thread_workflow", { action: "resume" });
+        yield* app.call("control_orchestration_layer", { action: "resume" });
         yield* app.drain();
         expect((yield* app.assignment(child)).phase).toBe("running");
       } finally {
@@ -459,7 +459,7 @@ it.effect("clears pending approval state when a cancelled child turn is interrup
   Effect.gen(function* () {
     const app = yield* fixture();
     try {
-      yield* app.call("start_thread_workflow");
+      yield* app.call("start_orchestration_layer");
       const child = yield* app.spawn("approval-worker");
       yield* app.dispatch({
         type: "thread.activity.append",
@@ -479,7 +479,7 @@ it.effect("clears pending approval state when a cancelled child turn is interrup
         (yield* app.snapshots.getThreadShellById(child)).pipe(Option.getOrThrow)
           .hasPendingApprovals,
       ).toBe(true);
-      yield* app.call("control_thread_workflow", { action: "cancel" });
+      yield* app.call("control_orchestration_layer", { action: "cancel" });
       yield* app.dispatch({
         type: "thread.session.set",
         threadId: child,

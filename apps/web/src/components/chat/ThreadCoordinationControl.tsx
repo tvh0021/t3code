@@ -40,7 +40,7 @@ export function ThreadCoordinationControl({
       if (result._tag === "Failure")
         toastManager.add({
           type: "error",
-          title: "Could not update workflow",
+          title: "Could not update T3 orchestration layer",
           description: String(squashAtomCommandFailure(result)),
         });
     } finally {
@@ -50,11 +50,11 @@ export function ThreadCoordinationControl({
   return (
     <Dialog>
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>
-        Workflow{view.pendingReports > 0 ? ` (${view.pendingReports})` : ""}
+        T3 orchestration layer{view.pendingReports > 0 ? ` (${view.pendingReports})` : ""}
       </DialogTrigger>
       <DialogPopup>
         <DialogHeader>
-          <DialogTitle>Thread workflow</DialogTitle>
+          <DialogTitle>T3 orchestration layer</DialogTitle>
           <DialogDescription>
             {view.state.status} · {view.active}/{view.state.maxChildren} active · {view.queued}{" "}
             queued · {view.pendingReports} reports waiting
@@ -69,6 +69,35 @@ export function ThreadCoordinationControl({
               Return to {view.parentTitle}
             </Link>
           )}
+          {ownState?.role === "child" && ownState.handoffFromThreadId && (
+            <Link
+              to="/$environmentId/$threadId"
+              params={{ environmentId, threadId: ownState.handoffFromThreadId }}
+            >
+              Open source thread for this handoff
+            </Link>
+          )}
+          {view.state.quotaHandoff?.destinationThreadId &&
+            view.state.quotaHandoff.destinationThreadId !== view.parentId && (
+              <Link
+                to="/$environmentId/$threadId"
+                params={{
+                  environmentId,
+                  threadId: view.state.quotaHandoff.destinationThreadId,
+                }}
+              >
+                Open quota handoff thread
+              </Link>
+            )}
+          {view.state.quotaHandoff?.sourceThreadId &&
+            view.state.quotaHandoff.sourceThreadId !== view.parentId && (
+              <Link
+                to="/$environmentId/$threadId"
+                params={{ environmentId, threadId: view.state.quotaHandoff.sourceThreadId }}
+              >
+                Open source thread for this handoff
+              </Link>
+            )}
           {ownState?.role === "child" && ownState.report && (
             <div>
               <p className="text-sm font-medium">Assignment report</p>
@@ -86,8 +115,41 @@ export function ThreadCoordinationControl({
               {view.state.blockedReason}
             </p>
           )}
+          {view.state.quotaHandoff && (
+            <div role="status" className="text-sm text-muted-foreground">
+              Quota handoff: {view.state.quotaHandoff.status}
+              {view.state.quotaHandoff.destinationModel
+                ? ` · ${view.state.quotaHandoff.destinationModel}`
+                : ""}
+              {view.state.quotaHandoff.resetAt
+                ? ` · resumes after ${new Date(view.state.quotaHandoff.resetAt).toLocaleString()}`
+                : ""}
+              {view.state.quotaHandoff.reason ? ` · ${view.state.quotaHandoff.reason}` : ""}
+            </div>
+          )}
           {view.isParent && !ended && (
             <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() =>
+                  void act(
+                    view.state.quotaHandoff?.enabled
+                      ? "disable-quota-handoff"
+                      : "enable-quota-handoff",
+                  )
+                }
+              >
+                {view.state.quotaHandoff?.enabled
+                  ? "Disable quota handoff"
+                  : "Enable quota handoff"}
+              </Button>
+              <p className="basis-full text-xs text-muted-foreground">
+                A layer can switch providers once. Each destination needs fresh quota below the
+                environment threshold and an orchestration turn available. The summary uses an
+                additional provider-billed turn.
+              </p>
               <Button
                 size="sm"
                 variant="outline"

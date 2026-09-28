@@ -24,6 +24,7 @@ export const DEFAULT_COORDINATION_LIMITS: Readonly<Record<string, number | null>
   "gpt-6-luna": null,
   "gemini-3.8-flash": null,
   "claude-sonnet-5": 1,
+  "claude-opus-5": 1,
   "claude-opus-5.5": 1,
   "claude-fable-5.1": 1,
   "glm-5.3-flash": null,

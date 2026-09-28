@@ -1,4 +1,5 @@
 import * as ThreadCoordinationReactor from "../ThreadCoordinationReactor.ts";
+import * as ThreadCoordinationQuotaReactor from "../ThreadCoordinationQuotaReactor.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -26,10 +27,12 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
   const agentAwarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
   const coordination = yield* ThreadCoordinationReactor.ThreadCoordinationReactor;
+  const coordinationQuota = yield* ThreadCoordinationQuotaReactor.ThreadCoordinationQuotaReactor;
   const storageCleanup = yield* StorageCleanup.StorageCleanup;
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
     yield* coordination.start();
+    yield* coordinationQuota.start();
     yield* providerRuntimeIngestion.start();
     yield* providerCommandReactor.start();
     yield* checkpointReactor.start();

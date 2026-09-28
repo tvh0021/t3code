@@ -66,11 +66,17 @@ A concise, chronological record of custom changes made to this personal fork of 
 - Added thread MCP tools for cross-model and cross-provider handoffs. Corrected GPT-6 current/legacy grouping.
 - Added persisted flat workflows with child queues, durable reports, shared model budgets, parent wakeups, and lifecycle controls across web and mobile.
 - Added named limits, price-band defaults, monthly model/pricing maintenance, and per-model overrides. Active workflows retain captured budgets.
-- Added provider worker restrictions and a companion Zed `--worker-mode` implementation. Added ChatLLM parent MCP access and Zed forwarding with explicit worker tool allowlists. Antigravity can serve as a child; it cannot parent a workflow yet.
+- Added provider worker restrictions and a companion Zed `--worker-mode` implementation. Added ChatLLM parent MCP access and Zed forwarding with explicit worker tool allowlists. At this point, Antigravity could serve only as a child.
 - Fixed review approval policy, write-tool enforcement, turn correlation, startup ordering, active-member lifecycle guards, terminal-parent capability restoration, and interrupted-turn approval cleanup. Added completion-before-acceptance and restart reconciliation tests, detached review snapshots, cleanup recovery, and read containment for ChatLLM.
 - Verified ordinary desktop threads and a four-child Sol workflow with two Luna and two Gemini children. All four children reported substantive findings; the parent applied them and the fixture passed 10/10 tests. A shared child-start command ID was fixed after the first runtime attempt started only one child.
 - Corrected completed workflow report labels in web and mobile. Focused coordination tests passed 13/13, targeted lint and formatting passed, and server/client-runtime/mobile typechecks passed. Web typechecking still has unrelated HAST type errors. Zed native MCP discovery and remote/mobile UI flows remain unverified.
 
 Audit reviews now use GPT 6 Sol at low reasoning, as requested.
+
+### 2026-09-28: Personal 0.1.0
+
+- Added opt-in quota handoff for T3 orchestration layers with a 95% default threshold, ordered environment fallbacks, one automatic provider switch, and reset-based continuation when no fallback qualifies.
+- Simulated Luna XHigh at 95% and observed a linked Gemini child, source settlement, summary turn, and continuation prompt. Simulated an elapsed reset with a fresh 12% Luna reading. Fixed lost XHigh options and stale reset details found by the probe. Real quota exhaustion and provider continuation remain unverified.
+- Allowed Antigravity to parent a layer after the managed Gemini 3.8 Flash High runtime called T3's `read_thread` and `start_orchestration_layer` tools in an isolated dev thread. The server persisted an active Gemini parent with quota handoff enabled. A complete Gemini parent and child report cycle remains unverified.
 
 See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remaining checks.

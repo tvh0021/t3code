@@ -1,5 +1,6 @@
 import * as CoordinationPolicy from "./orchestration/CoordinationPolicy.ts";
 import * as ThreadCoordinationReactor from "./orchestration/ThreadCoordinationReactor.ts";
+import * as ThreadCoordinationQuotaReactor from "./orchestration/ThreadCoordinationQuotaReactor.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
 
@@ -248,6 +249,7 @@ const PlatformServicesLive = NodeServices.layer;
 const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(OrchestrationReactorLive),
   Layer.provideMerge(ThreadCoordinationReactor.layer),
+  Layer.provideMerge(ThreadCoordinationQuotaReactor.layer),
   Layer.provideMerge(ProviderRuntimeIngestionLive),
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),

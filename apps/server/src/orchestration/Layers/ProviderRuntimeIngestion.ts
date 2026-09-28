@@ -2677,15 +2677,16 @@ const make = Effect.gen(function* () {
           createdAt: now,
         });
         if (worker.turnId !== eventTurnId) return;
+        const isQuotaHandoffSummary = worker.handoffStage === "summarize";
         yield* orchestrationEngine.dispatch({
           type: "thread.coordination",
           threadId: thread.id,
-          commandId: CommandId.make(`coordination:finish:${worker.assignmentId}`),
-          action: {
-            type: "finish",
-            assignmentId: worker.assignmentId,
-            text: report,
-          },
+          commandId: CommandId.make(
+            `coordination:${isQuotaHandoffSummary ? "summary" : "finish"}:${worker.assignmentId}`,
+          ),
+          action: isQuotaHandoffSummary
+            ? { type: "handoff-summary-complete", text: report }
+            : { type: "finish", assignmentId: worker.assignmentId, text: report },
           createdAt: now,
         });
       }

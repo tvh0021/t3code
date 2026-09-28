@@ -1753,8 +1753,8 @@ function OpenCommandPaletteDialog(props: {
       actionItems.push({
         kind: "action",
         value: `action:workflow-${action}`,
-        searchTerms: ["workflow", "children", "coordination", action],
-        title: `${action[0]!.toUpperCase()}${action.slice(1)} thread workflow`,
+        searchTerms: ["T3 orchestration layer", "children", "coordination", action],
+        title: `${action[0]!.toUpperCase()}${action.slice(1)} T3 orchestration layer`,
         icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
         run: async () => {
           await controlCoordination({
@@ -1763,6 +1763,22 @@ function OpenCommandPaletteDialog(props: {
           });
         },
       });
+    const quotaHandoffAction = activeThread.coordination.quotaHandoff?.enabled
+      ? "disable-quota-handoff"
+      : "enable-quota-handoff";
+    actionItems.push({
+      kind: "action",
+      value: `action:workflow-${quotaHandoffAction}`,
+      searchTerms: ["T3 orchestration layer", "quota", "usage limit", quotaHandoffAction],
+      title: `${quotaHandoffAction === "enable-quota-handoff" ? "Enable" : "Disable"} quota handoff for T3 orchestration layer`,
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await controlCoordination({
+          environmentId: activeThread.environmentId,
+          input: { threadId: activeThread.id, action: quotaHandoffAction },
+        });
+      },
+    });
   }
 
   if (projects.length > 0) {

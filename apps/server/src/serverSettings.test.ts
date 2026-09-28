@@ -78,6 +78,29 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
+  it.effect("persists an empty quota fallback map across settings reload", () =>
+    Effect.gen(function* () {
+      const settings = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* settings.updateSettings({ coordinationQuotaHandoffFallbacks: {} });
+      const persisted = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings))(
+        yield* fileSystem.readFileString(config.settingsPath),
+      );
+      assert.deepEqual(persisted.coordinationQuotaHandoffFallbacks, {});
+
+      const reloaded = yield* Effect.gen(function* () {
+        const fresh = yield* ServerSettingsModule.ServerSettingsService;
+        return yield* fresh.getSettings;
+      }).pipe(
+        Effect.provide(
+          Layer.fresh(ServerSettingsModule.layer).pipe(Layer.provide(ServerSecretStore.layer)),
+        ),
+      );
+      assert.deepEqual(reloaded.coordinationQuotaHandoffFallbacks, {});
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("preserves context when reading a provider environment secret fails", () => {
     const platformCause = PlatformError.systemError({
       _tag: "PermissionDenied",

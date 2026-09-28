@@ -84,16 +84,17 @@ export const ThreadReadResult = Schema.Struct({
 });
 
 export const ThreadsToolkit = Toolkit.make(
-  Tool.make("start_thread_workflow", {
+  Tool.make("start_orchestration_layer", {
     description:
-      "Start a flat parent-child workflow authorized by the user. Any model may be the parent. Captures model limits for this session; initial user planning is excluded. Automatic child starts, follow-ups, and parent report wakes share these counters. Queue assignments during this planning turn, then end it. Four T3 child threads can run concurrently; excess work queues. Provider-native subagents are allowed, but a T3 child cannot start or assign another T3 workflow. Use spawn_child, report_to_parent, wait_for_children, read_thread_workflow, and control_thread_workflow.",
+      "Start a T3 orchestration layer authorized by the user. The current thread is the parent, using its selected model and options. If the user requests a different parent model or effort, use list_thread_models, then create_thread with that selection and a prompt to start the layer there; return the new parent thread ID. Captures model limits for this session; initial user planning is excluded. Automatic child starts, follow-ups, and parent report wakes share these counters. Set quotaHandoff true when the user authorizes automatic quota handoffs for this layer. Queue assignments during this planning turn, then end it. Four T3 child threads can run concurrently; excess work queues. Provider-native subagents are allowed, but a T3 child cannot start or assign another T3 orchestration layer. Use list_thread_models to resolve requested child models and options, then spawn_child, report_to_parent, wait_for_children, read_orchestration_layer, and control_orchestration_layer.",
+    parameters: Schema.Struct({ quotaHandoff: Schema.optional(Schema.Boolean) }),
     success: Schema.Struct({ threadId: ThreadId, coordination: ThreadCoordination }),
     failure,
     dependencies,
   }),
   Tool.make("spawn_child", {
     description:
-      "Queue a T3 child assignment in your active workflow. Choose any available model/provider from list_thread_models. Child has no prior history; include full instructions. Read-only reviews require a Git revision/checkpoint. Editing requires an existing separate worktreePath; the parent integrates changes. Provider-native subagents are allowed, but T3 workflow children cannot create or assign more T3 threads. Provider completion automatically reports; children can send a concise report_to_parent first. Do not poll. Use wait_for_children and end your turn.",
+      "Queue a T3 child assignment in your active orchestration layer. Choose any available model/provider and options from list_thread_models. Child has no prior history; include full instructions. Read-only reviews require a Git revision/checkpoint. Editing requires an existing separate worktreePath; the parent integrates changes. Provider-native subagents are allowed, but orchestration children cannot create or assign more T3 threads. Provider completion automatically reports; children can send a concise report_to_parent first. Do not poll. Use wait_for_children and end your turn.",
     parameters: Schema.Struct({
       title: TrimmedNonEmptyString,
       prompt: TrimmedNonEmptyString,
@@ -130,9 +131,9 @@ export const ThreadsToolkit = Toolkit.make(
     failure,
     dependencies,
   }),
-  Tool.make("read_thread_workflow", {
+  Tool.make("read_orchestration_layer", {
     description:
-      "Inspect your parent-child workflow, reports, assignment status and shared model budgets. Read child threads for full results. Reading does not start turns or reset limits.",
+      "Inspect your T3 orchestration layer, reports, assignment status and shared model budgets. Read child threads for full results. Reading does not start turns or reset limits.",
     success: Schema.Struct({
       parentId: ThreadId,
       coordination: ThreadCoordination,
@@ -148,9 +149,9 @@ export const ThreadsToolkit = Toolkit.make(
     failure,
     dependencies,
   }).annotate(Tool.Readonly, true),
-  Tool.make("control_thread_workflow", {
+  Tool.make("control_orchestration_layer", {
     description:
-      "Pause, resume, cancel, or complete your workflow. Pause prevents automatic starts while running children may report. Resume keeps used budgets. Cancel interrupts owned children and cancels queued work. Complete ends automatic work; late reports remain inspectable. Completed/cancelled sessions cannot restart or reset counters. Only the parent controls the workflow.",
+      "Pause, resume, cancel, or complete your T3 orchestration layer. Pause prevents automatic starts while running children may report. Resume keeps used budgets. Cancel interrupts owned children and cancels queued work. Complete ends automatic work; late reports remain inspectable. Completed/cancelled sessions cannot restart or reset counters. Only the parent controls the orchestration layer.",
     parameters: Schema.Struct({ action: CoordinationControl }),
     success: Schema.Struct({ threadId: ThreadId }),
     failure,
@@ -201,7 +202,7 @@ export const ThreadsToolkit = Toolkit.make(
     .annotate(Tool.Idempotent, true),
   Tool.make("send_message_to_thread", {
     description:
-      "Start a follow-up turn in an idle T3 Code thread in this project. Use only when the user authorizes messaging that thread or an ongoing coordination workflow. Keeps the destination's model and permission mode. Read its result with read_thread. A busy thread must finish or be interrupted first.",
+      "Start a follow-up turn in an idle T3 Code thread in this project. Use only when the user authorizes messaging that thread or an ongoing T3 orchestration layer. Keeps the destination's model and permission mode. Read its result with read_thread. A busy thread must finish or be interrupted first.",
     parameters: Schema.Struct({ threadId: ThreadId, prompt: TrimmedNonEmptyString }),
     success: Schema.Struct({ threadId: ThreadId }),
     failure,
@@ -211,7 +212,7 @@ export const ThreadsToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("interrupt_thread", {
     description:
-      "Interrupt an active turn in a T3 Code thread in this project when the user asks to stop it or within an authorized coordination workflow. Preserves the thread and its history. Use read_thread to check its state before sending more work.",
+      "Interrupt an active turn in a T3 Code thread in this project when the user asks to stop it or within an authorized T3 orchestration layer. Preserves the thread and its history. Use read_thread to check its state before sending more work.",
     parameters: Schema.Struct({ threadId: ThreadId }),
     success: Schema.Struct({ threadId: ThreadId }),
     failure,

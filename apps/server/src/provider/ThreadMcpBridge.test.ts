@@ -18,6 +18,11 @@ it("initializes a scoped MCP session, filters tools, and forwards calls with the
           ? {
               tools: [
                 {
+                  name: "start_orchestration_layer",
+                  description: "Start orchestration",
+                  inputSchema: { type: "object" },
+                },
+                {
                   name: "spawn_child",
                   description: "Queue child",
                   inputSchema: { type: "object" },
@@ -47,6 +52,14 @@ it("initializes a scoped MCP session, filters tools, and forwards calls with the
   );
   const signal = new AbortController().signal;
   expect(await bridge.initialize(signal)).toEqual([
+    {
+      type: "function",
+      function: {
+        name: "t3_start_orchestration_layer",
+        description: "Start orchestration",
+        parameters: { type: "object" },
+      },
+    },
     {
       type: "function",
       function: {

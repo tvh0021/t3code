@@ -18,13 +18,13 @@ const RpcResponse = Schema.Struct({
 const decodeToolList = Schema.decodeUnknownSync(ToolList);
 const decodeRpcResponse = Schema.decodeUnknownSync(RpcResponse);
 const threadTools = new Set([
-  "start_thread_workflow",
+  "start_orchestration_layer",
   "spawn_child",
   "assign_child",
   "report_to_parent",
   "wait_for_children",
-  "read_thread_workflow",
-  "control_thread_workflow",
+  "read_orchestration_layer",
+  "control_orchestration_layer",
   "refresh_coordination_policy",
   "list_thread_models",
   "create_thread",
@@ -41,7 +41,7 @@ export function makeThreadMcpBridge(
 ) {
   const allowed =
     role === "review" || role === "edit"
-      ? new Set(["report_to_parent", "read_thread_workflow", "read_thread"])
+      ? new Set(["report_to_parent", "read_orchestration_layer", "read_thread"])
       : threadTools;
   let nextId = 0;
   let sessionId: string | undefined;

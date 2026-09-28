@@ -299,7 +299,7 @@ release-ready. The changelog records the verified streaming repair only.
 - The focused benchmark improved plain-message math preprocessing from about 0.107 ms to 0.008 ms per call.
 - Merged the latest `upstream/main` on September 22, 2026.
 
-## 21. Agent-created threads and flat workflows
+## 21. Agent-created threads and T3 orchestration layers
 
 Status: Implemented in the development checkout on September 27, 2026. Final
 verification and cross-provider integration remain open. The installed personal
@@ -319,9 +319,9 @@ Sol and Luna as legacy. A live provider refresh confirmed the grouping.
 
 ### Workflow behavior
 
-The workflow tools are `start_thread_workflow`, `spawn_child`, `assign_child`,
-`report_to_parent`, `wait_for_children`, `read_thread_workflow`,
-`control_thread_workflow`, and `refresh_coordination_policy`.
+The orchestration layer tools are `start_orchestration_layer`, `spawn_child`, `assign_child`,
+`report_to_parent`, `wait_for_children`, `read_orchestration_layer`,
+`control_orchestration_layer`, and `refresh_coordination_policy`.
 
 - Any available model can be selected for a parent whose harness exposes these tools.
 - Children cannot create threads, start workflows, or assign other children.
@@ -375,10 +375,10 @@ app; mobile and remote flows remain unverified.
 
 ### Provider enforcement and limitations
 
-- Codex and Claude may use provider-native subagents during T3 workflows. The T3 server rejects nested T3 workflow creation and child assignment. Reviews remain read-only; Codex review turns use a read-only sandbox without routine approval prompts, and Claude reviews disallow shell and write tools.
+- Codex and Claude may use provider-native subagents during T3 orchestration layers. The T3 server rejects nested T3 orchestration layer creation and child assignment. Reviews remain read-only; Codex review turns use a read-only sandbox without routine approval prompts, and Claude reviews disallow shell and write tools.
 - ChatLLM reviews advertise read/list and scoped reporting tools. Reads are confined to the snapshot, including symlink checks; forbidden writes are rejected at execution time.
 - Zed passes `--worker-mode`, forwards the scoped T3 HTTP MCP server, and requires `_meta.t3WorkerPolicy`. Parent sessions also require `_meta.t3ThreadTools`. The companion Zed source enables only coordination tools in worker profiles. Older binaries fail closed.
-- Antigravity is supported as a workflow child. It does not receive T3 thread tools, and the server rejects nested T3 workflow creation from any child. Antigravity cannot parent workflows until its ACP adapter forwards T3 workflow tools. Cursor, Grok, and OpenCode remain excluded because their workflow role support has not been established. Ordinary handoffs remain available.
+- Antigravity can parent or join a T3 orchestration layer. Its managed ACP runtime called T3 MCP tools in an isolated dev thread. The server rejects nested layer creation and T3 thread creation from any child. Cursor, Grok, and OpenCode remain excluded because their workflow role support has not been established. Ordinary handoffs remain available.
 
 ChatLLM parent forwarding is tested through its tool loop and the real MCP
 HTTP protocol. Zed forwarding compiles, but native discovery needs a separate
@@ -386,7 +386,7 @@ rebuilt binary smoke test. Codex/Claude read-only execution prevents writes; it
 is not a general sandbox against reading every host path. An isolated Sol parent
 assigned work to two Luna and two Gemini children, received all four reports,
 and used them to repair a test fixture.
-Track the remaining capability gap in
+Track the remaining Gemini parent verification in
 [the issue tracker](./ISSUE_TRACKER.md#workflow-002-enable-strict-antigravity-workflows).
 
 ### Verification recorded
@@ -406,3 +406,31 @@ starting; unique per-child IDs fixed that. All four reports informed a parent
 patch, and the fixture passed 10/10 tests. The focused coordination suite
 passed 13/13 after the fix. Remote/mobile flows and native Zed tool discovery
 remain unverified. Evidence is in [SESSION_HANDOFF.md](./SESSION_HANDOFF.md).
+
+## 22. Quota handoff for T3 orchestration layers
+
+An environment policy sets a usage threshold and ordered model fallbacks. Each
+layer opts in. At 95% used in any reported quota window, the server interrupts
+the affected turn and prepares a linked handoff thread. It switches providers
+once at most. A fallback needs a ready, authenticated provider, a fresh quota
+reading below the threshold, role support, and one remaining automatic turn.
+If no fallback qualifies and the source reports a reset time, the layer waits
+for a fresh source reading after that reset. Unknown quota or reset time pauses
+automatic work with a visible reason. Manual activity cancels pending routing.
+
+An isolated runtime probe used real SQLite projections and the orchestration
+engine with simulated quota readings. Luna XHigh at 95% routed a child to
+Gemini 3.8 Flash High. After the source settled, the destination received its
+partial edit history and the engine started a summary turn. The probe supplied
+summary text and confirmed that the continuation prompt included it. A separate
+reset probe resumed Luna at 12% in a linked thread. The
+probe found and fixed lost XHigh options and stale reset details on that path.
+The web Providers page showed the 95% threshold and Luna-to-Gemini mapping.
+Focused coordination and quota reactor tests passed, as did the server
+typecheck. The probe did not consume real quota or run the destination provider.
+
+Antigravity parent support followed a live check of the managed ACP runtime.
+Gemini called `read_thread` and `start_orchestration_layer` in an isolated dev
+thread. The server recorded the calls and persisted an active parent with quota
+handoff enabled. The policy and Luna-to-Gemini parent routing tests passed.
+A complete Gemini parent assignment and report cycle remains unverified.

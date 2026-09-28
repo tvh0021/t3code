@@ -277,6 +277,8 @@ export function applyServerSettingsPatch(
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
+    // Users edit this complete ordered model map in one settings field.
+    coordinationQuotaHandoffFallbacks: quotaHandoffFallbacksPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesPatch,
     // Already translated into `projectSettingsOverrides` above; the legacy
@@ -324,6 +326,9 @@ export function applyServerSettingsPatch(
   const next = deepMerge(current, patchForMerge);
   const nextWithReplacementsBase = {
     ...next,
+    ...(quotaHandoffFallbacksPatch === undefined
+      ? {}
+      : { coordinationQuotaHandoffFallbacks: quotaHandoffFallbacksPatch }),
     ...(worktreeCleanupPatch === undefined
       ? {}
       : {

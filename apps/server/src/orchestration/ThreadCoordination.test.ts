@@ -24,6 +24,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { makeCoordinationTestLayer } from "./testing/coordinationTestLayer.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
+import { planCoordination } from "./coordinationDecider.ts";
 
 const parentId = ThreadId.make("parent");
 const projectId = ProjectId.make("project");
@@ -51,7 +52,7 @@ const system = Effect.fn(function* (database?: string) {
     });
   const read = () => snapshots.getSnapshot();
   const events = () => Stream.runCollect(engine.readEvents(0, 1000));
-  const start = Effect.fn(function* (model = "gpt-6-astra") {
+  const start = Effect.fn(function* (model = "gpt-6-astra", quotaHandoffEnabled = false) {
     yield* dispatch({
       type: "project.create",
       commandId: commandId(),
@@ -81,6 +82,7 @@ const system = Effect.fn(function* (database?: string) {
         used: 0,
       })),
       policyUpdatedAt: now,
+      quotaHandoffEnabled,
     });
   });
   const spawn = Effect.fn(function* (name: string, model = "gpt-6-luna", instance = "codex") {
@@ -136,7 +138,362 @@ const system = Effect.fn(function* (database?: string) {
   };
 });
 
-describe("flat thread coordination", () => {
+describe("T3 orchestration layer coordination", () => {
+  it.effect("interrupts a limited child and continues through a linked summary handoff", () =>
+    Effect.gen(function* () {
+      const app = yield* system();
+      try {
+        yield* app.start("gpt-6-sol", true);
+        const sourceId = yield* app.spawn("limited-child", "gpt-6-sol");
+        yield* app.coordinate(parentId, { type: "advance" });
+        const sourceState = (yield* app.read()).threads.find(
+          (thread) => thread.id === sourceId,
+        )?.coordination;
+        if (sourceState?.role !== "child") throw new Error("Missing source assignment");
+        yield* app.dispatch({
+          type: "thread.message.user.append",
+          commandId: commandId(),
+          threadId: sourceId,
+          message: {
+            messageId: MessageId.make("partial-assignment-history"),
+            text: "The provider started editing the parser, then hit its quota.",
+            attachments: [],
+          },
+          createdAt: now,
+        });
+        yield* app.session(sourceId, "running");
+        const destinationId = ThreadId.make("fallback-child");
+        yield* app.coordinate(parentId, {
+          type: "quota-trigger",
+          affectedThreadId: sourceId,
+          destinationThreadId: destinationId,
+          destinationModelSelection: {
+            instanceId: ProviderInstanceId.make("claude"),
+            model: "claude-opus-5",
+          },
+          destinationBudgetLimit: 1,
+          switchProvider: true,
+        });
+        expect(
+          (yield* app.read()).threads.find((thread) => thread.id === parentId)?.coordination,
+        ).toMatchObject({
+          role: "parent",
+          status: "paused",
+          quotaHandoff: {
+            status: "handing-off",
+            switchCount: 1,
+            destinationThreadId: destinationId,
+          },
+        });
+        expect(
+          (yield* app.read()).threads.find((thread) => thread.id === sourceId)?.coordination,
+        ).toMatchObject({ role: "child", phase: "cancelled" });
+        expect(
+          (yield* app.events()).some((event) => event.type === "thread.turn-interrupt-requested"),
+        ).toBe(true);
+        yield* app.dispatch({
+          type: "thread.coordination.control",
+          threadId: parentId,
+          commandId: commandId(),
+          action: "disable-quota-handoff",
+          createdAt: now,
+        });
+        expect(
+          (yield* app.read()).threads.find((thread) => thread.id === parentId)?.coordination,
+        ).toMatchObject({
+          role: "parent",
+          quotaHandoff: { enabled: false, status: "handing-off" },
+        });
+
+        yield* app.session(sourceId, "idle");
+        yield* app.coordinate(parentId, {
+          type: "quota-settle",
+          destinationThreadId: destinationId,
+        });
+        expect(
+          (yield* app.read()).threads.find((thread) => thread.id === destinationId)?.coordination,
+        ).toMatchObject({
+          role: "child",
+          phase: "queued",
+          handoffFromThreadId: sourceId,
+          handoffContext: expect.stringContaining("hit its quota"),
+        });
+        expect(
+          (yield* app.read()).threads.find((thread) => thread.id === parentId)?.coordination,
+        ).toMatchObject({ role: "parent", quotaHandoff: { enabled: false, status: "watching" } });
+
+        yield* app.coordinate(parentId, { type: "advance" });
+        const beforeContinuation = (yield* app.read()).threads.find(
+          (thread) => thread.id === parentId,
+        )?.coordination;
+        if (beforeContinuation?.role !== "parent") throw new Error("Missing parent budget");
+        expect(
+          beforeContinuation.budgets.find((budget) => budget.model === "claude-opus-5"),
+        ).toEqual({
+          model: "claude-opus-5",
+          limit: 1,
+          used: 0,
+        });
+        yield* app.coordinate(destinationId, {
+          type: "handoff-summary-complete",
+          text: "The parser edit is partial; inspect the changed files and finish the parser.",
+        });
+        expect(
+          (yield* app.read()).threads.find((thread) => thread.id === destinationId)?.coordination,
+        ).toMatchObject({ role: "child", phase: "queued", handoffStage: "continue" });
+
+        const snapshot = yield* app.read();
+        const continuationPlan = planCoordination(
+          {
+            type: "thread.coordination",
+            threadId: parentId,
+            action: { type: "advance" },
+            commandId: commandId(),
+            createdAt: now,
+          },
+          snapshot.threads,
+          () => false,
+          () => false,
+        );
+        if (typeof continuationPlan === "string") throw new Error(continuationPlan);
+        const continuationStart = continuationPlan.find(
+          (command) => command.type === "thread.turn.start" && command.threadId === destinationId,
+        );
+        expect(continuationStart).toBeDefined();
+        const afterContinuation = continuationPlan.find(
+          (command) => command.type === "thread.coordination.set" && command.threadId === parentId,
+        );
+        if (
+          afterContinuation?.type !== "thread.coordination.set" ||
+          afterContinuation.coordination.role !== "parent"
+        )
+          throw new Error("Missing parent budget update");
+        expect(
+          afterContinuation.coordination.budgets.find((budget) => budget.model === "claude-opus-5"),
+        ).toEqual({
+          model: "claude-opus-5",
+          limit: 1,
+          used: 1,
+        });
+      } finally {
+        yield* app.dispose();
+      }
+    }),
+  );
+
+  it.effect("manual parent activity cancels a pending quota reset", () =>
+    Effect.gen(function* () {
+      const app = yield* system();
+      try {
+        yield* app.start("gpt-6-sol", true);
+        const sourceId = yield* app.spawn("waiting-child", "gpt-6-sol");
+        yield* app.coordinate(parentId, { type: "advance" });
+        yield* app.session(sourceId, "running");
+        yield* app.coordinate(parentId, {
+          type: "quota-wait",
+          affectedThreadId: sourceId,
+          resetAt: "2026-09-27T01:00:00.000Z",
+          reason: "Waiting for the source quota reset.",
+        });
+        yield* app.dispatch({
+          type: "thread.turn.start",
+          commandId: commandId(),
+          threadId: parentId,
+          message: {
+            messageId: MessageId.make("manual-quota-override"),
+            role: "user",
+            text: "Take over from here manually.",
+            attachments: [],
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          createdAt: now,
+        });
+        expect(
+          (yield* app.read()).threads.find((thread) => thread.id === parentId)?.coordination,
+        ).toMatchObject({
+          role: "parent",
+          status: "paused",
+          quotaHandoff: { status: "paused", reason: "Canceled by user activity." },
+        });
+      } finally {
+        yield* app.dispose();
+      }
+    }),
+  );
+
+  it.effect("wakes a waiting Luna child with its XHigh option and clears the old reset state", () =>
+    Effect.gen(function* () {
+      const app = yield* system();
+      try {
+        yield* app.start("gpt-6-luna", true);
+        const sourceId = yield* app.spawn("waiting-luna", "gpt-6-luna");
+        yield* app.coordinate(parentId, { type: "advance" });
+        yield* app.session(sourceId, "running");
+        yield* app.coordinate(parentId, {
+          type: "quota-wait",
+          affectedThreadId: sourceId,
+          resetAt: "2026-09-27T01:00:00.000Z",
+          reason: "Waiting for the source quota reset.",
+        });
+        const destinationId = ThreadId.make("resumed-luna");
+        yield* app.coordinate(parentId, {
+          type: "quota-trigger",
+          affectedThreadId: sourceId,
+          destinationThreadId: destinationId,
+          destinationModelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-6-luna",
+            options: [{ id: "reasoningEffort", value: "xhigh" }],
+          },
+          switchProvider: false,
+        });
+        const snapshot = yield* app.read();
+        expect(
+          snapshot.threads.find((thread) => thread.id === destinationId)?.modelSelection,
+        ).toMatchObject({
+          model: "gpt-6-luna",
+          options: [{ id: "reasoningEffort", value: "xhigh" }],
+        });
+        const coordination = snapshot.threads.find(
+          (thread) => thread.id === parentId,
+        )?.coordination;
+        expect(coordination).toMatchObject({
+          role: "parent",
+          quotaHandoff: { status: "handing-off", switchCount: 0 },
+        });
+        if (coordination?.role !== "parent") throw new Error("Missing parent coordination");
+        expect(coordination.quotaHandoff?.resetAt).toBeUndefined();
+        expect(coordination.quotaHandoff?.reason).toBeUndefined();
+      } finally {
+        yield* app.dispose();
+      }
+    }),
+  );
+
+  it.effect("manual parent interrupt cancels a pending quota reset", () =>
+    Effect.gen(function* () {
+      const app = yield* system();
+      try {
+        yield* app.start("gpt-6-sol", true);
+        const childId = yield* app.spawn("interruptible-child", "gpt-6-sol");
+        yield* app.coordinate(parentId, { type: "advance" });
+        yield* app.coordinate(parentId, {
+          type: "quota-wait",
+          affectedThreadId: childId,
+          resetAt: "2026-09-27T01:00:00.000Z",
+          reason: "Waiting for the source quota reset.",
+        });
+        yield* app.dispatch({
+          type: "thread.turn.interrupt",
+          commandId: commandId(),
+          threadId: parentId,
+          createdAt: now,
+        });
+        expect(
+          (yield* app.read()).threads.find((thread) => thread.id === parentId)?.coordination,
+        ).toMatchObject({
+          role: "parent",
+          status: "paused",
+          quotaHandoff: { status: "paused", reason: "Canceled by user activity." },
+        });
+      } finally {
+        yield* app.dispose();
+      }
+    }),
+  );
+
+  it.effect("creates a linked parent handoff and summarizes the settled source history", () =>
+    Effect.gen(function* () {
+      const app = yield* system();
+      const destinationId = ThreadId.make("parent-handoff");
+      try {
+        yield* app.start("gpt-6-sol", true);
+        yield* app.dispatch({
+          type: "thread.message.user.append",
+          commandId: commandId(),
+          threadId: parentId,
+          message: {
+            messageId: MessageId.make("parent-task-history"),
+            text: "Finish migrating the parser and preserve the partial edit.",
+            attachments: [],
+          },
+          createdAt: now,
+        });
+        yield* app.session(parentId, "running");
+        yield* app.coordinate(parentId, {
+          type: "quota-trigger",
+          affectedThreadId: parentId,
+          destinationThreadId: destinationId,
+          destinationModelSelection: {
+            instanceId: ProviderInstanceId.make("claude"),
+            model: "claude-opus-5",
+          },
+          destinationBudgetLimit: 1,
+          switchProvider: true,
+        });
+        expect(
+          (yield* app.read()).threads.find((thread) => thread.id === parentId)?.coordination,
+        ).toMatchObject({
+          role: "parent",
+          status: "completed",
+          quotaHandoff: { status: "handed-off", destinationThreadId: destinationId },
+        });
+        yield* app.session(parentId, "idle");
+        yield* app.coordinate(destinationId, {
+          type: "quota-settle",
+          destinationThreadId: destinationId,
+        });
+        const destination = (yield* app.read()).threads.find(
+          (thread) => thread.id === destinationId,
+        );
+        expect(destination?.coordination).toMatchObject({
+          role: "parent",
+          status: "active",
+          quotaHandoff: { status: "summarizing", sourceThreadId: parentId },
+        });
+        expect(
+          destination?.messages.some((message) =>
+            message.text.includes("Finish migrating the parser"),
+          ),
+        ).toBe(true);
+
+        const summaryText = "The parser migration is partial and needs completion.";
+        const summarySnapshot = yield* app.read();
+        const continuationPlan = planCoordination(
+          {
+            type: "thread.coordination",
+            threadId: destinationId,
+            action: { type: "handoff-summary-complete", text: summaryText },
+            commandId: commandId(),
+            createdAt: now,
+          },
+          summarySnapshot.threads,
+          () => false,
+          () => false,
+        );
+        if (typeof continuationPlan === "string") throw new Error(continuationPlan);
+        const continuationStart = continuationPlan.find(
+          (command) => command.type === "thread.turn.start" && command.threadId === destinationId,
+        );
+        expect(
+          continuationStart?.type === "thread.turn.start" ? continuationStart.message.text : "",
+        ).toContain(summaryText);
+        yield* app.coordinate(destinationId, {
+          type: "handoff-summary-complete",
+          text: summaryText,
+        });
+        const continued = (yield* app.read()).threads.find((thread) => thread.id === destinationId);
+        expect(continued?.coordination).toMatchObject({
+          role: "parent",
+          budgets: expect.arrayContaining([{ model: "claude-opus-5", limit: 1, used: 1 }]),
+        });
+      } finally {
+        yield* app.dispose();
+      }
+    }),
+  );
+
   it.effect("protects active members from archive, deletion, and budget-changing metadata", () =>
     Effect.gen(function* () {
       const app = yield* system();

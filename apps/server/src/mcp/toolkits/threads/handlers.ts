@@ -163,12 +163,12 @@ const make = Effect.gen(function* () {
   });
 
   return ThreadsToolkit.of({
-    start_thread_workflow: () =>
+    start_orchestration_layer: (input) =>
       Effect.gen(function* () {
         const caller = yield* requireThread();
         if (caller.coordination?.role === "child")
           return yield* new ThreadToolError({
-            message: "Workflow children cannot start nested T3 workflows.",
+            message: "T3 orchestration layer children cannot start another layer.",
           });
         const provider = (yield* providers.getProviders).find(
           (entry) => entry.instanceId === caller.modelSelection.instanceId,
@@ -182,10 +182,13 @@ const make = Effect.gen(function* () {
           type: "start",
           budgets: rules.budgets,
           policyUpdatedAt: rules.updatedAt,
+          ...(input?.quotaHandoff === true ? { quotaHandoffEnabled: true } : {}),
         });
         const updated = yield* requireThread();
         if (!updated.coordination || updated.coordination.role !== "parent")
-          return yield* new ThreadToolError({ message: "Workflow state is unavailable." });
+          return yield* new ThreadToolError({
+            message: "T3 orchestration layer state is unavailable.",
+          });
         return { threadId: caller.id, coordination: updated.coordination };
       }),
     spawn_child: (input) =>
@@ -193,7 +196,7 @@ const make = Effect.gen(function* () {
         const parent = yield* requireThread();
         if (parent.coordination?.role === "child")
           return yield* new ThreadToolError({
-            message: "Only the workflow parent can create T3 child threads.",
+            message: "Only the orchestration layer parent can create T3 child threads.",
           });
         const modelSelection = yield* resolveSelection(parent.modelSelection, input.modelSelection);
         const provider = (yield* providers.getProviders).find(
@@ -341,7 +344,7 @@ const make = Effect.gen(function* () {
     report_to_parent: (input) =>
       coordinate({ type: "report", assignmentId: input.assignmentId, text: input.text }),
     wait_for_children: () => coordinate({ type: "wait" }),
-    control_thread_workflow: (input) =>
+    control_orchestration_layer: (input) =>
       Effect.gen(function* () {
         const parent = yield* requireThread();
         yield* engine
@@ -355,14 +358,14 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError(failed("control the workflow")));
         return { threadId: parent.id };
       }),
-    read_thread_workflow: () =>
+    read_orchestration_layer: () =>
       Effect.gen(function* () {
         const caller = yield* requireThread();
         const parentId =
           caller.coordination?.role === "child" ? caller.coordination.parentId : caller.id;
         const parent = yield* requireThread(parentId);
         if (!parent.coordination || parent.coordination.role !== "parent")
-          return yield* new ThreadToolError({ message: "Start a workflow first." });
+          return yield* new ThreadToolError({ message: "Start a T3 orchestration layer first." });
         const snapshot = yield* snapshots
           .getShellSnapshot()
           .pipe(Effect.mapError(failed("read workflow")));
@@ -428,7 +431,8 @@ const make = Effect.gen(function* () {
             ["active", "paused"].includes(parent.coordination.status))
         )
           return yield* new ThreadToolError({
-            message: "Workflow threads must use spawn_child. Child threads cannot create threads.",
+            message:
+              "T3 orchestration layer threads must use spawn_child. Child threads cannot create threads.",
           });
         const modelSelection = yield* resolveSelection(parent.modelSelection, input.modelSelection);
         const id = ThreadId.make(yield* uuid);
@@ -469,7 +473,7 @@ const make = Effect.gen(function* () {
         )
           return yield* new ThreadToolError({
             message:
-              "Workflow children may read only their own thread. The parent supplies assignment context.",
+              "T3 orchestration layer children may read only their own thread. The parent supplies assignment context.",
           });
         const thread = yield* requireThread(input.threadId);
         const detail = yield* snapshots
@@ -507,7 +511,7 @@ const make = Effect.gen(function* () {
         if (caller.coordination)
           return yield* new ThreadToolError({
             message:
-              "Use assign_child as the parent or report_to_parent as a child. Direct follow-ups bypass workflow budgets.",
+              "Use assign_child as the parent or report_to_parent as a child. Direct follow-ups bypass orchestration layer budgets.",
           });
         const thread = yield* requireThread(input.threadId);
         if (thread.latestTurn?.state === "running")
@@ -525,7 +529,7 @@ const make = Effect.gen(function* () {
         const caller = yield* requireThread();
         if (caller.coordination?.role === "child")
           return yield* new ThreadToolError({
-            message: "Only the parent can interrupt workflow threads.",
+            message: "Only the parent can interrupt orchestration layer threads.",
           });
         const thread = yield* requireThread(input.threadId);
         yield* startup

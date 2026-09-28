@@ -1,19 +1,20 @@
 # Handoff: Personal workflow release and remaining provider checks
 
-Updated September 27, 2026. An isolated desktop pass verified an ordinary Sol
+Updated September 28, 2026. An isolated desktop pass verified an ordinary Sol
 thread and a four-child workflow with two Luna and two Gemini children. All four
 reported findings, and the parent repaired a fixture that then passed 10/10
-tests. Mobile/remote checks and Zed native MCP discovery remain open.
+tests. Simulated quota handoff and a live Gemini parent start have since passed.
+Mobile/remote checks and Zed native MCP discovery remain open.
 
 ## Intent and settled decisions
 
 `$session-handoff` could not create T3 threads. The task expanded to cross-model
-handoffs and flat parent-child workflows for verification and improvement.
+handoffs and T3 orchestration layers for verification and improvement.
 Reports must persist while parents are busy, resume idle parents without
 steering, and respect pending human requests. Any supported model may parent.
 
 - Exactly one T3 parent-child layer. Four concurrent children; overflow persists.
-- Provider-native subagents are allowed. They cannot start nested T3 workflows
+- Provider-native subagents are allowed. They cannot start nested T3 orchestration layers
   or create T3 child threads from a workflow child, so those calls cannot reset
   the shared model budget.
 - A round is an automatic provider turn start. Initial user planning is excluded.
@@ -29,8 +30,8 @@ steering, and respect pending human requests. Any supported model may parent.
 - Reviews use detached checkouts of resolved Git commits. Editing children use
   separate existing registered worktrees; the parent integrates changes.
 
-[Capabilities](./MODIFICATIONS.md#21-agent-created-threads-and-flat-workflows),
-[invocation example](../user/composer.md#coordinate-child-threads), and
+[Capabilities](./MODIFICATIONS.md#21-agent-created-threads-and-t3-orchestration-layers),
+[invocation example](../user/composer.md#start-a-t3-orchestration-layer), and
 [open issues](./ISSUE_TRACKER.md#open-issues) carry the current details.
 
 ## Latest work
@@ -57,12 +58,10 @@ ChatLLM reads/listing are confined by realpath, and children cannot read parent
 or sibling thread histories.
 
 Codex and Claude retain provider-native subagents in workflow turns; T3 handlers
-reject nested workflow creation and child assignment. Antigravity is enabled
-as a workflow child, while parent use still requires T3 tool forwarding.
-The focused workflow/policy suite passes 203 tests. The Luna-parent/Gemini-child
-runtime check is blocked for now because the isolated server reports
-authenticated=false. Repo instructions require user approval before
-desktop/browser pairing. See /private/tmp/t3-workflow-antigravity-runtime-status.txt.
+reject nested workflow creation and child assignment. The managed Antigravity
+runtime now has live evidence of T3 MCP tool use and parent startup. Its child
+role remains supported. The earlier authenticated=false blocker was specific
+to that isolated server and is superseded by the September 28 dev check.
 
 ChatLLM exposes scoped T3 coordination tools through its own tool loop. The
 bridge is tested against the real MCP HTTP protocol. Zed forwards the scoped
@@ -75,9 +74,26 @@ The old GPT 5.6 Sol/high reviewer was stopped after the user corrected its cost.
 **Use GPT 6 Sol at low reasoning for audit-trail reviews.** Its source review
 found no further actionable bug; native discovery and UI proof remain caveats.
 
+On September 28, a runtime probe drove the quota reactor, the persisted
+orchestration engine, and real SQLite projections with simulated provider
+readings. A Luna XHigh child at 95% routed to Gemini 3.8 Flash High; after
+settlement, the new child received partial edit context. The engine started a
+summary turn, and the probe supplied summary text to inspect the continuation
+prompt. A known reset with a fresh 12% Luna reading created a
+new Luna child. The probe caught lost XHigh options and stale reset details;
+both were fixed. The browser showed the 95% setting and Luna-to-Gemini mapping.
+The probe did not spend quota or run a destination provider turn.
+
+The managed Antigravity runtime then called `read_thread` and
+`start_orchestration_layer` in an isolated dev thread. The server recorded both
+tool calls and persisted a Gemini 3.8 Flash High parent with quota handoff
+enabled. Policy, MCP coordination, and Luna-to-Gemini parent routing tests
+passed 13 focused cases; server typecheck passed. This verifies parent startup,
+not a complete Gemini parent and child cycle.
+
 ## Final evidence
 
-| Evidence under `/private/tmp/`                                   | Result                                                                                     |
+| Earlier evidence under `/private/tmp/`                           | Result                                                                                     |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `t3-workflow-resumed-final-tests.log`                            | 219 tests passed, 12 focused backend files.                                                |
 | `t3-workflow-resumed-client-tests.log`                           | Six client interaction/parser tests passed.                                                |
@@ -87,9 +103,16 @@ found no further actionable bug; native discovery and UI proof remain caveats.
 | `t3-workflow-zed-mcp-check.log`                                  | Offline `cargo check -p eval_cli --bin zed-acp-server` passed.                             |
 | `t3-thread-preview-20260926-3oq989rq/workflow-smoke-resumed.log` | Real Sol/Luna workflow passed; one automatic turn each.                                    |
 
-Latest native parent: `586d27f9-f8f7-42b6-95ab-affb4b1f1df1`; child:
+Earlier Sol/Luna native parent: `586d27f9-f8f7-42b6-95ab-affb4b1f1df1`; child:
 `a967d723-e542-4e65-a91a-e31b07dab3ab`. `workflow-smoke.json` contains their
 final state. Earlier failing logs are superseded; do not add overlapping counts.
+
+September 28 quota evidence is in
+`apps/server/.t3/verify/quota-output.log`. The live Gemini parent is in the
+worktree's `.t3/userdata/state.sqlite` under thread
+`b8e7cb97-81e5-4075-828c-590a2f40a2e5`. Both are isolated development
+state. Do not use the copied provider credentials or pairing URL as public
+evidence.
 
 ## Remaining verification and capability gaps
 
@@ -97,22 +120,35 @@ final state. Earlier failing logs are superseded; do not add overlapping counts.
    Desktop child roster, reports and completion were inspected with Computer Use.
 2. Build a separate worker-aware Zed binary and prove native MCP discovery,
    parent tool use and child reporting. Do not replace the installed binary.
-3. Antigravity can run as a child, but cannot parent until its ACP adapter forwards
-   T3 workflow tools. Cursor, Grok and OpenCode remain unavailable for workflows.
-   Model entries do not prove provider support.
-4. Resolve the unrelated web HAST dependency errors separately. The user has
+3. Run a complete Gemini parent and child report cycle. The managed Antigravity
+   runtime started a parent and called T3 MCP tools, but child assignment,
+   reporting, and parent wake have not run together. Test Gemini as the parent
+   of a quota handoff as well. Older or custom binaries have not been checked
+   for MCP forwarding. Cursor, Grok, and OpenCode remain unavailable for
+   workflows.
+4. Exercise live quota threshold crossing during a running provider turn.
+   Confirm interruption, the linked Gemini summary and continuation, the
+   one-switch limit, and manual cancellation. The 95% probe simulated provider
+   readings and settled the source in the harness.
+5. Exercise a timed reset after no fallback qualifies. Confirm that a fresh
+   under-threshold reading wakes a new Luna XHigh thread, while an unknown
+   reset leaves a visible pause reason. The 12% probe started from a stored
+   waiting state with an elapsed reset time.
+6. Resolve the unrelated web HAST dependency errors separately. The user has
    authorized a personal source release, DMG rebuild and reinstall.
 
 ## Environment and constraints
 
 - T3 checkout `/Users/tvh0021/git_repos/t3code-dev`, branch `feat/zed-integration`;
   companion checkout `/Users/tvh0021/git_repos/zed-dev`.
-- Isolated state `/private/tmp/t3-thread-preview-20260926-3oq989rq`; Git fixture
-  `workflow-workspace`. Dev web `http://localhost:7942`, backend `15982`.
-  Owned exec session `25385`; recheck health and ownership before reuse.
-- Dev command: `vp run dev --home-dir /private/tmp/t3-thread-preview-20260926-3oq989rq`.
-  No browser flag. Private log `dev-resumed-no-browser.log` can contain startup
-  credentials; never print it wholesale or expose consumed pairing URLs.
+- September 28 verification used the worktree's ignored `.t3` state with
+  `vp run dev`. The dev runner reported web port `7942` and server port `15982`.
+  The built-in Browser panel used one task tab. Recheck server health and
+  ownership before reuse.
+- The earlier September 26 pass used isolated state
+  `/private/tmp/t3-thread-preview-20260926-3oq989rq` and Git fixture
+  `workflow-workspace`. Its private log `dev-resumed-no-browser.log` can contain
+  startup credentials; never print it wholesale or expose pairing URLs.
 - Decision trail `/private/tmp/t3-coordination-decisions.tsv`. Append corrections;
   do not search unrelated private transcripts or reuse the expensive reviewer.
 - Keep live `~/.t3/userdata` untouched. The Personal app uses

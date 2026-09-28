@@ -1438,6 +1438,7 @@ const ThreadCoordinationCommand = Schema.Struct({
       type: Schema.Literal("start"),
       budgets: Schema.Array(CoordinationBudget),
       policyUpdatedAt: IsoDateTime,
+      quotaHandoffEnabled: Schema.optional(Schema.Boolean),
     }),
     Schema.Struct({
       type: Schema.Literal("spawn"),
@@ -1461,6 +1462,29 @@ const ThreadCoordinationCommand = Schema.Struct({
       type: Schema.Literal("bind"),
       assignmentId: TrimmedNonEmptyString,
       turnId: TurnId,
+    }),
+    Schema.Struct({
+      type: Schema.Literal("quota-trigger"),
+      affectedThreadId: ThreadId,
+      destinationThreadId: ThreadId,
+      destinationModelSelection: ModelSelection,
+      destinationBudgetLimit: Schema.optional(Schema.NullOr(NonNegativeInt)),
+      resetAt: Schema.optional(IsoDateTime),
+      switchProvider: Schema.Boolean,
+    }),
+    Schema.Struct({
+      type: Schema.Literal("quota-wait"),
+      affectedThreadId: ThreadId,
+      resetAt: Schema.optional(IsoDateTime),
+      reason: TrimmedNonEmptyString,
+    }),
+    Schema.Struct({
+      type: Schema.Literal("quota-settle"),
+      destinationThreadId: ThreadId,
+    }),
+    Schema.Struct({
+      type: Schema.Literal("handoff-summary-complete"),
+      text: TrimmedNonEmptyString.check(Schema.isMaxLength(8_000)),
     }),
     Schema.Struct({
       type: Schema.Literal("finish"),

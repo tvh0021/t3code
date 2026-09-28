@@ -14,6 +14,28 @@ export const CoordinationBudget = Schema.Struct({
 });
 export type CoordinationBudget = typeof CoordinationBudget.Type;
 
+export const CoordinationQuotaHandoff = Schema.Struct({
+  enabled: Schema.Boolean,
+  switchCount: NonNegativeInt,
+  status: Schema.Literals([
+    "watching",
+    "waiting-reset",
+    "handing-off",
+    "summarizing",
+    "paused",
+    "handed-off",
+  ]),
+  affectedThreadId: Schema.optional(ThreadId),
+  sourceThreadId: Schema.optional(ThreadId),
+  destinationThreadId: Schema.optional(ThreadId),
+  sourceModel: Schema.optional(TrimmedNonEmptyString),
+  destinationInstanceId: Schema.optional(TrimmedNonEmptyString),
+  destinationModel: Schema.optional(TrimmedNonEmptyString),
+  resetAt: Schema.optional(IsoDateTime),
+  reason: Schema.optional(Schema.String),
+});
+export type CoordinationQuotaHandoff = typeof CoordinationQuotaHandoff.Type;
+
 export const ThreadCoordination = Schema.Union([
   Schema.Struct({
     role: Schema.Literal("parent"),
@@ -22,6 +44,7 @@ export const ThreadCoordination = Schema.Union([
     activating: Schema.optional(Schema.Boolean),
     maxChildren: NonNegativeInt,
     budgets: Schema.Array(CoordinationBudget),
+    quotaHandoff: Schema.optional(CoordinationQuotaHandoff),
     policyUpdatedAt: IsoDateTime,
     blockedReason: Schema.NullOr(Schema.String),
   }),
@@ -36,6 +59,9 @@ export const ThreadCoordination = Schema.Union([
     adopted: Schema.Boolean,
     mode: Schema.Literals(["review", "edit"]),
     reviewRef: Schema.NullOr(TrimmedNonEmptyString),
+    handoffFromThreadId: Schema.optional(ThreadId),
+    handoffContext: Schema.optional(Schema.String.check(Schema.isMaxLength(40_000))),
+    handoffStage: Schema.optional(Schema.Literals(["summarize", "continue"])),
   }),
 ]);
 export type ThreadCoordination = typeof ThreadCoordination.Type;
@@ -52,6 +78,7 @@ export const ThreadCoordinationSummary = Schema.Union([
     adopted: Schema.Boolean,
     mode: Schema.Literals(["review", "edit"]),
     reviewRef: Schema.NullOr(TrimmedNonEmptyString),
+    handoffFromThreadId: Schema.optional(ThreadId),
   }),
 ]);
 export type ThreadCoordinationSummary = typeof ThreadCoordinationSummary.Type;
@@ -70,10 +97,18 @@ export function summarizeCoordination(
     adopted: state.adopted,
     mode: state.mode,
     reviewRef: state.reviewRef,
+    ...(state.handoffFromThreadId ? { handoffFromThreadId: state.handoffFromThreadId } : {}),
   };
 }
 
-export const CoordinationControl = Schema.Literals(["pause", "resume", "cancel", "complete"]);
+export const CoordinationControl = Schema.Literals([
+  "pause",
+  "resume",
+  "cancel",
+  "complete",
+  "enable-quota-handoff",
+  "disable-quota-handoff",
+]);
 
 export type CoordinationControl = typeof CoordinationControl.Type;
 
