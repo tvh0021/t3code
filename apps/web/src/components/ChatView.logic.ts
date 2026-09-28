@@ -516,6 +516,7 @@ export function buildLocalDraftThread(
 export function buildLoadingThreadFromShell(shell: ThreadShell): Thread {
   return {
     ...shell,
+    coordination: shell.coordination?.role === "parent" ? shell.coordination : null,
     messages: [],
     proposedPlans: [],
     activities: [],

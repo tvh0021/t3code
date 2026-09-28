@@ -411,6 +411,15 @@ export function projectEvent(
         })),
       );
 
+    case "thread.coordination-updated":
+      return Effect.succeed({
+        ...nextBase,
+        threads: updateThread(nextBase.threads, event.payload.threadId, {
+          coordination: event.payload.coordination,
+          updatedAt: event.payload.updatedAt,
+        }),
+      });
+
     case "thread.created":
       return Effect.gen(function* () {
         const payload = yield* decodeForEvent(

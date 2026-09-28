@@ -156,8 +156,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
   const isDevelopment = Option.isSome(devServerUrl);
-  const appDataDirectory =
-    input.platform === "win32"
+  const appDataDirectory = Option.isSome(config.appDataDirectoryOverride)
+    ? config.appDataDirectoryOverride.value
+    : input.platform === "win32"
       ? Option.getOrElse(config.appDataDirectory, () =>
           path.join(homeDirectory, "AppData", "Roaming"),
         )
@@ -166,6 +167,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
+    isDevelopment,
     joinPath: path.join,
     t3Home: config.t3Home,
   });
@@ -186,8 +188,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
+  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code-personal";
+  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "t3code-personal";
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",

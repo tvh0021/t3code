@@ -1,6 +1,7 @@
 "use client";
 
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { threadEnvironment } from "../state/threads";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -695,6 +696,9 @@ function OpenCommandPaletteDialog(props: {
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const clientSettings = useClientSettings();
+  const controlCoordination = useAtomCommand(threadEnvironment.controlCoordination, {
+    reportFailure: true,
+  });
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -1736,6 +1740,30 @@ function OpenCommandPaletteDialog(props: {
   ]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+
+  if (
+    activeThread?.coordination?.role === "parent" &&
+    ["active", "paused"].includes(activeThread.coordination.status)
+  ) {
+    const actions =
+      activeThread.coordination.status === "paused"
+        ? (["resume", "complete", "cancel"] as const)
+        : (["pause", "complete", "cancel"] as const);
+    for (const action of actions)
+      actionItems.push({
+        kind: "action",
+        value: `action:workflow-${action}`,
+        searchTerms: ["workflow", "children", "coordination", action],
+        title: `${action[0]!.toUpperCase()}${action.slice(1)} thread workflow`,
+        icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          await controlCoordination({
+            environmentId: activeThread.environmentId,
+            input: { threadId: activeThread.id, action },
+          });
+        },
+      });
+  }
 
   if (projects.length > 0) {
     const activeProjectTitle =

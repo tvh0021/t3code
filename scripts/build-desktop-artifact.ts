@@ -55,6 +55,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.t3tools.t3code";
+const LOCAL_MAC_APP_ID = "com.t3tools.t3code.personal";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -1260,6 +1261,8 @@ export function resolveMacPasskeySigningConfiguration(
   }
 
   return {
+    // Local DMGs need their own macOS privacy identity. Reusing the signed
+    // public app's ID makes TCC reject its saved permissions on each request.
     appId: DESKTOP_APP_ID,
     teamId,
     rpDomains: uniqueRpDomains,
@@ -2371,33 +2374,21 @@ function stageMacIcons(stageResourcesDir: string, sourcePng: string, verbose: bo
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
   stageResourcesDir: string,
   channel: "latest" | "nightly",
-  verbose: boolean,
+  _verbose: boolean,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const sourcePath = path.join(stageResourcesDir, "dmg", `dmg-background-${channel}.svg`);
-  if (!(yield* fs.exists(sourcePath))) {
-    return yield* new DesktopDmgBackgroundSourceMissingError({ channel, sourcePath });
-  }
-
-  for (const output of [
-    { suffix: "", width: 640, height: 432 },
-    { suffix: "@2x", width: 1280, height: 864 },
-  ] as const) {
-    const targetPath = path.join(
+  // sips cannot rasterize SVG on all macOS versions. Ship both PNG sizes so
+  // local builds and release builds use the same installer artwork.
+  for (const suffix of ["", "@2x"] as const) {
+    const sourcePath = path.join(
       stageResourcesDir,
       "dmg",
-      `dmg-background-${channel}${output.suffix}.png`,
+      `dmg-background-${channel}${suffix}.png`,
     );
-    yield* runCommand(
-      ChildProcess.make(
-        {},
-      )`sips -s format png -z ${output.height} ${output.width} ${sourcePath} --out ${targetPath}`,
-      {
-        label: `sips ${channel} DMG background${output.suffix || "@1x"}`,
-        verbose,
-      },
-    );
+    if (!(yield* fs.exists(sourcePath))) {
+      return yield* new DesktopDmgBackgroundSourceMissingError({ channel, sourcePath });
+    }
   }
 });
 
@@ -2638,7 +2629,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   arch?: typeof BuildArch.Type,
 ) {
   const buildConfig: Record<string, unknown> = {
-    appId: DESKTOP_APP_ID,
+    appId: platform === "mac" && !signed ? LOCAL_MAC_APP_ID : DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
     artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
@@ -2689,6 +2680,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      ...(!signed ? { identity: "-", hardenedRuntime: false } : {}),
       extendInfo: {
         NSScreenCaptureUsageDescription:
           "T3 Code captures the active window when you use the window capture shortcut.",
@@ -3635,7 +3627,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    // Electron uses the packaged app name for its macOS Safe Storage keychain
+    // item. Keep local Personal builds away from the public app's item.
+    name: options.platform === "mac" && !options.signed ? "t3code-personal" : "t3code",
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,

@@ -4945,6 +4945,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
+        ...(input.coordinationRole === "review"
+          ? { disallowedTools: ["Bash", "Edit", "Write", "NotebookEdit"] }
+          : {}),
         onUserDialog,
         supportedDialogKinds: ["resume_return"],
         env: McpProviderSession.withAgentDeviceEnvironment(claudeEnvironment, mcpSession),

@@ -1,6 +1,6 @@
 # Issue tracker
 
-Updated September 24, 2026.
+Updated September 27, 2026.
 
 ## Accepted mobile limitation
 
@@ -22,6 +22,48 @@ response. No provider is relabeled to make those totals appear under another
 name.
 
 ## Open issues
+
+### WORKFLOW-001: Finish client and native-provider verification
+
+Status: Isolated desktop workflow verified; mobile and remote flows pending.
+
+Completed: 219 backend tests, six client tests, live Sol/Luna workflow,
+real MCP HTTP transport, scoped lint, and server/mobile/contracts/client-runtime
+typechecks. Receipt ordering, restart recovery, disconnect cleanup, fixed review
+revisions, child-history isolation, and parent session restart have regressions.
+GPT 6 Sol at low reasoning reviewed the latest changes.
+An ordinary Sol desktop thread and a four-child Sol workflow ran in an isolated
+desktop app. Two Luna and two Gemini children returned findings; the parent
+used all four and the fixture passed 10/10 tests. A child-start command ID fix
+and completed report-label fix passed 13 focused coordination tests.
+
+Remaining: mobile interactions, command-palette actions,
+remote and multiple-environment flows, and native Zed MCP discovery with a
+separate rebuilt binary. Web typechecking retains 11 unrelated HAST errors.
+
+The desktop pass used Computer Use against `vp run dev:desktop`. See
+[the handoff](./SESSION_HANDOFF.md) for evidence and remaining checks.
+
+### WORKFLOW-002: Enable strict Antigravity workflows
+
+Status: Partially resolved; Antigravity is supported as a child, but not as a parent.
+
+Antigravity can run as a workflow child because it does not receive T3 workflow
+tools. The server rejects attempts by any workflow child to start another T3
+workflow or create T3 threads, so those attempts cannot reset the shared model
+budget. Provider-native subagents remain allowed. Antigravity still cannot be a
+parent because its ACP adapter does not forward T3 workflow tools. Cursor, Grok,
+and OpenCode remain unavailable as strict workflow children and parents.
+
+Focused tests cover the role gate and nested-thread rejection. A live Sol parent
+assigned substantive work to two Gemini children and received their reports.
+An attempted nested spawn stopped at Codex provider approval before reaching
+T3; the server guard passed a focused MCP toolkit test.
+
+ChatLLM now forwards parent coordination tools; its tool loop and the real MCP
+HTTP protocol are tested. Zed forwards the scoped server and restricts worker
+MCP tools explicitly. Compilation passed; actual native discovery remains in
+WORKFLOW-001. Model-limit entries alone do not make a model available.
 
 ### ZED-001: Read Zed account usage from the billing service
 

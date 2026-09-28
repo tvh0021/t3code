@@ -242,7 +242,15 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           envelope.command.type === "thread.user-input.dismiss"
             ? yield* projectionSnapshotQuery.getUserInputActivity(envelope.command)
             : Option.none();
+        const blockedThreadIds =
+          envelope.command.type === "thread.coordination" &&
+          envelope.command.action.type === "advance"
+            ? (yield* projectionSnapshotQuery.getShellSnapshot()).threads
+                .filter((thread) => thread.hasPendingApprovals || thread.hasPendingUserInput)
+                .map((thread) => thread.id)
+            : [];
         const eventBase = yield* decideOrchestrationCommand({
+          blockedThreadIds,
           command: envelope.command,
           readModel: commandReadModel,
           ...(Option.isSome(userInputActivity)
@@ -286,6 +294,23 @@ const makeOrchestrationEngine = Effect.gen(function* () {
               }
 
               const lastSavedEvent = committedEvents.at(-1) ?? null;
+              if (lastSavedEvent === null && envelope.command.type === "thread.coordination") {
+                yield* commandReceiptRepository.upsert({
+                  commandId: envelope.command.commandId,
+                  aggregateKind: aggregateRef.aggregateKind,
+                  aggregateId: aggregateRef.aggregateId,
+                  acceptedAt: envelope.command.createdAt,
+                  resultSequence: commandReadModel.snapshotSequence,
+                  status: "accepted",
+                  error: null,
+                });
+                return {
+                  committedEvents,
+                  attachmentCleanups,
+                  lastSequence: commandReadModel.snapshotSequence,
+                  nextCommandReadModel,
+                } as const;
+              }
               if (lastSavedEvent === null) {
                 return yield* new OrchestrationCommandInvariantError({
                   commandType: envelope.command.type,
@@ -295,8 +320,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
               yield* commandReceiptRepository.upsert({
                 commandId: envelope.command.commandId,
-                aggregateKind: lastSavedEvent.aggregateKind,
-                aggregateId: lastSavedEvent.aggregateId,
+                aggregateKind: aggregateRef.aggregateKind,
+                aggregateId: aggregateRef.aggregateId,
                 acceptedAt: lastSavedEvent.occurredAt,
                 resultSequence: lastSavedEvent.sequence,
                 status: "accepted",

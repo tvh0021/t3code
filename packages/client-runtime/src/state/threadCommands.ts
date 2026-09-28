@@ -41,6 +41,8 @@ import {
   type UpdateThreadMetadataInput,
   archiveThread,
   createThread,
+  controlThreadCoordination,
+  type ControlThreadCoordinationInput,
   deleteThread,
   interruptThreadTurn,
   linkThreadPullRequest,
@@ -104,6 +106,12 @@ export function createThreadEnvironmentAtoms<R, E>(
       JSON.stringify([environmentId, input.threadId]),
   };
   const commands = {
+    controlCoordination: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:coordination",
+      execute: (input: ControlThreadCoordinationInput) => controlThreadCoordination(input),
+      scheduler,
+      concurrency,
+    }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:create",
       execute: (input: CreateThreadInput) => createThread(input),

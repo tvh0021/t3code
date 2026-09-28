@@ -1,3 +1,9 @@
+import {
+  ThreadCoordinationSummary,
+  ThreadCoordination,
+  CoordinationBudget,
+  CoordinationControl,
+} from "./threadCoordination.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
@@ -841,6 +847,7 @@ export const OrchestrationThread = Schema.Struct({
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   titleState: Schema.optional(Schema.NullOr(ThreadTitleState)),
+  coordination: Schema.optional(Schema.NullOr(ThreadCoordination)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -910,6 +917,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   titleState: Schema.optional(Schema.NullOr(ThreadTitleState)),
+  coordination: Schema.optional(Schema.NullOr(ThreadCoordinationSummary)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -1305,6 +1313,7 @@ export type ThreadTurnStartBootstrap = typeof ThreadTurnStartBootstrap.Type;
 
 export const ThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
+  coordinationAutomatic: Schema.optional(Schema.Boolean),
   commandId: CommandId,
   threadId: ThreadId,
   message: Schema.Struct({
@@ -1411,6 +1420,65 @@ const ThreadSessionStopCommand = Schema.Struct({
   onlyIfSettled: Schema.optional(Schema.Boolean),
 });
 
+export const ThreadCoordinationControlCommand = Schema.Struct({
+  type: Schema.Literal("thread.coordination.control"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  action: CoordinationControl,
+  createdAt: IsoDateTime,
+});
+
+const ThreadCoordinationCommand = Schema.Struct({
+  type: Schema.Literal("thread.coordination"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+  action: Schema.Union([
+    Schema.Struct({
+      type: Schema.Literal("start"),
+      budgets: Schema.Array(CoordinationBudget),
+      policyUpdatedAt: IsoDateTime,
+    }),
+    Schema.Struct({
+      type: Schema.Literal("spawn"),
+      child: ThreadCreateCommand,
+      prompt: TrimmedNonEmptyString,
+      mode: Schema.Literals(["review", "edit"]),
+      reviewRef: Schema.NullOr(TrimmedNonEmptyString),
+    }),
+    Schema.Struct({
+      type: Schema.Literal("assign"),
+      childId: ThreadId,
+      prompt: TrimmedNonEmptyString,
+    }),
+    Schema.Struct({
+      type: Schema.Literal("report"),
+      assignmentId: TrimmedNonEmptyString,
+      text: TrimmedNonEmptyString,
+    }),
+    Schema.Struct({ type: Schema.Literal("disconnect"), assignmentId: TrimmedNonEmptyString }),
+    Schema.Struct({
+      type: Schema.Literal("bind"),
+      assignmentId: TrimmedNonEmptyString,
+      turnId: TurnId,
+    }),
+    Schema.Struct({
+      type: Schema.Literal("finish"),
+      assignmentId: TrimmedNonEmptyString,
+      text: TrimmedNonEmptyString,
+    }),
+    Schema.Struct({ type: Schema.Literal("wait") }),
+    Schema.Struct({ type: Schema.Literal("advance") }),
+  ]),
+});
+const ThreadCoordinationSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.coordination.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  coordination: ThreadCoordination,
+  createdAt: IsoDateTime,
+});
+
 const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
@@ -1432,6 +1500,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadPullRequestUnlinkCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadCoordinationControlCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -1465,6 +1534,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadPullRequestUnlinkCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadCoordinationControlCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -1644,6 +1714,8 @@ const ThreadPullRequestLinkSyncCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadCoordinationCommand,
+  ThreadCoordinationSetCommand,
   ThreadAutoSettleCommand,
   ThreadPullRequestSyncCommand,
   ThreadPullRequestLinkSyncCommand,
@@ -1677,6 +1749,7 @@ export const OrchestrationEventType = Schema.Literals([
   "project.meta-updated",
   "project.deleted",
   "thread.created",
+  "thread.coordination-updated",
   "thread.deleted",
   "thread.archived",
   "thread.unarchived",
@@ -1839,6 +1912,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   /** Pending state shared with clients. Null clears a matching request. */
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   titleState: Schema.optional(Schema.NullOr(ThreadTitleState)),
+  coordination: Schema.optional(Schema.NullOr(ThreadCoordination)),
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -2019,6 +2093,15 @@ const EventBaseFields = {
 } as const;
 
 export const OrchestrationEvent = Schema.Union([
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.coordination-updated"),
+    payload: Schema.Struct({
+      threadId: ThreadId,
+      coordination: ThreadCoordination,
+      updatedAt: IsoDateTime,
+    }),
+  }),
   Schema.Struct({
     ...EventBaseFields,
     type: Schema.Literal("project.created"),

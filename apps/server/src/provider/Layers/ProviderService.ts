@@ -1,3 +1,5 @@
+import { coordinationRole as workflowRole } from "@t3tools/contracts";
+import { coordinationProviderIssue } from "../coordinationWorkerPolicy.ts";
 /**
  * ProviderServiceLive - Cross-provider orchestration layer.
  *
@@ -906,7 +908,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const agentAccessCapabilities = Effect.fn("ProviderService.agentAccessCapabilities")(function* (
     threadId: ThreadId,
   ) {
-    const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests"]);
+    const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests", "threads"]);
     const access = yield* agentAccessSettings(threadId);
     if (access.browser) capabilities.add("preview");
     if (access.device) capabilities.add("device");
@@ -1269,10 +1271,26 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
 
+      const coordinationThread = Option.isSome(projectionQuery)
+        ? yield* projectionQuery.value.getThreadShellById(input.binding.threadId).pipe(Effect.orDie)
+        : Option.none();
+      const coordination = Option.isSome(coordinationThread)
+        ? coordinationThread.value.coordination
+        : undefined;
+      const coordinationRole = workflowRole(coordination);
+      if (coordinationRole) {
+        const issue = coordinationProviderIssue(
+          adapter.provider,
+          coordinationRole === "parent" ? "parent" : "child",
+        );
+        if (issue) return yield* toValidationError(input.operation, issue);
+      }
+
       yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
       const resumed = yield* adapter
         .startSession({
           threadId: input.binding.threadId,
+          ...(coordinationRole ? { coordinationRole } : {}),
           provider: input.binding.provider,
           providerInstanceId: bindingInstanceId,
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
@@ -1501,9 +1519,24 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
         yield* clearTurnAnalyticsSession(resolvedInstanceId, threadId);
         yield* prepareMcpSession(threadId, resolvedInstanceId);
+        const coordinationThread = Option.isSome(projectionQuery)
+          ? yield* projectionQuery.value.getThreadShellById(threadId).pipe(Effect.orDie)
+          : Option.none();
+        const coordination = Option.isSome(coordinationThread)
+          ? coordinationThread.value.coordination
+          : undefined;
+        const coordinationRole = workflowRole(coordination);
+        if (coordinationRole) {
+          const issue = coordinationProviderIssue(
+            adapter.provider,
+            coordinationRole === "parent" ? "parent" : "child",
+          );
+          if (issue) return yield* toValidationError("ProviderService.startSession", issue);
+        }
         const session = yield* adapter
           .startSession({
             ...input,
+            ...(coordinationRole ? { coordinationRole } : {}),
             providerInstanceId: resolvedInstanceId,
             ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
             ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),

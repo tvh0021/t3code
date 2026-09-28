@@ -1,3 +1,4 @@
+import { ThreadCoordinationControl } from "./ThreadCoordinationControl";
 import type { WorktreeSetupCardProps } from "./worktree-setup-card";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
@@ -891,6 +892,10 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                 ? "absolute inset-0 bg-thread-canvas"
                 : "absolute inset-0 bg-screen"
             }
+          />
+          <ThreadCoordinationControl
+            environmentId={props.environmentId}
+            threadId={props.selectedThread.id}
           />
           <ThreadFeed
             key={selectedThreadKey}

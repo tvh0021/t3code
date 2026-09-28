@@ -71,6 +71,71 @@ returns to the remembered selection.
 
 Leaving reasoning level or service tier unset uses the provider's own configuration.
 
+## Ask an agent to start another thread
+
+Ask your agent to move a long conversation into a fresh thread, or to start a
+review in another thread. You can name a different model or provider, such as
+asking a Codex agent to have an Antigravity model verify its work. The destination
+model must be available through a configured provider on the same environment.
+Without a model choice, the new thread inherits the current model and its options.
+
+The new thread shares the current project, branch, working directory, and
+permission mode. It starts with fresh conversation history, so ask the agent to
+include a handoff or clear review instructions. The source thread stays intact.
+For repeated reviews, authorize the agent to read the reviewer's results and send
+follow-up work. You can open and stop either thread from any connected client.
+
+## Coordinate child threads
+
+Ask your agent to start a thread workflow, choose each child's model and provider,
+and assign work. For example: "Use Sol as the parent. Have Luna and a Gemini model
+review this revision independently, then combine their reports."
+
+Choose models available in your configured providers. Workflow parents need a
+provider that exposes T3 workflow tools. Children can use Codex, Claude,
+ChatLLM, Antigravity, and Zed with a worker-aware ACP binary. Provider-native
+subagents are allowed, but a T3 child cannot start another workflow or create
+T3 child threads, so it cannot reset the shared model budget. Four T3 children
+run concurrently; additional assignments queue until a slot opens. Initial
+assignments start after the parent's planning turn ends. Reports wait while the
+parent is busy, then resume it within the remaining budget. Reviews stay
+read-only and target a fixed Git revision. Editing children require separate
+existing worktrees.
+
+Open **Workflow** in the thread to inspect reports and model budgets. Pause stops
+new automatic work. Resume keeps the same counters. Complete ends automatic work
+and retains late reports. Cancel also interrupts running children. A manual
+parent message or interrupt pauses coordination. Server restarts pause workflows
+for explicit resume, so uncertain paid work is not replayed.
+
+For example, select **GPT 6 Sol** as the parent model and send:
+
+```text
+Start a flat T3 workflow for this repository. Confirm Codex GPT 6 Luna is
+available, then create two Luna review children for HEAD: one checks correctness,
+the other checks tests and edge cases. Do not edit files or delegate further.
+Wait for their reports, combine the findings, then complete the workflow.
+```
+
+`HEAD` reviews the committed revision. Commit or choose a checkpoint to include
+new changes. The parent lists available models, starts the workflow, spawns the
+children, and calls `wait_for_children` before ending its turn. Reports resume
+it automatically. Another parent model works the same way within its limits.
+
+Automatic turn limits are shared by model across the parent and all children.
+Initial user planning does not count. Astra has one turn, Sol has two, and Luna
+and Gemini 3.8 Flash are unlimited. Sonnet 5, Opus 5.5, and Fable 5.1 have one
+turn each. GLM 5.3 Flash is unlimited. Unlimited means no turn limit; provider
+charges and rate limits still apply.
+
+To change limits, open **Settings > Providers > Thread workflow limits** on web
+or desktop, or **Settings > Maintenance** on mobile. Monthly maintenance refreshes
+model catalogs and output pricing while the server runs. Unnamed models above
+$10 per million output tokens get one turn; below $1, unlimited; from $1 through
+$10, four turns. Named defaults and your overrides take precedence. Unpriced
+models need an override. Refreshes affect future workflows; active budgets stay
+fixed.
+
 ## Quote an assistant response
 
 On web and desktop, select text within one assistant response and choose

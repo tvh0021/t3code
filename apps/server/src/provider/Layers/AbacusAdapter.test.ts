@@ -1,10 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { expect, it } from "@effect/vitest";
 import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as Fiber from "effect/Fiber";
 
 import {
@@ -20,6 +21,8 @@ import {
   parseAbacusSse,
   truncateToolOutput,
 } from "./AbacusAdapter.ts";
+
+const encodeUnknownJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 const encoder = new TextEncoder();
 const response = (parts: ReadonlyArray<string>) =>
@@ -243,12 +246,12 @@ it("safety filter blocks dangerous commands", () => {
 });
 
 it("sandboxes write and edit operations inside workspace directory", () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "abacus-test-sandbox-"));
-  const outsideFile = path.join(os.tmpdir(), "outside.txt");
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-test-sandbox-"));
+  const outsideFile = NodePath.join(NodeOS.tmpdir(), "outside.txt");
   try {
-    expect(isInsideWorkspace(path.join(tempDir, "file.txt"), tempDir)).toBe(true);
+    expect(isInsideWorkspace(NodePath.join(tempDir, "file.txt"), tempDir)).toBe(true);
     expect(isInsideWorkspace(outsideFile, tempDir)).toBe(false);
-    expect(isInsideWorkspace(path.join(tempDir, "..", "file.txt"), tempDir)).toBe(false);
+    expect(isInsideWorkspace(NodePath.join(tempDir, "..", "file.txt"), tempDir)).toBe(false);
 
     const writeResult = handleWriteFile({ path: outsideFile, content: "hacked" }, tempDir);
     expect(writeResult).toContain(
@@ -263,14 +266,14 @@ it("sandboxes write and edit operations inside workspace directory", () => {
       "Access denied: Write operations are only permitted inside the workspace directory.",
     );
   } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    NodeFS.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
 it("handles file read, write, edit, and directory listing", () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "abacus-test-fs-"));
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-test-fs-"));
   try {
-    const filePath = path.join(tempDir, "sample.txt");
+    const filePath = NodePath.join(tempDir, "sample.txt");
     const writeRes = handleWriteFile(
       { path: filePath, content: "Hello World\nLine 2\nLine 3" },
       tempDir,
@@ -295,7 +298,7 @@ it("handles file read, write, edit, and directory listing", () => {
     const listRes = handleListDirectory({ path: tempDir }, tempDir);
     expect(listRes).toContain("[file] sample.txt");
   } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    NodeFS.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
@@ -309,9 +312,9 @@ it("truncates large tool outputs", () => {
 
 it.effect("executes tool calls in an agent loop", () =>
   Effect.gen(function* () {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "abacus-agent-loop-"));
-    const filePath = path.join(tempDir, "greeting.txt");
-    fs.writeFileSync(filePath, "Hello agentic world!", "utf-8");
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-agent-loop-"));
+    const filePath = NodePath.join(tempDir, "greeting.txt");
+    NodeFS.writeFileSync(filePath, "Hello agentic world!", "utf-8");
 
     const requests: Array<{ body: Record<string, unknown> }> = [];
     let callIndex = 0;
@@ -374,13 +377,13 @@ it.effect("executes tool calls in an agent loop", () =>
       ),
     ).toBe(true);
 
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    NodeFS.rmSync(tempDir, { recursive: true, force: true });
   }),
 );
 
 it.effect("stops and asks whether to continue when reaching the 20-step loop ceiling", () =>
   Effect.gen(function* () {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "abacus-ceiling-test-"));
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-ceiling-test-"));
     let calls = 0;
 
     const fetch: typeof globalThis.fetch = async () => {
@@ -429,6 +432,195 @@ it.effect("stops and asks whether to continue when reaching the 20-step loop cei
       ),
     ).toBe(true);
 
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    NodeFS.rmSync(tempDir, { recursive: true, force: true });
+  }),
+);
+
+it.effect("rejects a hallucinated write tool in a read-only workflow review", () =>
+  Effect.gen(function* () {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-abacus-review-"));
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
+    );
+    const requests: Array<Record<string, unknown>> = [];
+    const instanceId = ProviderInstanceId.make("abacus-review");
+    const threadId = ThreadId.make("review");
+    const adapter = yield* makeAbacusAdapter({
+      apiBaseUrl: "https://example.test/v1",
+      apiKey: "test",
+      defaultModel: "route",
+      instanceId,
+      fetch: async (_input, init) => {
+        requests.push(JSON.parse(String(init?.body)));
+        return response(
+          requests.length === 1
+            ? [
+                `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "write", type: "function", function: { name: "write_file", arguments: JSON.stringify({ path: "forbidden.txt", content: "changed" }) } }] }, finish_reason: "tool_calls" }] })}\n\n`,
+                "data: [DONE]\n\n",
+              ]
+            : [
+                'data: {"choices":[{"delta":{"content":"Done"},"finish_reason":"stop"}]}\n\n',
+                "data: [DONE]\n\n",
+              ],
+        );
+      },
+    });
+    yield* adapter.startSession({
+      threadId,
+      providerInstanceId: instanceId,
+      runtimeMode: "approval-required",
+      coordinationRole: "review",
+      cwd: directory,
+    });
+    yield* adapter.sendTurn({ threadId, input: "Review" });
+    expect(NodeFS.existsSync(NodePath.join(directory, "forbidden.txt"))).toBe(false);
+    expect(requests[0]?.tools).toEqual(
+      ABACUS_AGENT_TOOLS.filter((tool) =>
+        ["read_file", "list_directory"].includes(tool.function.name),
+      ),
+    );
+    expect(requests[1]?.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "tool",
+          content: expect.stringContaining("Read-only reviewers cannot use write_file"),
+        }),
+      ]),
+    );
+  }),
+);
+
+it.effect("forwards a parent thread tool through its scoped MCP credential", () =>
+  Effect.gen(function* () {
+    const { setMcpProviderSession, clearMcpProviderSession } = yield* Effect.promise(
+      () => import("../../mcp/McpProviderSession.ts"),
+    );
+    const { EnvironmentId } = yield* Effect.promise(() => import("@t3tools/contracts"));
+    const threadId = ThreadId.make("abacus-mcp-parent");
+    const instanceId = ProviderInstanceId.make("abacus-mcp");
+    let chats = 0;
+    let toolRequests = 0;
+    const fetch: typeof globalThis.fetch = async (url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (String(url).endsWith("/mcp")) {
+        if (body.method === "notifications/initialized") return new Response(null, { status: 202 });
+        const result =
+          body.method === "initialize"
+            ? {}
+            : body.method === "tools/list"
+              ? { tools: [{ name: "create_thread", inputSchema: { type: "object" } }] }
+              : { content: [], structuredContent: { threadId: "created-child" } };
+        if (body.method === "tools/call") {
+          toolRequests += 1;
+          expect(body.params).toEqual({
+            name: "create_thread",
+            arguments: { title: "Child", prompt: "Review" },
+          });
+        }
+        return Response.json(
+          { id: body.id, result },
+          { headers: { "mcp-session-id": "mcp-session" } },
+        );
+      }
+      expect(
+        body.tools.some(
+          (tool: { function: { name: string } }) => tool.function.name === "t3_create_thread",
+        ),
+      ).toBe(true);
+      chats += 1;
+      return response(
+        chats === 1
+          ? [
+              `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call-thread", type: "function", function: { name: "t3_create_thread", arguments: JSON.stringify({ title: "Child", prompt: "Review" }) } }] }, finish_reason: "tool_calls" }] })}\n\n`,
+              "data: [DONE]\n\n",
+            ]
+          : [
+              'data: {"choices":[{"delta":{"content":"Child created"},"finish_reason":"stop"}]}\n\n',
+              "data: [DONE]\n\n",
+            ],
+      );
+    };
+    setMcpProviderSession({
+      environmentId: EnvironmentId.make("environment"),
+      threadId,
+      providerInstanceId: instanceId,
+      providerSessionId: "session",
+      endpoint: "http://localhost/mcp",
+      authorizationHeader: "Bearer test-only",
+      capabilities: new Set(["threads"]),
+    });
+    try {
+      const adapter = yield* makeAbacusAdapter({
+        apiBaseUrl: "https://example.test",
+        apiKey: "test-key",
+        defaultModel: "sonnet-5",
+        instanceId,
+        fetch,
+      });
+      yield* adapter.startSession({
+        threadId,
+        providerInstanceId: instanceId,
+        runtimeMode: "full-access",
+        coordinationRole: "parent",
+      });
+      yield* adapter.sendTurn({ threadId, input: "Create a child" });
+      expect(toolRequests).toBe(1);
+      expect(chats).toBe(2);
+    } finally {
+      clearMcpProviderSession(threadId);
+    }
+  }),
+);
+
+it.effect("blocks absolute, traversal, and symlink reads outside a review snapshot", () =>
+  Effect.gen(function* () {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-review-containment-"));
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => NodeFS.rmSync(root, { recursive: true, force: true })),
+    );
+    const cwd = NodePath.join(root, "snapshot");
+    NodeFS.mkdirSync(cwd);
+    const outside = NodePath.join(root, "outside.txt");
+    NodeFS.writeFileSync(outside, "outside-test-sentinel");
+    NodeFS.symlinkSync(outside, NodePath.join(cwd, "link.txt"));
+    for (const requestedPath of [outside, "../outside.txt", "link.txt"]) {
+      const requests: Array<Record<string, unknown>> = [];
+      const threadId = ThreadId.make(`review-${requests.length}-${requestedPath}`);
+      const instanceId = ProviderInstanceId.make("abacus-review-containment");
+      const adapter = yield* makeAbacusAdapter({
+        apiBaseUrl: "https://example.test",
+        apiKey: "test",
+        defaultModel: "route",
+        instanceId,
+        fetch: async (_url, init) => {
+          requests.push(JSON.parse(String(init?.body)));
+          return response(
+            requests.length === 1
+              ? [
+                  `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "read", type: "function", function: { name: "read_file", arguments: JSON.stringify({ path: requestedPath }) } }] }, finish_reason: "tool_calls" }] })}\n\n`,
+                  "data: [DONE]\n\n",
+                ]
+              : [
+                  'data: {"choices":[{"delta":{"content":"Done"},"finish_reason":"stop"}]}\n\n',
+                  "data: [DONE]\n\n",
+                ],
+          );
+        },
+      });
+      yield* adapter.startSession({
+        threadId,
+        providerInstanceId: instanceId,
+        cwd,
+        runtimeMode: "approval-required",
+        coordinationRole: "review",
+      });
+      yield* adapter.sendTurn({ threadId, input: "Review" });
+      expect(yield* encodeUnknownJson(requests[1]?.messages)).toContain(
+        "only read their fixed review snapshot",
+      );
+      expect(yield* encodeUnknownJson(requests[1]?.messages)).not.toContain(
+        "outside-test-sentinel",
+      );
+    }
   }),
 );

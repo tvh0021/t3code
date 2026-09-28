@@ -1,3 +1,4 @@
+import { ThreadCoordination, summarizeCoordination } from "@t3tools/contracts";
 import {
   AgentSessionImportSource,
   ApprovalRequestId,
@@ -130,6 +131,7 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     titleState: Schema.NullOr(Schema.fromJsonString(ThreadTitleState)),
+    coordination: Schema.NullOr(Schema.fromJsonString(ThreadCoordination)),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
     branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
   }),
@@ -146,6 +148,7 @@ const ProjectionThreadActivityIdRowSchema = Schema.Struct({
 const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession;
 const ProjectionThreadRuntimeContextDbRowSchema = Schema.Struct({
   titleState: Schema.NullOr(Schema.fromJsonString(ThreadTitleState)),
+  coordination: Schema.NullOr(Schema.fromJsonString(ThreadCoordination)),
   id: ThreadId,
   projectId: ProjectId,
   title: Schema.String,
@@ -568,6 +571,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_state_json AS "titleState",
+          coordination_json AS "coordination",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -609,6 +613,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_state_json AS "titleState",
+          coordination_json AS "coordination",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -682,6 +687,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_state_json AS "titleState",
+          coordination_json AS "coordination",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -1247,6 +1253,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           title_state_json AS "titleState",
+          coordination_json AS "coordination",
           model_selection_json AS "modelSelection",
           runtime_mode AS "runtimeMode",
           interaction_mode AS "interactionMode",
@@ -1291,6 +1298,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           threads.project_id AS "projectId",
           threads.title,
           threads.title_state_json AS "titleState",
+          threads.coordination_json AS "coordination",
           sessions.thread_id AS "threadId",
           sessions.status,
           sessions.provider_name AS "providerName",
@@ -1313,6 +1321,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             projectId: row.projectId,
             title: row.title,
             titleState: row.titleState,
+            coordination: row.coordination,
             session: row.threadId === null ? null : row,
           })),
         ),
@@ -2343,6 +2352,7 @@ pending_approval_requests AS (
                 activeOrderKey: row.activeOrderKey ?? null,
                 titleRegeneration: mapTitleRegeneration(row),
                 titleState: row.titleState,
+                coordination: row.coordination,
                 deletedAt: row.deletedAt,
                 messages: messagesByThread.get(row.threadId) ?? [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
@@ -2588,6 +2598,7 @@ pending_approval_requests AS (
                   activeOrderKey: row.activeOrderKey ?? null,
                   titleRegeneration: mapTitleRegeneration(row),
                   titleState: row.titleState,
+                  coordination: row.coordination,
                   deletedAt: row.deletedAt,
                   messages: [],
                   proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
@@ -2744,6 +2755,7 @@ pending_approval_requests AS (
                         activeOrderKey: row.activeOrderKey ?? null,
                         titleRegeneration: mapTitleRegeneration(row),
                         titleState: row.titleState,
+                        coordination: summarizeCoordination(row.coordination),
                         session: sessionByThread.get(row.threadId) ?? null,
                         latestUserMessageAt: row.latestUserMessageAt,
                         hasPendingApprovals: row.pendingApprovalCount > 0,
@@ -2907,6 +2919,7 @@ pending_approval_requests AS (
                   activeOrderKey: row.activeOrderKey ?? null,
                   titleRegeneration: mapTitleRegeneration(row),
                   titleState: row.titleState,
+                  coordination: summarizeCoordination(row.coordination),
                   session: sessionByThread.get(row.threadId) ?? null,
                   latestUserMessageAt: row.latestUserMessageAt,
                   hasPendingApprovals: row.pendingApprovalCount > 0,
@@ -3263,6 +3276,7 @@ pending_approval_requests AS (
         activeOrderKey: threadRow.value.activeOrderKey ?? null,
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         titleState: threadRow.value.titleState,
+        coordination: summarizeCoordination(threadRow.value.coordination),
         session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
         hasPendingApprovals: threadRow.value.pendingApprovalCount > 0,
@@ -3290,6 +3304,7 @@ pending_approval_requests AS (
         projectId: row.projectId,
         title: row.title,
         titleState: row.titleState,
+        coordination: row.coordination,
         session: row.session === null ? null : mapSessionRow(row.session),
       }));
     });
@@ -3564,6 +3579,7 @@ pending_approval_requests AS (
         activeOrderKey: threadRow.value.activeOrderKey ?? null,
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         titleState: threadRow.value.titleState,
+        coordination: threadRow.value.coordination,
         deletedAt: null,
         messages: messageRows.map((row) => {
           const message = {

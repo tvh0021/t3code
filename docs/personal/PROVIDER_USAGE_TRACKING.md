@@ -4,6 +4,25 @@ This document tracks the API-equivalent value delivered by AI subscription plans
 
 ---
 
+## Workflow limits are separate from billing
+
+September 27, 2026: the development workflow policy uses output-price bands to
+limit automatic turns. Named defaults and user overrides take precedence.
+Monthly maintenance updates catalogs and pricing for future workflows, while
+active workflows retain captured budgets.
+
+Audit-trail reviews use GPT 6 Sol at low reasoning. The user requested this
+selection for cost control; do not reuse the older GPT 5.6 Sol/high configuration
+or treat historical benchmark rates below as a current model-selection policy.
+
+These limits do not measure provider allowance, actual subscription charges, or
+account spend. An unlimited workflow model can still incur charges and hit
+provider quotas. The benchmark below remains a historical September 18
+measurement; it was not remeasured during the workflow implementation.
+
+See [the model-budget policy](./MODIFICATIONS.md#model-budgets-and-maintenance)
+and [pending verification](./SESSION_HANDOFF.md).
+
 ## Tracking Log
 
 ### Benchmark #1: 2026-09-18

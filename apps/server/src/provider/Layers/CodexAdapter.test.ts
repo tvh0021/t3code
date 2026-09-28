@@ -292,10 +292,28 @@ validationLayer("CodexAdapterLive validation", (it) => {
         launchArgs: "",
         model: "gpt-5.3-codex",
         providerInstanceId: ProviderInstanceId.make("codex"),
+        reviewOnly: false,
         serviceTier: "priority",
         threadId: asThreadId("thread-1"),
         runtimeMode: "full-access",
       });
+    }),
+  );
+  it.effect("keeps provider-native delegation available to workflow workers", () =>
+    Effect.gen(function* () {
+      validationRuntimeFactory.factory.mockClear();
+      const adapter = yield* CodexAdapter;
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("worker"),
+        runtimeMode: "approval-required",
+        coordinationRole: "review",
+      });
+      NodeAssert.equal(
+        validationRuntimeFactory.factory.mock.calls[0]?.[0].appServerArgs,
+        undefined,
+      );
+      NodeAssert.equal(validationRuntimeFactory.factory.mock.calls[0]?.[0].reviewOnly, true);
     }),
   );
 });

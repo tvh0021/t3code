@@ -1,128 +1,130 @@
-# Session handoff: ChatLLM, Codex, and Zed ACP investigation
+# Handoff: Personal workflow release and remaining provider checks
 
-## What changed
+Updated September 27, 2026. An isolated desktop pass verified an ordinary Sol
+thread and a four-child workflow with two Luna and two Gemini children. All four
+reported findings, and the parent repaired a fixture that then passed 10/10
+tests. Mobile/remote checks and Zed native MCP discovery remain open.
 
-- The Usage page separates subscription models from credit-based models and formats Codex credits as numeric values.
-- The Limits tab shows the Codex available-credit balance below the weekly limit.
-- Codex spillover usage is stored as credits and converted at `$0.04` per credit.
-- Scan-cache version 5 stores each Codex record's raw account balance. Older cache versions cold-scan so they cannot preserve incorrect credit totals.
-- Forked rollout copies remain suppressed, while their balance snapshots no longer create duplicate usage.
-- `codex-auto-review` contributes `$0` and `0` credits in both subscription and credit-based model buckets. Its balance snapshot does not advance the paid-credit baseline, so a concurrent paid drop is counted once on the next paid record.
-- Non-spend Codex records keep `reportedCostUsd: null`; only auto-review uses an explicit reported zero. This preserves normal rate-table pricing for subscription models such as Luna and Astra.
-- Duplicate `token_count` payloads still do not create usage records, but a newer balance on a duplicate payload updates the account baseline.
-- The service reconciles all live and retained cached Codex rollout records together in timestamp order. Per-file balance deltas were the source of the large overcount because the balance belongs to one account, not one rollout.
+## Intent and settled decisions
 
-## Corrected backfill
+`$session-handoff` could not create T3 threads. The task expanded to cross-model
+handoffs and flat parent-child workflows for verification and improvement.
+Reports must persist while parents are busy, resume idle parents without
+steering, and respect pending human requests. Any supported model may parent.
 
-The earlier 90-day result of `3,661.50` credits was wrong. It charged `codex-auto-review` and counted account-wide balance drops independently in multiple rollout files.
+- Exactly one T3 parent-child layer. Four concurrent children; overflow persists.
+- Provider-native subagents are allowed. They cannot start nested T3 workflows
+  or create T3 child threads from a workflow child, so those calls cannot reset
+  the shared model budget.
+- A round is an automatic provider turn start. Initial user planning is excluded.
+  Canonical-model counters are shared across the parent, children and aliases.
+- Astra 1, Sol 2, Luna/Gemini 3.8 Flash unlimited; Sonnet 5, Opus 5.5 and Fable
+  5.1 each 1; GLM 5.3 Flash unlimited. Unlimited does not mean free.
+- Other output prices per million tokens: above $10 gives 1; below $1 gives
+  unlimited; $1 through $10 gives 4. Unpriced models need overrides. Monthly
+  maintenance preserves named/user overrides and active session budgets.
+- Pause/resume retain counters. Complete retains late reports. Cancel interrupts
+  owned children. Manual parent messages pause coordination. Restart pauses
+  workflows before reconciling stored completions, without replaying paid work.
+- Reviews use detached checkouts of resolved Git commits. Editing children use
+  separate existing registered worktrees; the parent integrates changes.
 
-A redacted scan of the local rollout corpus found 476 rollout files. The account balance moved from `2,500` to about `1,166`, and the corrected chronological reconciliation measured about `1,334` credits, or `$53.37`. That matches the expected roughly `1,300` credits from the reported `2,500` to `1,169` movement. Auto-review contributed zero.
+[Capabilities](./MODIFICATIONS.md#21-agent-created-threads-and-flat-workflows),
+[invocation example](../user/composer.md#coordinate-child-threads), and
+[open issues](./ISSUE_TRACKER.md#open-issues) carry the current details.
 
-## Verification
+## Latest work
 
-- 151 focused server/shared usage tests pass, including regression tests for concurrent rollouts, duplicate balance snapshots, auto-review, subscription pricing, and cache round trips.
-- Server and shared package typechecks pass. The repository still emits its existing Effect suggestions.
-- `git diff --check` passes.
+The desktop pass used `vp run dev:desktop` against isolated state under
+`/private/tmp/t3-desktop-verify-NYBzEP`. Its evidence summary is
+`verification.md` in that directory. A shared turn-start command ID initially
+started only one child; assigning each child a distinct ID fixed provider
+launch. Completed workflow report counts and labels were also corrected.
+The focused coordination suite passed 13/13; targeted lint and formatting
+passed. Server, client-runtime and mobile typechecks passed; web retains HAST
+dependency type errors. The dev desktop process was stopped after screenshots.
 
-## Zed ACP integration status
+Added durable terminal observations and late-receipt reconciliation. Tests cover
+lost starts, completion before acceptance, stale exits, runtime errors, restart
+recovery and cleanup after a completed parent's child disconnects. Binding uses
+receipt time. Parent sessions restart after workflow completion.
 
-### User need
+Reviews now read detached commit snapshots. Spawn failures roll back snapshots;
+thread deletion removes them, and hourly storage cleanup recovers orphaned UUID
+directories after a grace period. Referenced active/archived snapshots remain for
+inspection. Cleanup skips noncanonical roots, including symlink ancestors.
+ChatLLM reads/listing are confined by realpath, and children cannot read parent
+or sibling thread histories.
 
-- Add Zed as a T3 Code provider whose sessions run through a headless ACP server.
-- Keep Claude Sonnet 5 and GPT 5.6 Luna as the built-in Zed model choices.
-- Use the user's stored Zed credentials for hosted `zed.dev` models. The ACP handshake itself does not provide authentication.
+Codex and Claude retain provider-native subagents in workflow turns; T3 handlers
+reject nested workflow creation and child assignment. Antigravity is enabled
+as a workflow child, while parent use still requires T3 tool forwarding.
+The focused workflow/policy suite passes 203 tests. The Luna-parent/Gemini-child
+runtime check is blocked for now because the isolated server reports
+authenticated=false. Repo instructions require user approval before
+desktop/browser pairing. See /private/tmp/t3-workflow-antigravity-runtime-status.txt.
 
-### Implementation status
+ChatLLM exposes scoped T3 coordination tools through its own tool loop. The
+bridge is tested against the real MCP HTTP protocol. Zed forwards the scoped
+HTTP server through ACP and explicitly allows only coordination tools in worker
+profiles. Parent startup requires both `t3WorkerPolicy` and `t3ThreadTools`
+metadata. The companion source compiles; native discovery is not yet verified.
+Codex/Claude review profiles prevent writes, not all host-file reads.
 
-- T3 Code contains a development Zed provider driver, provider snapshot and health probe, ACP session adapter, model selection, streamed content and thought events, tool lifecycle events, permission requests, elicitation, slash-command dispatch, rollback rejection, and cleanup.
-- The built-in catalog contains `zed.dev/claude-sonnet-5` and `zed.dev/gpt-5.6-luna`. The adapter forwards the selected model to the headless Zed binary.
-- The Zed fork adds `zed-acp-server` under `crates/eval_cli`. It reuses Zed's `NativeAgent` and `AcpThread`, communicates over JSON-RPC on standard input and output, and supports worktree, data-directory, and model arguments.
-- The headless server authenticates with stored Zed credentials, waits for the selected model to become available, and sets `agent.default_model` before creating a session.
-- The Zed bridge forwards context-token usage. The T3 adapter maps ACP
-  `usage_update.used` and `usage_update.size` to the shared context-window
-  activity.
-- Zed account spend no longer appears as `$0 / $10` or as a sum of ACP session
-  costs. The provider snapshot reports account spend as unavailable and directs
-  the user to the Zed dashboard.
-- The changelog records the verified streaming repair. The wider integration
-  remains under development.
+The old GPT 5.6 Sol/high reviewer was stopped after the user corrected its cost.
+**Use GPT 6 Sol at low reasoning for audit-trail reviews.** Its source review
+found no further actionable bug; native discovery and UI proof remain caveats.
 
-### Current verification
+## Final evidence
 
-- Fake-ACP tests cover streaming, permission requests, elicitation, and context-token updates.
-- The scoped server typecheck exits 0 with no Zed-related TypeScript errors.
-- The real-binary Luna smoke test passes with network access. Sandboxed DNS
-  cannot resolve `cloud.zed.dev`.
-- The September 21 streaming regression came from repeated completed-tool
-  snapshots, which split assistant output mid-word and flooded the activity list.
-  The Zed adapter now filters identical terminal snapshots before segmentation
-  and preserves changed output. An isolated Sonnet web-client turn produced one
-  file-read completion and one intact answer.
-- The desktop server bundle was rebuilt.
-- Real Zed Luna approval and decline flows pass in an isolated web client.
-  An approved synthetic command returned `LUNA-APPROVAL-OK`; a declined command
-  reported permission denied and the session remained usable.
-- The context-window issue is resolved. The headless bridge forwards real token
-  usage, and T3 keeps billing cost separate from context usage.
-- Zed adapter tests now use `@effect/vitest` instead of a manual Effect runtime.
-  The test file passes lint without warnings; 14 tests and the scoped server
-  typecheck pass. The hosted smoke test remains opt-in.
-- `ZedProvider.test.ts` checks that account usage has no windows when billing
-  data is unavailable. The focused test passes.
-- The earlier unused-import lint finding has been fixed.
+| Evidence under `/private/tmp/`                                   | Result                                                                                     |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `t3-workflow-resumed-final-tests.log`                            | 219 tests passed, 12 focused backend files.                                                |
+| `t3-workflow-resumed-client-tests.log`                           | Six client interaction/parser tests passed.                                                |
+| `t3-workflow-mcp-http-integration.log`                           | Real MCP HTTP discovery/call passed.                                                       |
+| `t3-workflow-resumed-final-lint.log`                             | Scoped lint passed, 79 warnings.                                                           |
+| `t3-workflow-final-*-types.log`                                  | Server, mobile, contracts and client-runtime passed; web retains 11 unrelated HAST errors. |
+| `t3-workflow-zed-mcp-check.log`                                  | Offline `cargo check -p eval_cli --bin zed-acp-server` passed.                             |
+| `t3-thread-preview-20260926-3oq989rq/workflow-smoke-resumed.log` | Real Sol/Luna workflow passed; one automatic turn each.                                    |
 
-- September 22 follow-up: 18 focused Zed tests pass, with the opt-in hosted
-  smoke test skipped. Targeted lint, server typecheck, and `git diff --check`
-  pass. T3 UI verification remains pending because the required Browser panel
-  tools are unavailable in this session. No app rebuild or reload was performed.
+Latest native parent: `586d27f9-f8f7-42b6-95ab-affb4b1f1df1`; child:
+`a967d723-e542-4e65-a91a-e31b07dab3ab`. `workflow-smoke.json` contains their
+final state. Earlier failing logs are superseded; do not add overlapping counts.
 
-### Account-usage findings
+## Remaining verification and capability gaps
 
-- The usage tracker does not work because T3 has no authenticated source for
-  account-wide token spend. ACP reports cumulative cost for one session, while
-  the Limits view needs the account total for the current billing period.
-- September 22 recheck: the stored native credential returns `200` for
-  `/client/users/me`, but `401` for all four tested billing routes.
-- The current organization dashboard uses
-  `/frontend/organizations/{id}/billing/usage` and
-  `/frontend/organizations/{id}/subscription`. The older account routes are
-  `/frontend/billing/usage` and `/frontend/billing/subscriptions/current`.
-- Safari showed `$5.20` used of `$10`. The public dashboard client requests
-  billing routes with browser-session credentials. Organization usage exposes
-  `current_usage.token_spend.spend_in_cents`, `limit_in_cents`, and `updated_at`.
-- The native account response includes the subscription period, but no token
-  spend. Native account-update events re-fetch that response.
-- T3 must not copy a dashboard cookie into server state. Native billing support
-  requires a change to Zed's hosted service. An explicit dashboard sign-in
-  integration would be separate work.
-- Until T3 has a supported billing read, it must show account spend as
-  unavailable. It must not construct an account total from ACP session costs.
-- Provider-refresh tests exposed a separate defect: a CLI probe that exited
-  nonzero still marked Zed ready. The probe now reports an error and keeps
-  account spend unavailable.
+1. Mobile UI, command-palette actions, remote and multiple-environment flows.
+   Desktop child roster, reports and completion were inspected with Computer Use.
+2. Build a separate worker-aware Zed binary and prove native MCP discovery,
+   parent tool use and child reporting. Do not replace the installed binary.
+3. Antigravity can run as a child, but cannot parent until its ACP adapter forwards
+   T3 workflow tools. Cursor, Grok and OpenCode remain unavailable for workflows.
+   Model entries do not prove provider support.
+4. Resolve the unrelated web HAST dependency errors separately. The user has
+   authorized a personal source release, DMG rebuild and reinstall.
 
-### Repository state
+## Environment and constraints
 
-- T3 Code: branch `feat/zed-integration`.
-- Zed fork: branch `integration/zed-abacus`, pushed through commit `3083c5bde9`.
-- The Zed fork still has an uncommitted `README.md` review marker. Leave it untouched unless the user gives separate direction.
+- T3 checkout `/Users/tvh0021/git_repos/t3code-dev`, branch `feat/zed-integration`;
+  companion checkout `/Users/tvh0021/git_repos/zed-dev`.
+- Isolated state `/private/tmp/t3-thread-preview-20260926-3oq989rq`; Git fixture
+  `workflow-workspace`. Dev web `http://localhost:7942`, backend `15982`.
+  Owned exec session `25385`; recheck health and ownership before reuse.
+- Dev command: `vp run dev --home-dir /private/tmp/t3-thread-preview-20260926-3oq989rq`.
+  No browser flag. Private log `dev-resumed-no-browser.log` can contain startup
+  credentials; never print it wholesale or expose consumed pairing URLs.
+- Decision trail `/private/tmp/t3-coordination-decisions.tsv`. Append corrections;
+  do not search unrelated private transcripts or reuse the expensive reviewer.
+- Keep live `~/.t3/userdata` untouched. The Personal app uses
+  `~/.t3-personal/userdata`; preserve its ChatLLM secret when reinstalling.
+  Never bake dev origins with `VITE_HTTP_URL`/`VITE_WS_URL`. Stop only owned
+  retained sessions/PIDs.
+- Safari: Work profile only, reuse one task tab, never add tabs, close finished
+  task tabs and preserve unrelated tabs. No Safari tabs were opened this run.
+- Preserve unrelated desktop edits, DMG artwork and the Zed README review marker.
+  Use focused checks only; no repo-wide tests/builds or unrelated cleanup.
 
-### Open questions and pending work
-
-- Obtain a Zed billing API that accepts native credentials, or add an explicit
-  dashboard sign-in integration.
-- Read account spend and the billing-period end from the dashboard responses
-  after supported authentication exists.
-- Add tests for account scope, billing-period boundaries, failed reads, stale
-  data, and repeated cumulative ACP session updates.
-- Keep the account-usage issue in `docs/personal/ISSUE_TRACKER.md` open until
-  the displayed amount and reset date come from Zed's billing responses.
-- If the ACP server changes, rebuild the Zed binary and rerun the focused T3 tests against the real binary.
-
-### Shared performance and synchronization
-
-- The 20,000-bucket usage-merge regression test completes in about 20 ms against a 1,000 ms ceiling.
-- Plain-message math preprocessing improved from about 0.107 ms to 0.008 ms per call in the focused benchmark.
-- The branch merged the latest `upstream/main` without conflicts on September 22, 2026.
-- Server and shared package typechecks pass. The repository still emits its existing Effect suggestions.
-- `git diff --check` passes.
+The earlier Codex usage reconciliation and separate
+[Zed billing issue](./ISSUE_TRACKER.md#zed-001-read-zed-account-usage-from-the-billing-service)
+remain recorded in the personal changelog. Session cost must not substitute for
+account-wide Zed spend.

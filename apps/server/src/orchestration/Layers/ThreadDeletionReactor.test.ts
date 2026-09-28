@@ -11,6 +11,8 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { ServerConfig } from "../../config.ts";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -112,6 +114,8 @@ describe("ThreadDeletionReactor drain", () => {
         Layer.provide(Layer.succeed(ProviderService, providerService)),
         Layer.provide(Layer.succeed(TerminalManager.TerminalManager, terminalManager)),
         Layer.provide(Layer.succeed(OrchestrationEngineService, engine)),
+        Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-deletion-test-" })),
+        Layer.provide(NodeServices.layer),
       );
 
       yield* Effect.scoped(

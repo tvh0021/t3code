@@ -4,6 +4,18 @@ This guide details the procedure for keeping this personal fork updated with ups
 
 ---
 
+## Current development work
+
+September 27, 2026: `feat/zed-integration` includes workflow changes,
+ChatLLM MCP forwarding, detached review snapshots, recovery fixes, and
+desktop packaging changes. Preserve these when syncing. The matching Zed
+source forwards T3 MCP tools and advertises both
+`t3WorkerPolicy` and `t3ThreadTools`; older binaries fail closed as parents.
+The new persistence migration and workflow contracts need focused
+replay/provider/client checks after a merge. Restricted Zed workers also depend
+on a rebuilt binary from the companion `zed-dev` ACP change. Follow
+[the session handoff](./SESSION_HANDOFF.md) for current verification limits.
+
 ## 1. Remote Setup
 
 Ensure you have both your personal remote and the official upstream remote configured in your git repository:

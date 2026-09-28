@@ -1,3 +1,4 @@
+import { CoordinationPolicy } from "./orchestration/CoordinationPolicy.ts";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
@@ -29,6 +30,7 @@ import {
   ClientSurface,
   ClientWebDeployment,
   CommandId,
+  ProviderInstanceId,
   type DiscoveredLocalServerList,
   EventId,
   type EditorId,
@@ -2404,6 +2406,20 @@ const makeWsRpcLayer = (
                   providers = yield* providerRegistry.refreshInstance(instance.instanceId);
                 }
               }
+              if (input.refreshCoordinationPolicy)
+                yield* (yield* CoordinationPolicy)
+                  .read(true, !input.refreshModels)
+                  .pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new ProviderSetupError({
+                          instanceId: ProviderInstanceId.make("coordination"),
+                          operation: "configure",
+                          detail: cause.message,
+                          cause,
+                        }),
+                    ),
+                  );
               return { providers };
             }),
             { "rpc.aggregate": "server" },

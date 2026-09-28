@@ -10,6 +10,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSetupError,
+  type OrchestrationCommand,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -180,6 +181,8 @@ describe("ProviderCommandReactor", () => {
     readonly beforeReadySessionDispatch?: () => Effect.Effect<void>;
     readonly beforeTurnStartDispatch?: () => Effect.Effect<void>;
     readonly afterTurnStartDispatch?: () => Effect.Effect<void>;
+    readonly afterCoordinationBindDispatch?: () => Effect.Effect<void>;
+    readonly afterSendTurn?: () => Effect.Effect<void>;
     readonly compactThreadEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
     readonly interruptTurnEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
     readonly stopSessionEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
@@ -270,7 +273,7 @@ describe("ProviderCommandReactor", () => {
       Effect.succeed({
         threadId: ThreadId.make("thread-1"),
         turnId: asTurnId("turn-1"),
-      }),
+      }).pipe(Effect.tap(() => input?.afterSendTurn?.() ?? Effect.void)),
     );
     const compactThread = vi.fn((_: ThreadId) => input?.compactThreadEffect?.() ?? Effect.void);
     const interruptTurn = vi.fn((_: unknown) => input?.interruptTurnEffect?.() ?? Effect.void);
@@ -448,7 +451,11 @@ describe("ProviderCommandReactor", () => {
             return (before?.() ?? Effect.void).pipe(
               Effect.andThen(engine.dispatch(command)),
               Effect.tap(() =>
-                isReplay ? (input?.afterTurnStartDispatch?.() ?? Effect.void) : Effect.void,
+                command.type === "thread.coordination" && command.action.type === "bind"
+                  ? (input?.afterCoordinationBindDispatch?.() ?? Effect.void)
+                  : isReplay
+                    ? (input?.afterTurnStartDispatch?.() ?? Effect.void)
+                    : Effect.void,
               ),
             );
           },
@@ -2791,6 +2798,131 @@ describe("ProviderCommandReactor", () => {
       ),
     });
   });
+
+  effectIt.effect(
+    "restarts the provider session after completing a restricted parent workflow",
+    () =>
+      Effect.gen(function* () {
+        const first = yield* Deferred.make<void>();
+        const second = yield* Deferred.make<void>();
+        let sent = 0;
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            afterSendTurn: () =>
+              Deferred.succeed(++sent === 1 ? first : second, undefined).pipe(Effect.asVoid),
+          }),
+        );
+        const threadId = ThreadId.make("thread-1");
+        const now = "2026-01-01T00:00:00.000Z";
+        yield* harness.engine.dispatch({
+          type: "thread.coordination",
+          threadId,
+          commandId: CommandId.make("role-workflow"),
+          createdAt: now,
+          action: {
+            type: "start",
+            budgets: [{ model: "gpt-5-codex", limit: 4, used: 0 }],
+            policyUpdatedAt: now,
+          },
+        });
+        const prompt = (suffix: string) =>
+          harness.engine.dispatch({
+            type: "thread.turn.start",
+            threadId,
+            commandId: CommandId.make(`role-turn-${suffix}`),
+            message: {
+              messageId: asMessageId(`role-message-${suffix}`),
+              role: "user",
+              text: "Continue",
+              attachments: [],
+            },
+            interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+            runtimeMode: "approval-required",
+            createdAt: now,
+          });
+        yield* prompt("workflow");
+        yield* Deferred.await(first);
+        expect(harness.startSession).toHaveBeenCalledTimes(1);
+        yield* harness.engine.dispatch({
+          type: "thread.coordination.control",
+          threadId,
+          commandId: CommandId.make("role-complete"),
+          action: "complete",
+          createdAt: now,
+        });
+        yield* prompt("ordinary");
+        yield* Deferred.await(second);
+        expect(harness.startSession).toHaveBeenCalledTimes(2);
+        expect(harness.startSession.mock.calls.at(-1)?.[1]).not.toHaveProperty("coordinationRole");
+      }),
+  );
+
+  effectIt.effect("binds a child's assignment to the provider acceptance receipt", () =>
+    Effect.gen(function* () {
+      const bound = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          afterCoordinationBindDispatch: () =>
+            Deferred.succeed(bound, undefined).pipe(Effect.asVoid),
+        }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      const childId = ThreadId.make("receipt-child");
+      const now = "2026-01-01T00:00:00.000Z";
+      const coordinate = (
+        action: Extract<OrchestrationCommand, { type: "thread.coordination" }>["action"],
+        id: string,
+      ) =>
+        harness.engine.dispatch({
+          type: "thread.coordination",
+          threadId,
+          commandId: CommandId.make(id),
+          createdAt: now,
+          action,
+        });
+      yield* coordinate(
+        {
+          type: "start",
+          budgets: [
+            { model: "gpt-5-codex", limit: 4, used: 0 },
+            { model: "gpt-6-luna", limit: null, used: 0 },
+          ],
+          policyUpdatedAt: now,
+        },
+        "receipt-start",
+      );
+      yield* coordinate(
+        {
+          type: "spawn",
+          child: {
+            type: "thread.create",
+            commandId: CommandId.make("receipt-create"),
+            threadId: childId,
+            projectId: asProjectId("project-1"),
+            title: "Receipt child",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6-luna" },
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+          },
+          prompt: "Review",
+          mode: "review",
+          reviewRef: "revision",
+        },
+        "receipt-spawn",
+      );
+      yield* coordinate({ type: "advance" }, "receipt-advance");
+      yield* Deferred.await(bound);
+      const snapshot = yield* harness.snapshotQuery.getSnapshot();
+      expect(snapshot.threads.find((thread) => thread.id === childId)?.coordination).toMatchObject({
+        role: "child",
+        phase: "running",
+        turnId: "turn-1",
+      });
+    }),
+  );
 
   it("forwards plan interaction mode to the provider turn request", async () => {
     const harness = await createHarness();

@@ -2,6 +2,9 @@ import type { OrchestrationEvent } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import { ServerConfig } from "../../config.ts";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -41,6 +44,9 @@ export const logCleanupCauseUnlessInterrupted = <R, E>({
 const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const providerService = yield* ProviderService;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const config = yield* ServerConfig;
   const terminalManager = yield* TerminalManager.TerminalManager;
 
   const stopProviderSession = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
@@ -63,6 +69,17 @@ const make = Effect.gen(function* () {
     const { threadId } = event.payload;
     yield* stopProviderSession(threadId);
     yield* closeThreadTerminals(threadId);
+    // Only the UUID directory reserved for an MCP-created review belongs to us.
+    if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(threadId)) {
+      yield* logCleanupCauseUnlessInterrupted({
+        effect: fs.remove(path.join(config.worktreesDir, "coordination-reviews", threadId), {
+          recursive: true,
+          force: true,
+        }),
+        message: "thread deletion cleanup skipped review snapshot removal",
+        threadId,
+      });
+    }
   });
 
   const processThreadDeletedSafely = (event: ThreadDeletedEvent) =>

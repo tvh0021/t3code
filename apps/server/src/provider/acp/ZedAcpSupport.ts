@@ -31,15 +31,17 @@ export interface ZedAcpRuntimeInput extends Omit<
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly zedSettings: ZedAcpRuntimeZedSettings | null | undefined;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly coordinationRole?: "parent" | "review" | "edit";
 }
 
 export function buildZedAcpSpawnInput(
   zedSettings: ZedAcpRuntimeZedSettings | null | undefined,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
+  coordinationRole?: "parent" | "review" | "edit",
 ): AcpSessionRuntime.AcpSpawnInput {
   const binary = zedSettings?.binaryPath?.trim() || "zed-acp-server";
-  const args: string[] = [];
+  const args: string[] = coordinationRole ? ["--worker-mode", coordinationRole] : [];
   if (cwd) {
     args.push("--worktree", cwd);
   }
@@ -91,7 +93,12 @@ export const makeZedAcpRuntime = (
           completedSnapshots.set(key, digest);
           return normalized;
         },
-        spawn: buildZedAcpSpawnInput(input.zedSettings, input.cwd, input.environment),
+        spawn: buildZedAcpSpawnInput(
+          input.zedSettings,
+          input.cwd,
+          input.environment,
+          input.coordinationRole,
+        ),
         clientCapabilities: ZED_CLIENT_CAPABILITIES,
         clientInfo: {
           name: "t3-code",

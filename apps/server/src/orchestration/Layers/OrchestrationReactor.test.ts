@@ -1,3 +1,4 @@
+import { ThreadCoordinationReactor } from "../ThreadCoordinationReactor.ts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -32,6 +33,15 @@ describe("OrchestrationReactor", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
+        Layer.provide(
+          Layer.succeed(ThreadCoordinationReactor, {
+            start: () => {
+              started.push("thread-coordination");
+              return Effect.void;
+            },
+            drainThrough: () => Effect.void,
+          }),
+        ),
         Layer.provideMerge(
           Layer.succeed(StorageCleanup, {
             start: () => {
@@ -122,6 +132,7 @@ describe("OrchestrationReactor", () => {
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
 
     expect(started).toEqual([
+      "thread-coordination",
       "provider-runtime-ingestion",
       "provider-command-reactor",
       "checkpoint-reactor",

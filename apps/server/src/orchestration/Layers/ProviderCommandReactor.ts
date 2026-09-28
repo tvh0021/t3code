@@ -1,3 +1,4 @@
+import { coordinationRole as workflowRole } from "@t3tools/contracts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import {
   type ChatAttachment,
@@ -567,6 +568,8 @@ const make = Effect.gen(function* () {
     });
   });
 
+  const sessionCoordinationRoles = new Map<ThreadId, string | null>();
+
   const ensureSessionForThread = Effect.fn("ensureSessionForThread")(function* (
     threadId: ThreadId,
     createdAt: string,
@@ -778,6 +781,8 @@ const make = Effect.gen(function* () {
         !Equal.equals(previousModelSelection, requestedModelSelection);
 
       if (
+        (sessionCoordinationRoles.get(threadId) ?? null) ===
+          (workflowRole(thread.coordination) ?? null) &&
         !runtimeModeChanged &&
         !cwdChanged &&
         !instanceChanged &&
@@ -821,11 +826,13 @@ const make = Effect.gen(function* () {
         runtimeMode: restartedSession.runtimeMode,
         cwd: restartedSession.cwd,
       });
+      sessionCoordinationRoles.set(threadId, workflowRole(thread.coordination) ?? null);
       yield* bindSessionToThread(restartedSession);
       return restartedSession.threadId;
     }
 
     const startedSession = yield* startProviderSession(undefined);
+    sessionCoordinationRoles.set(threadId, workflowRole(thread.coordination) ?? null);
     yield* bindSessionToThread(startedSession);
     return startedSession.threadId;
   });
@@ -1504,9 +1511,29 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const send = providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.asVoid, Effect.catchCause(recoverTurnStartFailure));
+    const send = providerService.sendTurn(sendTurnRequest.value).pipe(
+      Effect.tap((result) =>
+        Effect.gen(function* () {
+          const current = yield* resolveThreadShell(event.payload.threadId);
+          const worker = current?.coordination;
+          if (
+            worker?.role !== "child" ||
+            worker.phase !== "running" ||
+            message.id !== `coordination:${worker.assignmentId}`
+          )
+            return;
+          yield* orchestrationEngine.dispatch({
+            type: "thread.coordination",
+            threadId: event.payload.threadId,
+            commandId: yield* serverCommandId("coordination-accepted-turn"),
+            action: { type: "bind", assignmentId: worker.assignmentId, turnId: result.turnId },
+            createdAt: DateTime.formatIso(yield* DateTime.now),
+          });
+        }),
+      ),
+      Effect.asVoid,
+      Effect.catchCause(recoverTurnStartFailure),
+    );
     // The forked send settles `sent` from here on, so drop the entry the post-processing hook uses.
     if (resumed && event.commandId !== null) resumedTurnStarts.delete(event.commandId);
     yield* send.pipe(

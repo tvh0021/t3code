@@ -1,3 +1,4 @@
+import * as ThreadCoordination from "../ThreadCoordinationReactor.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -267,6 +268,8 @@ describe("ProviderRuntimeIngestion", () => {
   });
 
   async function createHarness(options?: {
+    coordination?: boolean;
+    deferCoordinationStart?: boolean;
     serverSettings?: Partial<ServerSettings>;
     threadTitle?: string;
     workspaceSubdirectory?: string;
@@ -320,7 +323,7 @@ describe("ProviderRuntimeIngestion", () => {
       monotonicTimeNanos: realClock.monotonicTimeNanos,
       sleep: (duration) => realClock.sleep(duration),
     };
-    const layer = ProviderRuntimeIngestionLive.pipe(
+    const layer = Layer.mergeAll(ProviderRuntimeIngestionLive, ThreadCoordination.layer).pipe(
       Layer.provide(Layer.succeed(Clock.Clock, shiftedClock)),
       Layer.provideMerge(orchestrationLayer),
       Layer.provideMerge(ingestionProjectionSnapshotLayer),
@@ -352,12 +355,31 @@ describe("ProviderRuntimeIngestion", () => {
     const ingestion = await testRuntime.runPromise(Effect.service(ProviderRuntimeIngestionService));
     scope = await Effect.runPromise(Scope.make("sequential"));
     await testRuntime.runPromise(ingestion.start().pipe(Scope.provide(scope)));
-    const drain = () => testRuntime.runPromise(ingestion.drain);
+    const coordinator = await testRuntime.runPromise(
+      Effect.service(ThreadCoordination.ThreadCoordinationReactor),
+    );
+    let coordinationStarted = false;
+    const coordinatorScope = scope;
+    const startCoordinator = async () => {
+      await testRuntime.runPromise(coordinator.start().pipe(Scope.provide(coordinatorScope)));
+      coordinationStarted = true;
+    };
+    if (options?.coordination && !options.deferCoordinationStart) await startCoordinator();
+    const drainEffect = ingestion.drain.pipe(
+      Effect.andThen(
+        Effect.suspend(() =>
+          coordinationStarted
+            ? engine.latestSequence.pipe(Effect.flatMap(coordinator.drainThrough))
+            : Effect.void,
+        ),
+      ),
+    );
+    const drain = () => testRuntime.runPromise(drainEffect);
     const dispatch = (command: OrchestrationCommand) =>
       testRuntime.runPromise(engine.dispatch(command));
     const emitAndDrain = (events: ReadonlyArray<LegacyProviderRuntimeEvent>) =>
       testRuntime.runPromise(
-        provider.emitAndWaitForEnqueue(events).pipe(Effect.andThen(ingestion.drain)),
+        provider.emitAndWaitForEnqueue(events).pipe(Effect.andThen(drainEffect)),
       );
 
     const createdAt = "2026-01-01T00:00:00.000Z";
@@ -416,6 +438,7 @@ describe("ProviderRuntimeIngestion", () => {
     return {
       engine,
       dispatch,
+      startCoordinator,
       readModel: () => testRuntime.runPromise(snapshotQuery.getSnapshot()),
       readTurn: (turnId: TurnId) =>
         testRuntime.runPromise(
@@ -439,6 +462,219 @@ describe("ProviderRuntimeIngestion", () => {
       drain,
     };
   }
+
+  it.each([
+    "normal",
+    "missing-start",
+    "receipt-after-completion",
+    "recovery",
+    "unnamed-exit",
+    "runtime-error",
+    "complete-disconnect",
+  ])("reports finalized child output with %s ordering", async (scenario) => {
+    const lateReceipt = scenario === "receipt-after-completion" || scenario === "recovery";
+    const missingStart = scenario === "missing-start" || lateReceipt;
+    const harness = await createHarness({
+      coordination: true,
+      deferCoordinationStart: scenario === "recovery",
+    });
+    const parentId = ThreadId.make("thread-1");
+    const childId = ThreadId.make("worker");
+    const now = "2026-01-01T00:00:00.000Z";
+    await harness.dispatch({
+      type: "thread.coordination",
+      commandId: CommandId.make("workflow"),
+      threadId: parentId,
+      createdAt: now,
+      action: {
+        type: "start",
+        budgets: [
+          { model: "gpt-5-codex", limit: 1, used: 0 },
+          { model: "gpt-6-luna", limit: null, used: 0 },
+        ],
+        policyUpdatedAt: now,
+      },
+    });
+    await harness.dispatch({
+      type: "thread.coordination",
+      commandId: CommandId.make("assignment"),
+      threadId: parentId,
+      createdAt: now,
+      action: {
+        type: "spawn",
+        child: {
+          type: "thread.create",
+          commandId: CommandId.make("worker-create"),
+          threadId: childId,
+          projectId: asProjectId("project-1"),
+          title: "Worker",
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6-luna" },
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+        },
+        prompt: "Review",
+        mode: "review",
+        reviewRef: "revision",
+      },
+    });
+    await harness.dispatch({
+      type: "thread.coordination",
+      commandId: CommandId.make("advance"),
+      threadId: parentId,
+      createdAt: now,
+      action: { type: "advance" },
+    });
+    harness.setProviderSession({
+      provider: ProviderDriverKind.make("codex"),
+      status: "ready",
+      runtimeMode: "approval-required",
+      threadId: childId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const base = {
+      provider: ProviderDriverKind.make("codex"),
+      threadId: childId,
+      createdAt: now,
+    };
+    await harness.emitAndDrain([
+      { ...base, type: "session.started", eventId: asEventId("worker-ready"), payload: {} },
+    ]);
+    expect(
+      (await harness.readModel()).threads.find((thread) => thread.id === childId)?.coordination,
+    ).toMatchObject({ phase: "running", report: null });
+    const turnId = asTurnId("worker-turn");
+    harness.setProviderSession({
+      provider: ProviderDriverKind.make("codex"),
+      status: "running",
+      ...(lateReceipt ? {} : { activeTurnId: turnId }),
+      runtimeMode: "approval-required",
+      threadId: childId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (!missingStart) {
+      await harness.emitAndDrain([
+        {
+          ...base,
+          type: "turn.started",
+          eventId: asEventId("worker-start"),
+          turnId,
+          payload: {},
+        },
+      ]);
+      await harness.emitAndDrain([
+        {
+          ...base,
+          type: "session.exited",
+          eventId: asEventId("old-worker-exit"),
+          turnId: asTurnId("old-turn"),
+          payload: { code: 0 },
+        },
+      ]);
+      expect(
+        (await harness.readModel()).threads.find((thread) => thread.id === childId)?.coordination,
+      ).toMatchObject({ phase: "running", report: null });
+    }
+    if (scenario === "complete-disconnect") {
+      await harness.dispatch({
+        type: "thread.coordination.control",
+        commandId: CommandId.make("complete-parent"),
+        threadId: parentId,
+        action: "complete",
+        createdAt: now,
+      });
+      await harness.emitAndDrain([
+        { ...base, type: "session.exited", eventId: asEventId("closed-exit") },
+      ]);
+      expect(
+        (await harness.readModel()).threads.find((thread) => thread.id === childId)?.coordination,
+      ).toMatchObject({ phase: "cancelled" });
+      await harness.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make("delete-disconnected"),
+        threadId: childId,
+      });
+      return;
+    }
+    if (scenario === "unnamed-exit") {
+      await harness.emitAndDrain([
+        { ...base, type: "session.exited", eventId: asEventId("uncorrelated-exit") },
+      ]);
+      expect(
+        (await harness.readModel()).threads.find((thread) => thread.id === parentId)?.coordination,
+      ).toMatchObject({
+        status: "paused",
+        blockedReason: expect.stringContaining("uncorrelated provider connection"),
+      });
+    }
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "content.delta",
+        eventId: asEventId("worker-text"),
+        turnId,
+        itemId: asItemId("worker-answer"),
+        payload: { streamKind: "assistant_text", delta: "Buffered final result" },
+      },
+      {
+        ...base,
+        ...(scenario === "runtime-error"
+          ? {
+              type: "runtime.error" as const,
+              payload: { message: "Worker failed", phase: "turn" as const },
+            }
+          : { type: "turn.completed" as const, status: "completed" as const }),
+        eventId: asEventId("worker-finish"),
+        turnId,
+      },
+    ]);
+    if (lateReceipt) {
+      const worker = (await harness.readModel()).threads.find(
+        (thread) => thread.id === childId,
+      )?.coordination;
+      expect(worker).toMatchObject({ phase: "running", report: null });
+      if (worker?.role !== "child") throw new Error("Missing child");
+      await harness.dispatch({
+        type: "thread.coordination",
+        threadId: childId,
+        commandId: CommandId.make("late-acceptance"),
+        createdAt: now,
+        action: { type: "bind", assignmentId: worker.assignmentId, turnId },
+      });
+      if (scenario === "recovery") await harness.startCoordinator();
+      await harness.drain();
+    }
+    const result = (await harness.readModel()).threads.find((thread) => thread.id === childId);
+    if (scenario === "runtime-error") {
+      expect(
+        result?.activities.filter(
+          (activity) =>
+            activity.kind === "coordination.turn.finished" || activity.kind === "runtime.error",
+        ),
+      ).toHaveLength(2);
+    }
+    if (scenario === "recovery")
+      expect(
+        (await harness.readModel()).threads.find((thread) => thread.id === parentId)?.coordination,
+      ).toMatchObject({ status: "paused" });
+    expect(result?.coordination).toMatchObject({
+      phase: "reported",
+      turnId,
+      report: { text: "Buffered final result" },
+    });
+    expect(
+      result?.messages.some(
+        (message) =>
+          message.role === "assistant" &&
+          message.text === "Buffered final result" &&
+          !message.streaming,
+      ),
+    ).toBe(true);
+  });
 
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();

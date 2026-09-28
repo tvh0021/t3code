@@ -436,6 +436,24 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("keeps native delegation available and removes write tools from review workers", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "approval-required",
+        coordinationRole: "review",
+      });
+      const disabled = harness.getLastCreateQueryInput()?.options.disallowedTools;
+      assert.deepEqual(disabled, ["Bash", "Edit", "Write", "NotebookEdit"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("derives bypass permission mode from full-access runtime policy", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

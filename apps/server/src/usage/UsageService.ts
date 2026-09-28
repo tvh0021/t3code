@@ -53,7 +53,12 @@ import {
   listAntigravityConversationFiles,
   readAntigravityConversation,
 } from "./antigravityConversations.ts";
-import { createOverrideRateTable, parseRateTable, type RateTable } from "./usagePricing.ts";
+import {
+  createOverrideRateTable,
+  parseRateTable,
+  STATIC_FALLBACK_RATES,
+  type RateTable,
+} from "./usagePricing.ts";
 import {
   listTranscriptFiles,
   readDirectoryVolumeId,
@@ -118,6 +123,7 @@ export class UsageService extends Context.Service<
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
     /** Refetches the rate table ahead of its TTL. See `ensureRates`. */
     readonly refreshRates: Effect.Effect<UsagePricing>;
+    readonly readOutputPrices: Effect.Effect<Readonly<Record<string, number>>, UsageReadError>;
   }
 >()("t3/usage/UsageService") {}
 
@@ -145,6 +151,7 @@ export const layerTest = Layer.succeed(
         scanDurationMs: 0,
       }),
     refreshRates: Effect.succeed(EMPTY_PRICING),
+    readOutputPrices: Effect.succeed({}),
   }),
 );
 
@@ -793,7 +800,18 @@ export const make = Effect.gen(function* () {
     return yield* Deferred.await(deferred);
   });
 
-  return { readSummary, refreshRates } as const;
+  const readOutputPrices = Effect.gen(function* () {
+    yield* ensureRates(false);
+    const settings = yield* readSettings;
+    return Object.fromEntries(
+      [
+        ...STATIC_FALLBACK_RATES,
+        ...rates,
+        ...createOverrideRateTable(settings.usagePriceOverrides),
+      ].map(([model, rate]) => [model, rate.outputCostPerToken * 1_000_000]),
+    );
+  });
+  return { readSummary, refreshRates, readOutputPrices } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

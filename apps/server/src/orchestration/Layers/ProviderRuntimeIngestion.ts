@@ -1769,6 +1769,24 @@ const make = Effect.gen(function* () {
       const thread = yield* resolveThreadRuntimeContext(event.threadId);
       if (!thread) return;
 
+      // Session exits lack a generation identifier. An unnamed exit cannot settle
+      // an owned assignment, and a stale named exit cannot clear its newer turn.
+      if (
+        thread.coordination?.role === "child" &&
+        thread.coordination.phase === "running" &&
+        event.type === "session.exited" &&
+        (!event.turnId || event.turnId !== thread.coordination.turnId)
+      ) {
+        if (!event.turnId)
+          yield* orchestrationEngine.dispatch({
+            type: "thread.coordination",
+            threadId: thread.id,
+            commandId: yield* providerCommandId(event, "coordination-disconnected"),
+            action: { type: "disconnect", assignmentId: thread.coordination.assignmentId },
+            createdAt: event.createdAt,
+          });
+        return;
+      }
       const now = event.createdAt;
       const eventTurnId = toTurnId(event.turnId);
       const activeTurnId = thread.session?.activeTurnId ?? null;
@@ -1839,6 +1857,28 @@ const make = Effect.gen(function* () {
         event.type === "turn.started" && shouldApplyThreadLifecycle
           ? yield* getSourceProposedPlanReferenceForAcceptedTurnStart(thread.id, eventTurnId)
           : null;
+
+      let worker = thread.coordination?.role === "child" ? thread.coordination : null;
+      if (
+        worker?.phase === "running" &&
+        (event.type === "turn.started" ||
+          (event.type === "turn.completed" &&
+            !worker.turnId &&
+            eventTurnId === (yield* getExpectedProviderTurnIdForThread(thread.id)))) &&
+        shouldApplyThreadLifecycle &&
+        eventTurnId &&
+        Option.isSome(pendingTurnStart) &&
+        pendingTurnStart.value.messageId === `coordination:${worker.assignmentId}`
+      ) {
+        yield* orchestrationEngine.dispatch({
+          type: "thread.coordination",
+          threadId: thread.id,
+          commandId: yield* providerCommandId(event, "coordination-bind"),
+          action: { type: "bind", assignmentId: worker.assignmentId, turnId: eventTurnId },
+          createdAt: now,
+        });
+        worker = { ...worker, turnId: eventTurnId };
+      }
 
       if (
         event.type === "session.started" ||
@@ -2323,7 +2363,13 @@ const make = Effect.gen(function* () {
         });
       }
 
-      if (isTerminalTurn) {
+      if (
+        isTerminalTurn ||
+        (event.type === "runtime.error" &&
+          worker?.phase === "running" &&
+          worker.turnId === eventTurnId &&
+          activeTurnId === worker.turnId)
+      ) {
         const turnId = toTurnId(event.turnId);
         if (turnId) {
           const userInputActivities =
@@ -2592,6 +2638,57 @@ const make = Effect.gen(function* () {
           ),
         ),
       ).pipe(Effect.asVoid);
+
+      // Final output is now persisted. A session-ready notification alone is not a completion.
+      if (
+        worker?.phase === "running" &&
+        eventTurnId &&
+        ((isTerminalTurn && shouldApplyThreadLifecycle) ||
+          (event.type === "session.exited" &&
+            worker.turnId === eventTurnId &&
+            activeTurnId === worker.turnId) ||
+          (event.type === "runtime.error" &&
+            worker.turnId === eventTurnId &&
+            activeTurnId === worker.turnId))
+      ) {
+        const messages = yield* projectionThreadMessages.listByThreadId({ threadId: thread.id });
+        const text = messages
+          .filter((message) => message.role === "assistant" && message.turnId === eventTurnId)
+          .map((message) => message.text)
+          .join("\n\n");
+        const report =
+          text.trim().slice(0, 8_000) ||
+          `Assignment ended with ${event.type}. Inspect the child thread.`;
+        // Some adapters return acceptance after completion. Retain the terminal observation
+        // after output is persisted, then let the matching acceptance bind settle it.
+        yield* orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          threadId: thread.id,
+          commandId: yield* providerCommandId(event, "coordination-completion-observed"),
+          activity: {
+            id: EventId.make(`${event.eventId}:coordination-finished`),
+            kind: "coordination.turn.finished",
+            tone: "info",
+            summary: "Worker turn finished",
+            createdAt: now,
+            turnId: eventTurnId,
+            payload: { assignmentId: worker.assignmentId, text: report },
+          },
+          createdAt: now,
+        });
+        if (worker.turnId !== eventTurnId) return;
+        yield* orchestrationEngine.dispatch({
+          type: "thread.coordination",
+          threadId: thread.id,
+          commandId: CommandId.make(`coordination:finish:${worker.assignmentId}`),
+          action: {
+            type: "finish",
+            assignmentId: worker.assignmentId,
+            text: report,
+          },
+          createdAt: now,
+        });
+      }
     });
 
   const processDomainEvent = (_event: TurnStartRequestedDomainEvent) => Effect.void;

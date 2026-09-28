@@ -1,3 +1,5 @@
+import type { ThreadId } from "@t3tools/contracts";
+import { planCoordination } from "./coordinationDecider.ts";
 import {
   EventId,
   MAX_SCRIPT_ID_LENGTH,
@@ -212,16 +214,55 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   command,
   readModel,
   userInputActivity,
+  blockedThreadIds = [],
 }: {
   readonly command: OrchestrationCommand;
   readonly readModel: OrchestrationReadModel;
   readonly userInputActivity?: OrchestrationThreadActivity;
+  readonly blockedThreadIds?: ReadonlyArray<ThreadId>;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
   OrchestrationCommandRejection | PlatformError.PlatformError,
   Crypto.Crypto
 > {
   switch (command.type) {
+    case "thread.coordination":
+    case "thread.coordination.control": {
+      const planned = planCoordination(
+        command,
+        readModel.threads,
+        (thread) =>
+          thread.session?.status === "running" ||
+          thread.session?.status === "starting" ||
+          thread.latestTurn?.state === "running" ||
+          hasQueuedTurnStartForThread(thread, command.createdAt),
+        (thread) => openRequests(thread).size > 0 || blockedThreadIds.includes(thread.id),
+      );
+      if (typeof planned === "string")
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: planned,
+        });
+      return yield* decideCommandSequence({ commands: planned, readModel });
+    }
+    case "thread.coordination.set": {
+      yield* requireThread({ readModel, command, threadId: command.threadId });
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.coordination-updated",
+        payload: {
+          threadId: command.threadId,
+          coordination: command.coordination,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
     case "project.create": {
       yield* requireProjectAbsent({
         readModel,
@@ -411,11 +452,38 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.delete": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      if (
+        thread.coordination?.role === "child" &&
+        ["queued", "running"].includes(thread.coordination.phase)
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Cancel the workflow before deleting an active child.",
+        });
+      }
+      if (
+        thread.coordination?.role === "parent" &&
+        ["active", "paused"].includes(thread.coordination.status)
+      ) {
+        return yield* decideCommandSequence({
+          commands: [
+            {
+              type: "thread.coordination.control",
+              threadId: command.threadId,
+              commandId: command.commandId,
+              action: "cancel",
+              createdAt: yield* nowIso,
+            },
+            command,
+          ],
+          readModel,
+        });
+      }
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -433,11 +501,22 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.archive": {
-      yield* requireThreadNotArchived({
+      const thread = yield* requireThreadNotArchived({
         readModel,
         command,
         threadId: command.threadId,
       });
+      if (
+        (thread.coordination?.role === "parent" &&
+          ["active", "paused"].includes(thread.coordination.status)) ||
+        (thread.coordination?.role === "child" &&
+          ["queued", "running"].includes(thread.coordination.phase))
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "End the workflow before archiving an active member.",
+        });
+      }
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -902,6 +981,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (
+        thread.coordination &&
+        (thread.coordination.role === "child" ||
+          ["active", "paused"].includes(thread.coordination.status)) &&
+        (command.modelSelection !== undefined || command.worktreePath !== undefined)
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail:
+            "Workflow models and worktrees stay fixed for the session. Start a new thread to change them.",
+        });
+      }
       // Old clients only see the derived single link. Unlink that request through
       // the same command path as modern clients, including stack dismissal, while
       // retaining other links they cannot see. Historical metadata events still replay unchanged.
@@ -1320,11 +1411,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.runtime-mode.set": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      if (thread.coordination?.role === "child")
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Child worker permission mode stays fixed for the assignment.",
+        });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -1343,11 +1439,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.interaction-mode.set": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      if (thread.coordination?.role === "child")
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Only the parent assigns child turns.",
+        });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -1377,6 +1478,35 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (targetThread.coordination?.role === "child" && !command.coordinationAutomatic)
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail:
+            "Only the parent can assign work to a child. Complete the workflow and start a fresh thread for independent work.",
+        });
+      if (
+        targetThread.coordination?.role === "parent" &&
+        targetThread.coordination.status === "active" &&
+        !command.coordinationAutomatic
+      ) {
+        return yield* decideCommandSequence({
+          readModel,
+          commands: [
+            {
+              type: "thread.coordination.set",
+              commandId: command.commandId,
+              threadId: targetThread.id,
+              coordination: {
+                ...targetThread.coordination,
+                status: "paused",
+                blockedReason: "Paused by a user prompt.",
+              },
+              createdAt: command.createdAt,
+            },
+            command,
+          ],
+        });
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({
@@ -1544,6 +1674,28 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.turn.interrupt": {
+      const interrupted = readModel.threads.find((thread) => thread.id === command.threadId);
+      if (
+        interrupted?.coordination?.role === "parent" &&
+        interrupted.coordination.status === "active"
+      )
+        return yield* decideCommandSequence({
+          readModel,
+          commands: [
+            {
+              type: "thread.coordination.set",
+              commandId: command.commandId,
+              threadId: interrupted.id,
+              coordination: {
+                ...interrupted.coordination,
+                status: "paused",
+                blockedReason: "Paused by an interrupt.",
+              },
+              createdAt: command.createdAt,
+            },
+            command,
+          ],
+        });
       yield* requireThread({
         readModel,
         command,

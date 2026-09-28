@@ -1164,6 +1164,12 @@ export const StorageCleanupSettings = Schema.Struct({
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
 export const ServerSettings = Schema.Struct({
+  coordinationModelLimits: Schema.optionalKey(
+    Schema.Record(
+      TrimmedNonEmptyString,
+      Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+    ),
+  ),
   worktreeCleanup: WorktreeCleanup.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   storageCleanup: StorageCleanupSettings.pipe(
     Schema.withDecodingDefault(
@@ -1539,6 +1545,12 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  coordinationModelLimits: Schema.optionalKey(
+    Schema.Record(
+      TrimmedNonEmptyString,
+      Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+    ),
+  ),
   worktreeCleanup: Schema.optionalKey(
     Schema.NullOr(
       Schema.Union([

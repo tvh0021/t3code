@@ -1057,3 +1057,16 @@ describe("openCodexThread", () => {
     }),
   );
 });
+
+it.effect("runs review reads without approval while retaining the read-only sandbox", () =>
+  Effect.gen(function* () {
+    const params = yield* buildTurnStartParams({
+      threadId: "review",
+      runtimeMode: "approval-required",
+      reviewOnly: true,
+      prompt: "Review",
+    });
+    NodeAssert.equal(params.approvalPolicy, "never");
+    NodeAssert.deepStrictEqual(params.sandboxPolicy, { type: "readOnly" });
+  }),
+);

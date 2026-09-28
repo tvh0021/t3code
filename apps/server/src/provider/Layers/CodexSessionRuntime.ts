@@ -175,6 +175,7 @@ export interface CodexSessionRuntimeOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
+  readonly reviewOnly?: boolean | undefined;
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
@@ -506,13 +507,18 @@ function readResumeCursorThreadId(
   return isCodexResumeCursorSchema(resumeCursor) ? resumeCursor.threadId : undefined;
 }
 
-function runtimeModeToThreadConfig(input: RuntimeMode): {
+function runtimeModeToThreadConfig(
+  input: RuntimeMode,
+  reviewOnly = false,
+): {
   readonly approvalPolicy: EffectCodexSchema.V2ThreadStartParams__AskForApproval;
   readonly sandbox: EffectCodexSchema.V2ThreadStartParams__SandboxMode;
   // Always explicit: omitting the field on resume keeps the thread's previous
   // reviewer, which would leave auto_review sticky after switching modes.
   readonly approvalsReviewer: EffectCodexSchema.V2ThreadStartParams__ApprovalsReviewer;
 } {
+  if (reviewOnly)
+    return { approvalPolicy: "never", sandbox: "read-only", approvalsReviewer: "user" };
   switch (input) {
     case "approval-required":
       return {
@@ -545,10 +551,11 @@ function runtimeModeToThreadConfig(input: RuntimeMode): {
 function buildThreadStartParams(input: {
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
+  readonly reviewOnly?: boolean | undefined;
   readonly model: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
 }): EffectCodexSchema.V2ThreadStartParams {
-  const config = runtimeModeToThreadConfig(input.runtimeMode);
+  const config = runtimeModeToThreadConfig(input.runtimeMode, input.reviewOnly);
   return {
     cwd: input.cwd,
     approvalPolicy: config.approvalPolicy,
@@ -612,6 +619,7 @@ const SKILL_MENTION_PATTERN =
 export function buildTurnStartParams(input: {
   readonly threadId: string;
   readonly runtimeMode: RuntimeMode;
+  readonly reviewOnly?: boolean | undefined;
   readonly prompt?: string;
   readonly attachments?: ReadonlyArray<{
     readonly type: "localImage";
@@ -638,7 +646,7 @@ export function buildTurnStartParams(input: {
     turnInput.push(attachment);
   }
 
-  const config = runtimeModeToThreadConfig(input.runtimeMode);
+  const config = runtimeModeToThreadConfig(input.runtimeMode, input.reviewOnly);
   const collaborationMode = buildCodexCollaborationMode({
     ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
     ...(input.model ? { model: input.model } : {}),
@@ -651,7 +659,9 @@ export function buildTurnStartParams(input: {
     input: turnInput,
     approvalPolicy: config.approvalPolicy,
     approvalsReviewer: config.approvalsReviewer,
-    sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode),
+    sandboxPolicy: runtimeModeToTurnSandboxPolicy(
+      input.reviewOnly ? "approval-required" : input.runtimeMode,
+    ),
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
@@ -724,6 +734,7 @@ export const openCodexThread = (input: {
   readonly client: CodexThreadOpenClient;
   readonly threadId: ThreadId;
   readonly runtimeMode: RuntimeMode;
+  readonly reviewOnly?: boolean | undefined;
   readonly cwd: string;
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
@@ -733,6 +744,7 @@ export const openCodexThread = (input: {
   const startParams = buildThreadStartParams({
     cwd: input.cwd,
     runtimeMode: input.runtimeMode,
+    reviewOnly: input.reviewOnly,
     model: input.requestedModel,
     serviceTier: input.serviceTier,
   });
@@ -2440,6 +2452,7 @@ export const makeCodexSessionRuntime = (
         client,
         threadId: options.threadId,
         runtimeMode: options.runtimeMode,
+        reviewOnly: options.reviewOnly,
         cwd: options.cwd,
         requestedModel,
         serviceTier: options.serviceTier,
@@ -2516,6 +2529,7 @@ export const makeCodexSessionRuntime = (
           const params = yield* buildTurnStartParams({
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,
+            reviewOnly: options.reviewOnly,
             ...(input.input ? { prompt: input.input } : {}),
             ...(input.attachments ? { attachments: input.attachments } : {}),
             ...(normalizedModel ? { model: normalizedModel } : {}),

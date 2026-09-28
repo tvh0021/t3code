@@ -605,6 +605,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       "applyThreadsProjection",
     )(function* (event, attachmentSideEffects) {
       switch (event.type) {
+        case "thread.coordination-updated": {
+          const row = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isSome(row))
+            yield* projectionThreadRepository.upsert({
+              ...row.value,
+              coordination: event.payload.coordination,
+              updatedAt: event.payload.updatedAt,
+            });
+          return;
+        }
         case "thread.created":
           // A draft retry can re-create this id; links belong to the old incarnation.
           yield* projectionThreadPullRequestRepository.deleteByThreadId({
@@ -1769,6 +1781,23 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       "applyPendingApprovalsProjection",
     )(function* (event, _attachmentSideEffects) {
       switch (event.type) {
+        case "thread.session-set": {
+          if (!["stopped", "interrupted", "error"].includes(event.payload.session.status)) return;
+          const requests = yield* projectionPendingApprovalRepository.listByThreadId({
+            threadId: event.payload.threadId,
+          });
+          for (const request of requests) {
+            if (request.status !== "pending") continue;
+            yield* projectionPendingApprovalRepository.upsert({
+              ...request,
+              status: "resolved",
+              decision: "cancel",
+              resolvedAt: event.occurredAt,
+            });
+          }
+          return;
+        }
+
         case "thread.created":
           yield* projectionPendingApprovalRepository.deleteByThreadId({
             threadId: event.payload.threadId,

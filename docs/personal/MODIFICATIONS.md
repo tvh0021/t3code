@@ -298,3 +298,111 @@ release-ready. The changelog records the verified streaming repair only.
 - Added a fast path that skips math preprocessing and plugins for messages without math delimiters.
 - The focused benchmark improved plain-message math preprocessing from about 0.107 ms to 0.008 ms per call.
 - Merged the latest `upstream/main` on September 22, 2026.
+
+## 21. Agent-created threads and flat workflows
+
+Status: Implemented in the development checkout on September 27, 2026. Final
+verification and cross-provider integration remain open. The installed personal
+app has not been replaced.
+
+### Thread handoffs and model selection
+
+The `threads` MCP toolkit exposes `list_thread_models`, `create_thread`,
+`read_thread`, `send_message_to_thread`, and `interrupt_thread`. A new thread
+can use another model in the same family or another configured provider.
+Omitting the selection inherits the source model and options. Threads start
+with fresh history, so the initial prompt must carry the handoff or assignment.
+MCP credentials grant thread tools independently of Browser/Device availability.
+
+The model manifest now groups GPT-6 Astra, Sol, and Luna as current and GPT-5.6
+Sol and Luna as legacy. A live provider refresh confirmed the grouping.
+
+### Workflow behavior
+
+The workflow tools are `start_thread_workflow`, `spawn_child`, `assign_child`,
+`report_to_parent`, `wait_for_children`, `read_thread_workflow`,
+`control_thread_workflow`, and `refresh_coordination_policy`.
+
+- Any available model can be selected for a parent whose harness exposes these tools.
+- Children cannot create threads, start workflows, or assign other children.
+- Four children run concurrently. Excess assignments persist in the queue.
+- Initial assignments wait until the planning turn ends. Provider-native subagents remain available. T3 children cannot start workflows, create child threads, or assign work.
+- Reports persist while the parent is busy. The parent resumes when idle, with budget and pending human requests respected. Reports can arrive individually or coalesce without losing report IDs.
+- `wait_for_children` records intent and tells the agent to end its turn. It does not poll.
+- Reviews use a detached checkout of a resolved Git commit and stay read-only. Editing children need separate existing registered worktrees; the parent integrates changes.
+- Pause blocks new starts. Resume preserves counters. Complete retains late reports without waking the parent. Cancel interrupts owned children and cancels queued work.
+- Manual parent messages and interrupts pause coordination. Restart recovery pauses workflows rather than replaying uncertain paid work.
+- Active workflow members cannot be archived, and active children cannot be deleted. Parent deletion cancels its workflow first.
+- Provider completion captures final child output when no explicit report was sent. Turn correlation rejects stale terminal events. Acceptance/completion ordering and startup reconciliation are covered by regression tests. Unnamed disconnects pause active parents; disconnected children of completed parents remain removable.
+
+The event-sourced workflow state persists through migration
+`054_ThreadCoordination`. Shell snapshots carry counters and report identities;
+full assignment prompts and report bodies remain in thread detail.
+
+### Model budgets and maintenance
+
+One round means one automatic provider turn start. Initial user planning is
+excluded. Parent report wakeups and child assignments share counters for the
+same canonical model across aliases and provider instances.
+
+| Model            | Automatic turns per workflow |
+| ---------------- | ---------------------------- |
+| GPT-6 Astra      | 1                            |
+| GPT-6 Sol        | 2                            |
+| GPT-6 Luna       | Unlimited                    |
+| Gemini 3.8 Flash | Unlimited                    |
+| Sonnet 5         | 1                            |
+| Opus 5.5         | 1                            |
+| Fable 5.1        | 1                            |
+| GLM 5.3 Flash    | Unlimited                    |
+
+For other models, output pricing in USD per million tokens determines the default:
+above $10 gives one turn, below $1 gives unlimited turns, and $1 through $10
+inclusive gives four. Unpriced models require an override. Named defaults and
+user overrides take precedence over price bands. Unlimited is a turn policy,
+not a claim that the provider is free or has no rate limits.
+
+Maintenance refreshes available models and pricing monthly while the server
+runs. A manual refresh is also available. Failed pricing refreshes retain the
+previous cache. Active workflows keep their captured limits and counters.
+Policy names do not add models to a provider catalog or grant subscription access.
+
+Web and desktop expose limits under Settings > Providers. Mobile exposes them
+under Settings > Maintenance, labeled by environment. Workflow controls show
+children, pending reports, budgets, and parent navigation; web also has command
+palette actions. The desktop controls were checked in an isolated development
+app; mobile and remote flows remain unverified.
+
+### Provider enforcement and limitations
+
+- Codex and Claude may use provider-native subagents during T3 workflows. The T3 server rejects nested T3 workflow creation and child assignment. Reviews remain read-only; Codex review turns use a read-only sandbox without routine approval prompts, and Claude reviews disallow shell and write tools.
+- ChatLLM reviews advertise read/list and scoped reporting tools. Reads are confined to the snapshot, including symlink checks; forbidden writes are rejected at execution time.
+- Zed passes `--worker-mode`, forwards the scoped T3 HTTP MCP server, and requires `_meta.t3WorkerPolicy`. Parent sessions also require `_meta.t3ThreadTools`. The companion Zed source enables only coordination tools in worker profiles. Older binaries fail closed.
+- Antigravity is supported as a workflow child. It does not receive T3 thread tools, and the server rejects nested T3 workflow creation from any child. Antigravity cannot parent workflows until its ACP adapter forwards T3 workflow tools. Cursor, Grok, and OpenCode remain excluded because their workflow role support has not been established. Ordinary handoffs remain available.
+
+ChatLLM parent forwarding is tested through its tool loop and the real MCP
+HTTP protocol. Zed forwarding compiles, but native discovery needs a separate
+rebuilt binary smoke test. Codex/Claude read-only execution prevents writes; it
+is not a general sandbox against reading every host path. An isolated Sol parent
+assigned work to two Luna and two Gemini children, received all four reports,
+and used them to repair a test fixture.
+Track the remaining capability gap in
+[the issue tracker](./ISSUE_TRACKER.md#workflow-002-enable-strict-antigravity-workflows).
+
+### Verification recorded
+
+The final isolated Sol parent/Luna child smoke passed. The child reported
+`COORDINATION_NATIVE_OK`, the parent resumed and completed, and each consumed
+one automatic turn. The final focused suite passed 219 backend tests; six
+client interaction/parser tests and a real MCP HTTP transport test also passed.
+Server, mobile, contracts and client-runtime typechecks passed. Scoped lint
+passed with 79 warnings. Web typechecking retains 11 unrelated HAST errors.
+The companion Zed compile check passed without replacing the installed binary.
+
+GPT 6 Sol at low reasoning reviewed the earlier changes. An isolated desktop
+pass covered an ordinary Sol thread and a four-child workflow. A shared
+child-start command ID initially prevented three provider sessions from
+starting; unique per-child IDs fixed that. All four reports informed a parent
+patch, and the fixture passed 10/10 tests. The focused coordination suite
+passed 13/13 after the fix. Remote/mobile flows and native Zed tool discovery
+remain unverified. Evidence is in [SESSION_HANDOFF.md](./SESSION_HANDOFF.md).

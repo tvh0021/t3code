@@ -11,6 +11,7 @@ This folder documents the changes, features, and architecture decisions that dis
   - [1. Branding & Header Typography](#1-branding--header-typography)
   - [2. Default Font Sizes & Typography](#2-default-font-sizes--typography)
   - [3. Abacus AI (RouteLLM) Agentic Provider](#3-abacus-ai-routellm-agentic-provider)
+  - [4. Agent-created threads and workflows](#4-agent-created-threads-and-workflows)
 - [Project Documentation](#project-documentation)
 - [Development & Verification](#development--verification)
 
@@ -19,7 +20,7 @@ This folder documents the changes, features, and architecture decisions that dis
 ## Overview
 
 - **Base Repository**: `https://github.com/pingdotgg/t3code`
-- **Active Branch**: `release/chatllm`
+- **Active Branch**: `feat/zed-integration`
 - **Core Goal**: Maintain a personalized, powerful engineering harness in T3 Code that includes:
   - Custom visual identity and layout tweaks.
   - Personalized font and readability defaults configured out-of-the-box.
@@ -54,7 +55,34 @@ This folder documents the changes, features, and architecture decisions that dis
   - **Sandboxing**: Restricts file writes and modifications strictly to the active workspace directory (`isInsideWorkspace`), while permitting workspace and system reads.
   - **Command Timeout**: 60-second execution ceiling on shell commands with cancellation propagation (`SIGTERM`).
   - **20-Step Loop Ceiling**: Caps autonomous tool calls to 20 steps per turn, prompting the user interactively before proceeding further.
-  - **Unit Test Coverage**: Comprehensive suite in `AbacusAdapter.test.ts` (11 passing tests).
+  - **Review workers**: Workflow reviews expose only file reads and directory listing. The dispatcher also rejects write and command calls. Ordinary sessions retain the agent tool loop.
+
+---
+
+### 4. Agent-created threads and workflows
+
+Included in the Personal 0.0.42.2 source release. Some provider and remote
+flows remain to be verified.
+
+Agents can create handoff threads with a different model or provider. Flat
+workflows add queued child assignments, durable reports, shared model budgets,
+and parent wakeups after reports. Web, desktop, and mobile have workflow controls
+and model-limit settings. Monthly maintenance refreshes catalogs and pricing
+without changing active session budgets.
+
+An isolated desktop pass confirmed ordinary Sol threads and a Sol parent with
+two Luna and two Gemini children. All four children produced findings, the
+parent used them to repair a fixture, and its tests passed 10/10. ChatLLM
+parent tools are verified; Zed native discovery and mobile/remote UI checks
+remain pending. Native worker restrictions cover Codex, Claude,
+ChatLLM, and a worker-aware Zed binary, but the allowlist does not prove every
+harness exposes the parent MCP tools. Antigravity supports workflow children,
+but not parents. GPT-6 Astra, Sol, and Luna are classified as
+current models; GPT-5.6 Sol and Luna are legacy.
+
+See [workflow capabilities and limits](./MODIFICATIONS.md#21-agent-created-threads-and-flat-workflows),
+[open verification work](./ISSUE_TRACKER.md#workflow-001-finish-client-and-native-provider-verification),
+and the [current session handoff](./SESSION_HANDOFF.md).
 
 ---
 
@@ -63,6 +91,8 @@ This folder documents the changes, features, and architecture decisions that dis
 Detailed guides and notes are available in this directory:
 
 - [**MODIFICATIONS.md**](./MODIFICATIONS.md): Exhaustive file-by-file breakdown of changes, newly introduced modules, and their design details.
+- [**SESSION_HANDOFF.md**](./SESSION_HANDOFF.md): Current work, evidence, constraints, and pending verification.
+- [**ISSUE_TRACKER.md**](./ISSUE_TRACKER.md): Unresolved integration and verification work.
 - [**UPSTREAM_SYNC.md**](./UPSTREAM_SYNC.md): Step-by-step guide for pulling upstream updates, rebasing, resolving potential merge conflicts, and verifying fork integrity.
 
 ---
@@ -78,7 +108,7 @@ vp run dev:desktop
 ### Running the Abacus Adapter Test Suite
 
 ```bash
-pnpm --filter t3 test src/provider/Layers/AbacusAdapter.test.ts
+vp test run apps/server/src/provider/Layers/AbacusAdapter.test.ts
 ```
 
 ### Building the Entire Monorepo

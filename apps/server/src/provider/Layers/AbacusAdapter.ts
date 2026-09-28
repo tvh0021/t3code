@@ -1,7 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off cryptoRandomUUID:off cryptoRandomUUIDInEffect:off globalDate:off globalTimersInEffect:off unknownInEffectCatch:off anyUnknownInErrorContext:off
-import * as childProcess from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { HostProcessPlatform, HostProcessWorkingDirectory } from "@t3tools/shared/hostProcess";
+import { makeThreadMcpBridge } from "../ThreadMcpBridge.ts";
+import { readMcpProviderSession } from "../../mcp/McpProviderSession.ts";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import {
   ABACUS_CREDIT_COST_USD,
   type CanonicalItemType,
@@ -62,7 +65,7 @@ export type AbacusMessage =
 type Active = {
   readonly turnId: TurnId;
   readonly controller: AbortController;
-  currentProcess?: childProcess.ChildProcess | undefined;
+  currentProcess?: NodeChildProcess.ChildProcess | undefined;
   cancelled: boolean;
   settled: boolean;
 };
@@ -70,6 +73,9 @@ type Active = {
 type Context = {
   session: ProviderSession;
   readonly messages: AbacusMessage[];
+  readonly reviewOnly: boolean;
+  readonly mcp?: ReturnType<typeof makeThreadMcpBridge>;
+  mcpTools?: Awaited<ReturnType<ReturnType<typeof makeThreadMcpBridge>["initialize"]>>;
   active?: Active | undefined;
 };
 
@@ -159,7 +165,7 @@ export const ABACUS_AGENT_TOOLS = [
     function: {
       name: "list_directory",
       description:
-        "List files and directories in a given path. Path can be relative to workspace or absolute. Defaults to current workspace directory.",
+        "List files and directories in a given NodePath. Path can be relative to workspace or absolute. Defaults to current workspace directory.",
       parameters: {
         type: "object",
         properties: {
@@ -212,15 +218,15 @@ export function checkCommandSafety(command: string): string | null {
 }
 
 export function resolvePath(filePath: string, cwd: string): string {
-  if (path.isAbsolute(filePath)) {
-    return path.normalize(filePath);
+  if (NodePath.isAbsolute(filePath)) {
+    return NodePath.normalize(filePath);
   }
-  return path.normalize(path.resolve(cwd, filePath));
+  return NodePath.normalize(NodePath.resolve(cwd, filePath));
 }
 
 export function isInsideWorkspace(targetPath: string, workspaceDir: string): boolean {
-  const rel = path.relative(path.resolve(workspaceDir), path.resolve(targetPath));
-  return !rel.startsWith("..") && !path.isAbsolute(rel);
+  const rel = NodePath.relative(NodePath.resolve(workspaceDir), NodePath.resolve(targetPath));
+  return !rel.startsWith("..") && !NodePath.isAbsolute(rel);
 }
 
 export function truncateToolOutput(output: string): string {
@@ -267,14 +273,14 @@ export function handleReadFile(
   cwd: string,
 ): string {
   const target = resolvePath(args.path, cwd);
-  if (!fs.existsSync(target)) {
+  if (!NodeFS.existsSync(target)) {
     return `Error: File not found: ${args.path}`;
   }
-  const stat = fs.statSync(target);
+  const stat = NodeFS.statSync(target);
   if (stat.isDirectory()) {
     return `Error: Path is a directory, not a file: ${args.path}`;
   }
-  const content = fs.readFileSync(target, "utf-8");
+  const content = NodeFS.readFileSync(target, "utf-8");
   if (args.start_line !== undefined || args.end_line !== undefined) {
     const allLines = content.split("\n");
     const start = Math.max(1, args.start_line ?? 1);
@@ -290,8 +296,8 @@ export function handleWriteFile(args: { path: string; content: string }, cwd: st
   if (!isInsideWorkspace(target, cwd)) {
     return "Access denied: Write operations are only permitted inside the workspace directory.";
   }
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, args.content, "utf-8");
+  NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
+  NodeFS.writeFileSync(target, args.content, "utf-8");
   return `Successfully wrote ${Buffer.byteLength(args.content, "utf-8")} bytes to ${args.path}`;
 }
 
@@ -303,14 +309,14 @@ export function handleEditFile(
   if (!isInsideWorkspace(target, cwd)) {
     return "Access denied: Write operations are only permitted inside the workspace directory.";
   }
-  if (!fs.existsSync(target)) {
+  if (!NodeFS.existsSync(target)) {
     return `Error: File not found: ${args.path}`;
   }
-  const stat = fs.statSync(target);
+  const stat = NodeFS.statSync(target);
   if (stat.isDirectory()) {
     return `Error: Path is a directory: ${args.path}`;
   }
-  const content = fs.readFileSync(target, "utf-8");
+  const content = NodeFS.readFileSync(target, "utf-8");
   if (!args.old_string) {
     return "Error: old_string cannot be empty.";
   }
@@ -322,20 +328,20 @@ export function handleEditFile(
     return `Error: 'old_string' matched ${occurrences} times in ${args.path}. Please provide a larger, unique context snippet.`;
   }
   const newContent = content.replace(args.old_string, args.new_string);
-  fs.writeFileSync(target, newContent, "utf-8");
+  NodeFS.writeFileSync(target, newContent, "utf-8");
   return `Successfully edited ${args.path}`;
 }
 
 export function handleListDirectory(args: { path?: string }, cwd: string): string {
   const target = resolvePath(args.path || ".", cwd);
-  if (!fs.existsSync(target)) {
+  if (!NodeFS.existsSync(target)) {
     return `Error: Directory not found: ${args.path ?? "."}`;
   }
-  const stat = fs.statSync(target);
+  const stat = NodeFS.statSync(target);
   if (!stat.isDirectory()) {
     return `Error: Path is a file, not a directory: ${args.path ?? "."}`;
   }
-  const entries = fs.readdirSync(target, { withFileTypes: true });
+  const entries = NodeFS.readdirSync(target, { withFileTypes: true });
   const formatted = entries
     .slice(0, 500)
     .map((e) => (e.isDirectory() ? `[dir]  ${e.name}/` : `[file] ${e.name}`))
@@ -347,7 +353,8 @@ export function handleExecuteCommand(
   command: string,
   cwd: string,
   signal: AbortSignal,
-  onProcessStarted?: (proc: childProcess.ChildProcess) => void,
+  platform: NodeJS.Platform,
+  onProcessStarted?: (proc: NodeChildProcess.ChildProcess) => void,
 ): Promise<string> {
   const safetyError = checkCommandSafety(command);
   if (safetyError) {
@@ -355,12 +362,12 @@ export function handleExecuteCommand(
   }
 
   return new Promise((resolve) => {
-    const proc = childProcess.exec(
+    const proc = NodeChildProcess.exec(
       command,
       {
         cwd,
         timeout: 60_000,
-        shell: process.platform === "win32" ? undefined : "/bin/zsh",
+        shell: platform === "win32" ? undefined : "/bin/zsh",
         maxBuffer: 10 * 1024 * 1024,
       },
       (error, stdout, stderr) => {
@@ -460,6 +467,8 @@ export const makeAbacusAdapter = (
   options: AbacusAdapterOptions,
 ): Effect.Effect<ProviderAdapterShape<ProviderAdapterError>> =>
   Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    const workingDirectory = yield* HostProcessWorkingDirectory;
     const bus = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     const sessions = new Map<ThreadId, Context>();
     const fetch = options.fetch ?? globalThis.fetch;
@@ -502,7 +511,7 @@ export const makeAbacusAdapter = (
       if (existing) return existing.session;
       const createdAt = now();
       const model = input.modelSelection?.model ?? options.defaultModel;
-      const cwd = input.cwd ?? process.cwd();
+      const cwd = input.cwd ?? workingDirectory;
       const session: ProviderSession = {
         provider: PROVIDER,
         providerInstanceId: options.instanceId,
@@ -514,7 +523,15 @@ export const makeAbacusAdapter = (
         createdAt,
         updatedAt: createdAt,
       };
-      sessions.set(input.threadId, { session, messages: [] });
+      const mcpConfig = readMcpProviderSession(input.threadId);
+      sessions.set(input.threadId, {
+        ...(mcpConfig?.capabilities.has("threads")
+          ? { mcp: makeThreadMcpBridge(mcpConfig, fetch, input.coordinationRole) }
+          : {}),
+        session,
+        messages: [],
+        reviewOnly: input.coordinationRole === "review",
+      });
       yield* emit({
         type: "session.started",
         payload: {},
@@ -645,7 +662,16 @@ export const makeAbacusAdapter = (
                 messages: context.messages,
                 stream: true,
                 stream_options: { include_usage: true },
-                tools: ABACUS_AGENT_TOOLS,
+                tools: [
+                  ...(context.reviewOnly
+                    ? ABACUS_AGENT_TOOLS.filter((tool) =>
+                        ["read_file", "list_directory"].includes(tool.function.name),
+                      )
+                    : ABACUS_AGENT_TOOLS),
+                  ...(context.mcp
+                    ? (context.mcpTools ??= await context.mcp.initialize(controller.signal))
+                    : []),
+                ],
                 tool_choice: "auto",
               }),
               signal: controller.signal,
@@ -917,41 +943,61 @@ export const makeAbacusAdapter = (
 
           let rawOutput = "";
           try {
-            switch (tc.function.name) {
-              case "read_file":
-                rawOutput = handleReadFile(
-                  toolArgs as { path: string; start_line?: number; end_line?: number },
-                  cwd,
-                );
-                break;
-              case "write_file":
-                rawOutput = handleWriteFile(toolArgs as { path: string; content: string }, cwd);
-                break;
-              case "edit_file":
-                rawOutput = handleEditFile(
-                  toolArgs as { path: string; old_string: string; new_string: string },
-                  cwd,
-                );
-                break;
-              case "list_directory":
-                rawOutput = handleListDirectory(toolArgs as { path?: string }, cwd);
-                break;
-              case "execute_command":
-                rawOutput = yield* Effect.promise(() =>
-                  handleExecuteCommand(
-                    String(toolArgs.command ?? ""),
+            if (
+              context.reviewOnly &&
+              ["read_file", "list_directory"].includes(tc.function.name) &&
+              !isInsideWorkspace(
+                NodeFS.realpathSync(resolvePath(String(toolArgs.path ?? "."), cwd)),
+                NodeFS.realpathSync(cwd),
+              )
+            ) {
+              rawOutput = "Error: Read-only reviewers may only read their fixed review snapshot.";
+            } else if (tc.function.name.startsWith("t3_") && context.mcp) {
+              rawOutput = yield* Effect.promise(() =>
+                context.mcp!.call(tc.function.name, toolArgs, controller.signal),
+              );
+            } else if (
+              context.reviewOnly &&
+              !["read_file", "list_directory"].includes(tc.function.name)
+            ) {
+              rawOutput = `Error: Read-only reviewers cannot use ${tc.function.name}.`;
+            } else
+              switch (tc.function.name) {
+                case "read_file":
+                  rawOutput = handleReadFile(
+                    toolArgs as { path: string; start_line?: number; end_line?: number },
                     cwd,
-                    controller.signal,
-                    (proc) => {
-                      active.currentProcess = proc;
-                    },
-                  ),
-                );
-                active.currentProcess = undefined;
-                break;
-              default:
-                rawOutput = `Error: Unknown tool '${tc.function.name}'`;
-            }
+                  );
+                  break;
+                case "write_file":
+                  rawOutput = handleWriteFile(toolArgs as { path: string; content: string }, cwd);
+                  break;
+                case "edit_file":
+                  rawOutput = handleEditFile(
+                    toolArgs as { path: string; old_string: string; new_string: string },
+                    cwd,
+                  );
+                  break;
+                case "list_directory":
+                  rawOutput = handleListDirectory(toolArgs as { path?: string }, cwd);
+                  break;
+                case "execute_command":
+                  rawOutput = yield* Effect.promise(() =>
+                    handleExecuteCommand(
+                      String(toolArgs.command ?? ""),
+                      cwd,
+                      controller.signal,
+                      platform,
+                      (proc) => {
+                        active.currentProcess = proc;
+                      },
+                    ),
+                  );
+                  active.currentProcess = undefined;
+                  break;
+                default:
+                  rawOutput = `Error: Unknown tool '${tc.function.name}'`;
+              }
           } catch (err: unknown) {
             rawOutput = `Error executing tool '${tc.function.name}': ${
               err instanceof Error ? err.message : String(err)

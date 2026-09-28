@@ -120,6 +120,21 @@ describe("DesktopEnvironment", () => {
     }),
   );
 
+  it.effect("isolates Electron app data when an explicit directory is provided", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        {},
+        {
+          T3CODE_HOME: "/tmp/t3-artifact",
+          T3CODE_DESKTOP_APP_DATA_DIR: "/tmp/t3-artifact/electron",
+        },
+      );
+
+      assert.equal(environment.appDataDirectory, "/tmp/t3-artifact/electron");
+      assert.equal(environment.stateDir, "/tmp/t3-artifact/userdata");
+    }),
+  );
+
   it.effect("uses the packaged Windows server sidecar as the backend root", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment({
@@ -164,7 +179,8 @@ describe("DesktopEnvironment", () => {
       const production = yield* makeEnvironment();
 
       assert.equal(development.stateDir, "/Users/alice/.t3/dev");
-      assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(production.stateDir, "/Users/alice/.t3-personal/userdata");
+      assert.equal(production.userDataDirName, "t3code-personal");
     }),
   );
 

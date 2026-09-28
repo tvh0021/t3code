@@ -4,6 +4,8 @@
  * @module ZedAdapter
  */
 
+import { readMcpProviderSession } from "../../mcp/McpProviderSession.ts";
+
 import {
   ApprovalRequestId,
   type ZedSettings,
@@ -290,8 +292,22 @@ export function makeZedAdapter(
 
           let ctxRef: ZedSessionContext | undefined;
 
+          const mcpSession = readMcpProviderSession(input.threadId);
           const acp = yield* makeZedAcpRuntime({
+            ...(mcpSession
+              ? {
+                  mcpServers: [
+                    {
+                      type: "http" as const,
+                      name: "t3-code",
+                      url: mcpSession.endpoint,
+                      headers: [{ name: "Authorization", value: mcpSession.authorizationHeader }],
+                    },
+                  ],
+                }
+              : {}),
             zedSettings: effectiveSettings,
+            ...(input.coordinationRole ? { coordinationRole: input.coordinationRole } : {}),
             childProcessSpawner,
             cwd,
             ...(options?.environment ? { environment: options.environment } : {}),
@@ -435,6 +451,31 @@ export function makeZedAdapter(
               ),
             );
 
+          if (
+            input.coordinationRole &&
+            startResult.initializeResult._meta?.["t3WorkerPolicy"] !== input.coordinationRole
+          ) {
+            yield* Scope.close(sessionScope, Exit.void);
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue:
+                "This Zed ACP server does not enforce worker profiles. Rebuild zed-acp-server with --worker-mode support before using it in a workflow.",
+            });
+          }
+          if (
+            input.coordinationRole === "parent" &&
+            mcpSession &&
+            startResult.initializeResult._meta?.["t3ThreadTools"] !== true
+          ) {
+            yield* Scope.close(sessionScope, Exit.void);
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue:
+                "Rebuild zed-acp-server with T3 thread MCP forwarding before using it as a workflow parent.",
+            });
+          }
           const createdAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
           const session: ProviderSession = {
             provider: PROVIDER,

@@ -105,6 +105,26 @@ function storageCleanupActivityAt(thread: OrchestrationThreadShell): number {
   );
 }
 
+/** Remove only abandoned managed review snapshots, including missed deletion receipts. */
+export const cleanOrphanReviewSnapshots = Effect.fn("StorageCleanup.cleanOrphanReviewSnapshots")(
+  function* (root: string, known: ReadonlySet<string | null>, now: number) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    if (!(yield* fs.exists(root)) || (yield* fs.realPath(root)) !== path.resolve(root)) return;
+    for (const id of yield* fs.readDirectory(root)) {
+      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) continue;
+      const target = path.join(root, id);
+      if (known.has(target) || (yield* fs.realPath(target)) !== target) continue;
+      const stat = yield* fs.stat(target);
+      const modified = Option.getOrNull(stat.mtime);
+      // A clone is created before its thread commits. The grace period excludes
+      // in-flight creation while recovering leftovers from crashes and deletions.
+      if (stat.type === "Directory" && modified && modified.getTime() < now - 60 * 60 * 1000)
+        yield* fs.remove(target, { recursive: true });
+    }
+  },
+);
+
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const settingsService = yield* Settings.ServerSettingsService;
@@ -398,10 +418,22 @@ export const make = Effect.gen(function* () {
     yield* visit(realRoot);
   });
 
+  const cleanReviewSnapshots = Effect.fn("StorageCleanup.cleanReviewSnapshots")(function* (
+    now: number,
+  ) {
+    const root = path.join(config.worktreesDir, "coordination-reviews");
+    if (!(yield* fs.exists(root)) || (yield* fs.realPath(root)) !== path.resolve(root)) return;
+    const known = new Set((yield* readThreads()).threads.map((thread) => thread.worktreePath));
+    yield* cleanOrphanReviewSnapshots(root, known, now);
+  });
+
   const sweep = Effect.fn("StorageCleanup.sweep")(function* () {
     const serverSettings = yield* settingsService.getSettings;
     const settings = serverSettings.storageCleanup;
     const now = yield* Clock.currentTimeMillis;
+    yield* cleanReviewSnapshots(now).pipe(
+      Effect.catch((error) => Effect.logWarning("review snapshot cleanup failed", { error })),
+    );
     yield* cleanWorktrees(serverSettings, now).pipe(
       Effect.catch((error) => Effect.logWarning("worktree cleanup failed", { error })),
     );

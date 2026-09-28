@@ -250,6 +250,16 @@ export function applyThreadDetailEvent(
       };
 
     // ── Thread metadata ─────────────────────────────────────────────
+    case "thread.coordination-updated":
+      return {
+        kind: "updated",
+        thread: {
+          ...thread,
+          coordination: event.payload.coordination,
+          updatedAt: event.payload.updatedAt,
+        },
+      };
+
     case "thread.meta-updated":
       return {
         kind: "updated",

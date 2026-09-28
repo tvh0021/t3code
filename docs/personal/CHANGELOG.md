@@ -60,3 +60,17 @@ A concise, chronological record of custom changes made to this personal fork of 
 
 - **Mobile Usage Compatibility**: The personal host sends Usage contract v5 to App Store mobile 1.2.x and 1.3.x clients. This restores supported Claude, Codex, and Grok usage without changing the signed iOS app; newer clients still receive v6.
 - **Mobile Usage Scope**: Codex usage billing is working on the phone. Antigravity and ChatLLM usage remain absent from the 1.3.0 Usage tab because that app release has no provider entries for them. Their Limits data is separate.
+
+### 2026-09-27: Personal 0.0.42.2
+
+- Added thread MCP tools for cross-model and cross-provider handoffs. Corrected GPT-6 current/legacy grouping.
+- Added persisted flat workflows with child queues, durable reports, shared model budgets, parent wakeups, and lifecycle controls across web and mobile.
+- Added named limits, price-band defaults, monthly model/pricing maintenance, and per-model overrides. Active workflows retain captured budgets.
+- Added provider worker restrictions and a companion Zed `--worker-mode` implementation. Added ChatLLM parent MCP access and Zed forwarding with explicit worker tool allowlists. Antigravity can serve as a child; it cannot parent a workflow yet.
+- Fixed review approval policy, write-tool enforcement, turn correlation, startup ordering, active-member lifecycle guards, terminal-parent capability restoration, and interrupted-turn approval cleanup. Added completion-before-acceptance and restart reconciliation tests, detached review snapshots, cleanup recovery, and read containment for ChatLLM.
+- Verified ordinary desktop threads and a four-child Sol workflow with two Luna and two Gemini children. All four children reported substantive findings; the parent applied them and the fixture passed 10/10 tests. A shared child-start command ID was fixed after the first runtime attempt started only one child.
+- Corrected completed workflow report labels in web and mobile. Focused coordination tests passed 13/13, targeted lint and formatting passed, and server/client-runtime/mobile typechecks passed. Web typechecking still has unrelated HAST type errors. Zed native MCP discovery and remote/mobile UI flows remain unverified.
+
+Audit reviews now use GPT 6 Sol at low reasoning, as requested.
+
+See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remaining checks.
