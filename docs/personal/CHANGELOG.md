@@ -87,4 +87,4 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
 - Allowed Antigravity review and edit children to call the scoped T3 report and read tools without an approval prompt. Other tool requests still require approval.
 - Updated the Zed ACP worker tool names and permissions. Rebuilt the worker binary and verified a Zed review child report.
 - Verified a live quota handoff from a Codex Luna child at 95% to a Gemini Flash High child. The Gemini child reported, and the parent resumed and completed the layer.
-- Set the desktop and server package versions to 0.1.1 so the next Personal build shows the right About version.
+- Set the web, desktop, and server package versions to 0.1.1 so About shows the release version.

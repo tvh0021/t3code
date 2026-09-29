@@ -93,6 +93,10 @@ recorded its report, resumed the parent, and completed the layer. The Gemini
 child's T3 report tool did not request approval. Its read-only Git review
 commands still required approval.
 
+The first 0.1.1 build exposed one more version mismatch: About reads the web
+package's `APP_VERSION`, so the web package must carry the release version too.
+All three app packages now use 0.1.1.
+
 The same run found that Gemini could continue using T3 tools after
 `wait_for_children` in the same turn. T3 now records the waiting turn and
 rejects its later coordination calls. The companion Zed worker had stale tool
