@@ -192,6 +192,7 @@ interface TurnIntent {
 
 interface SessionContext {
   readonly threadId: ThreadId;
+  readonly coordinationRole: "parent" | "review" | "edit" | undefined;
   readonly cwd: string;
   readonly nativeSessionId: string;
   readonly scope: Scope.Closeable;
@@ -490,6 +491,21 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
   ): Effect.fn.Return<NativePermissionResponse, ProviderAdapterError> {
     if (context.stopped || request.sessionId !== context.nativeSessionId) {
       return { outcome: { outcome: "cancelled" } };
+    }
+    const mcp = request.toolCall._meta?.["mcp"];
+    if (
+      (context.coordinationRole === "review" || context.coordinationRole === "edit") &&
+      typeof mcp === "object" &&
+      mcp !== null &&
+      "server" in mcp &&
+      mcp.server === "t3-code" &&
+      "tool" in mcp &&
+      (mcp.tool === "report_to_parent" ||
+        mcp.tool === "read_orchestration_layer" ||
+        mcp.tool === "read_thread")
+    ) {
+      const optionId = selectAntigravityPermissionOptionId(request, "accept");
+      if (optionId) return { outcome: { outcome: "selected", optionId } };
     }
     const requestId = ApprovalRequestId.make(yield* randomId);
     const runtimeRequestId = RuntimeRequestId.make(requestId);
@@ -892,6 +908,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
               };
               context = {
                 threadId: input.threadId,
+                coordinationRole: input.coordinationRole,
                 cwd,
                 nativeSessionId: started.sessionId,
                 scope: sessionScope,

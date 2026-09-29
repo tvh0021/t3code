@@ -41,6 +41,7 @@ export const ThreadCoordination = Schema.Union([
     role: Schema.Literal("parent"),
     status: Schema.Literals(["active", "paused", "completed", "cancelled"]),
     waiting: Schema.Boolean,
+    waitTurnId: Schema.optional(TurnId),
     activating: Schema.optional(Schema.Boolean),
     maxChildren: NonNegativeInt,
     budgets: Schema.Array(CoordinationBudget),

@@ -424,6 +424,30 @@ it.effect("queues initial assignments until planning ends, without spending a pa
   }),
 );
 
+it.effect("does not let a parent complete in the turn after waiting for children", () =>
+  Effect.gen(function* () {
+    const app = yield* fixture();
+    try {
+      yield* app.session(parentId, "running");
+      yield* app.call("start_orchestration_layer");
+      const child = yield* app.spawn("wait-barrier");
+      expect((yield* app.assignment(child)).phase).toBe("queued");
+      expect((yield* app.call("wait_for_children")).isError).toBe(false);
+      expect((yield* app.call("read_orchestration_layer")).isError).toBe(true);
+      expect((yield* app.call("control_orchestration_layer", { action: "complete" })).isError).toBe(
+        true,
+      );
+      expect((yield* app.assignment(child)).phase).toBe("queued");
+      yield* app.session(parentId, "ready");
+      yield* app.drain();
+      expect((yield* app.assignment(child)).phase).toBe("running");
+      expect((yield* app.call("read_orchestration_layer")).isError).toBe(false);
+    } finally {
+      yield* app.dispose();
+    }
+  }),
+);
+
 it.effect(
   "pauses persisted work before consuming startup events and only starts it after explicit resume",
   () =>

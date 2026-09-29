@@ -1,10 +1,11 @@
 # Handoff: Personal workflow release and remaining provider checks
 
-Updated September 28, 2026. An isolated desktop pass verified an ordinary Sol
+Updated September 28, 2026. The isolated desktop pass verified an ordinary Sol
 thread and a four-child workflow with two Luna and two Gemini children. All four
 reported findings, and the parent repaired a fixture that then passed 10/10
-tests. Simulated quota handoff and a live Gemini parent start have since passed.
-Mobile/remote checks and Zed native MCP discovery remain open.
+tests. A live Gemini parent completed a Codex-to-Gemini quota handoff. A Zed
+Luna child reported through T3 after rebuilding the worker binary. Mobile,
+remote, and Zed parent checks remain open.
 
 ## Intent and settled decisions
 
@@ -67,8 +68,9 @@ ChatLLM exposes scoped T3 coordination tools through its own tool loop. The
 bridge is tested against the real MCP HTTP protocol. Zed forwards the scoped
 HTTP server through ACP and explicitly allows only coordination tools in worker
 profiles. Parent startup requires both `t3WorkerPolicy` and `t3ThreadTools`
-metadata. The companion source compiles; native discovery is not yet verified.
-Codex/Claude review profiles prevent writes, not all host-file reads.
+metadata. A rebuilt Zed worker completed a Luna child report. Zed parent tool
+discovery and startup remain unverified. Codex/Claude review profiles prevent
+writes, not all host-file reads.
 
 The old GPT 5.6 Sol/high reviewer was stopped after the user corrected its cost.
 **Use GPT 6 Sol at low reasoning for audit-trail reviews.** Its source review
@@ -84,12 +86,18 @@ new Luna child. The probe caught lost XHigh options and stale reset details;
 both were fixed. The browser showed the 95% setting and Luna-to-Gemini mapping.
 The probe did not spend quota or run a destination provider turn.
 
-The managed Antigravity runtime then called `read_thread` and
-`start_orchestration_layer` in an isolated dev thread. The server recorded both
-tool calls and persisted a Gemini 3.8 Flash High parent with quota handoff
-enabled. Policy, MCP coordination, and Luna-to-Gemini parent routing tests
-passed 13 focused cases; server typecheck passed. This verifies parent startup,
-not a complete Gemini parent and child cycle.
+The managed Antigravity runtime called `read_thread` and
+`start_orchestration_layer` in an isolated dev thread. A later live run hit
+Codex Luna's 95% secondary quota, switched the child to Gemini 3.8 Flash High,
+recorded its report, resumed the parent, and completed the layer. The Gemini
+child's T3 report tool did not request approval. Its read-only Git review
+commands still required approval.
+
+The same run found that Gemini could continue using T3 tools after
+`wait_for_children` in the same turn. T3 now records the waiting turn and
+rejects its later coordination calls. The companion Zed worker had stale tool
+names and did not accept `--worker-mode`; after rebuilding it, a Codex parent
+completed a Zed Luna review child. Zed parent startup remains unverified.
 
 ## Final evidence
 
@@ -118,14 +126,11 @@ evidence.
 
 1. Mobile UI, command-palette actions, remote and multiple-environment flows.
    Desktop child roster, reports and completion were inspected with Computer Use.
-2. Build a separate worker-aware Zed binary and prove native MCP discovery,
-   parent tool use and child reporting. Do not replace the installed binary.
-3. Run a complete Gemini parent and child report cycle. The managed Antigravity
-   runtime started a parent and called T3 MCP tools, but child assignment,
-   reporting, and parent wake have not run together. Test Gemini as the parent
-   of a quota handoff as well. Older or custom binaries have not been checked
-   for MCP forwarding. Cursor, Grok, and OpenCode remain unavailable for
-   workflows.
+2. Verify Zed as an orchestration parent, including native MCP discovery and
+   parent tool use. The child path and report passed with a rebuilt worker.
+3. Test Gemini as the parent of a quota handoff. Older or custom binaries have
+   not been checked for MCP forwarding. Cursor, Grok, and OpenCode remain
+   unavailable for workflows.
 4. Exercise live quota threshold crossing during a running provider turn.
    Confirm interruption, the linked Gemini summary and continuation, the
    one-switch limit, and manual cancellation. The 95% probe simulated provider
@@ -134,8 +139,7 @@ evidence.
    under-threshold reading wakes a new Luna XHigh thread, while an unknown
    reset leaves a visible pause reason. The 12% probe started from a stored
    waiting state with an elapsed reset time.
-6. Resolve the unrelated web HAST dependency errors separately. The user has
-   authorized a personal source release, DMG rebuild and reinstall.
+6. Resolve the unrelated web HAST dependency errors separately.
 
 ## Environment and constraints
 

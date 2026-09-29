@@ -69,6 +69,15 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError(failed("read the calling thread")));
     if (Option.isNone(parent))
       return yield* new ThreadToolError({ message: "The calling thread no longer exists." });
+    if (
+      parent.value.coordination?.role === "parent" &&
+      parent.value.session?.status === "running" &&
+      parent.value.coordination.waitTurnId &&
+      parent.value.coordination.waitTurnId === parent.value.session.activeTurnId
+    )
+      return yield* new ThreadToolError({
+        message: "wait_for_children already ended this turn's coordination work. End the turn now.",
+      });
     if (id === undefined || id === parent.value.id) return parent.value;
     const target = yield* snapshots
       .getThreadShellById(id)

@@ -696,7 +696,9 @@ export function planCoordination(
     return commands;
   }
   if (action.type === "wait") {
-    if (!parent.waiting) set(caller, { ...parent, waiting: true });
+    const waitTurnId = caller.session?.activeTurnId;
+    if (!parent.waiting || (waitTurnId && parent.waitTurnId !== waitTurnId))
+      set(caller, { ...parent, waiting: true, ...(waitTurnId ? { waitTurnId } : {}) });
     return commands;
   }
   const debit = (model: string): boolean => {

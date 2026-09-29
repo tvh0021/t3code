@@ -80,3 +80,11 @@ Audit reviews now use GPT 6 Sol at low reasoning, as requested.
 - Allowed Antigravity to parent a layer after the managed Gemini 3.8 Flash High runtime called T3's `read_thread` and `start_orchestration_layer` tools in an isolated dev thread. The server persisted an active Gemini parent with quota handoff enabled. A complete Gemini parent and child report cycle remains unverified.
 
 See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remaining checks.
+
+### 2026-09-28: Personal 0.1.1
+
+- Prevented a parent from continuing coordination tool calls in the same turn after `wait_for_children`.
+- Allowed Antigravity review and edit children to call the scoped T3 report and read tools without an approval prompt. Other tool requests still require approval.
+- Updated the Zed ACP worker tool names and permissions. Rebuilt the worker binary and verified a Zed review child report.
+- Verified a live quota handoff from a Codex Luna child at 95% to a Gemini Flash High child. The Gemini child reported, and the parent resumed and completed the layer.
+- Set the desktop and server package versions to 0.1.1 so the next Personal build shows the right About version.

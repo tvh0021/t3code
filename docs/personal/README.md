@@ -61,8 +61,7 @@ This folder documents the changes, features, and architecture decisions that dis
 
 ### 4. Agent-created threads and workflows
 
-Included in the Personal 0.0.42.2 source release and extended in Personal
-0.1.0. Some provider and remote flows remain to be verified.
+Included in Personal 0.1.1. Some provider and remote flows remain to be verified.
 
 Agents can create handoff threads with a different model or provider. T3
 orchestration layers add queued child assignments, durable reports, shared model budgets,
@@ -72,13 +71,11 @@ without changing active session budgets.
 
 An isolated desktop pass confirmed ordinary Sol threads and a Sol parent with
 two Luna and two Gemini children. All four children produced findings, the
-parent used them to repair a fixture, and its tests passed 10/10. ChatLLM
-parent tools are verified; Zed native discovery and mobile/remote UI checks
-remain pending. Native worker restrictions cover Codex, Claude,
-ChatLLM, and a worker-aware Zed binary, but the allowlist does not prove every
-harness exposes the parent MCP tools. The managed Antigravity runtime has
-started a Gemini parent; its full child and report cycle remains unverified.
-An opted-in layer can hand off near a quota limit or resume after reset.
+parent used them to repair a fixture, and its tests passed 10/10. A live
+Gemini parent completed a Codex-to-Gemini quota handoff and received the child
+report. A Zed Luna review child also reported through T3. Zed parent startup,
+mobile UI, and remote flows remain pending. An opted-in layer can hand off
+near a quota limit or resume after reset.
 GPT-6 Astra, Sol, and Luna are classified as
 current models; GPT-5.6 Sol and Luna are legacy.
 

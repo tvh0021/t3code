@@ -524,6 +524,73 @@ it.layer(layer)("AntigravityAdapter", (it) => {
     }),
   );
 
+  it.effect("allows a review child to report through T3 MCP without an approval prompt", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      yield* h.adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "approval-required",
+        coordinationRole: "review",
+      });
+      const result = yield* Effect.race(
+        h
+          .invokePermission({
+            sessionId: nativeSessionId,
+            toolCall: {
+              toolCallId: "report-1",
+              title: "t3-code_report_to_parent",
+              _meta: { mcp: { server: "t3-code", tool: "report_to_parent" } },
+            },
+            options: [
+              { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+              { optionId: "deny", name: "Deny", kind: "reject_once" },
+            ],
+          })
+          .pipe(Effect.map((result) => ({ kind: "resolved" as const, result }))),
+        h
+          .waitForEvent((event) => event.type === "request.opened")
+          .pipe(Effect.as({ kind: "approval" as const })),
+      );
+      expect(result.kind).toBe("resolved");
+      if (result.kind !== "resolved") return;
+      expect(result.result).toEqual({ outcome: { outcome: "selected", optionId: "allow-once" } });
+      expect(h.seen.some((event) => event.type === "request.opened")).toBe(false);
+    }),
+  );
+
+  it.effect("still asks a review child to approve an ordinary tool", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      yield* h.adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "approval-required",
+        coordinationRole: "review",
+      });
+      const pending = yield* h
+        .invokePermission({
+          sessionId: nativeSessionId,
+          toolCall: { toolCallId: "command-1", title: "git status" },
+          options: [
+            { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+            { optionId: "deny", name: "Deny", kind: "reject_once" },
+          ],
+        })
+        .pipe(Effect.forkChild);
+      const opened = yield* h.waitForEvent((event) => event.type === "request.opened");
+      expect(pending.pollUnsafe()).toBeUndefined();
+      yield* h.adapter.respondToRequest(
+        threadId,
+        ApprovalRequestId.make(opened.requestId!),
+        "decline",
+      );
+      expect(yield* Fiber.join(pending)).toEqual({
+        outcome: { outcome: "selected", optionId: "deny" },
+      });
+    }),
+  );
+
   it.effect("returns opaque native question choices and rejects ambiguous labels", () =>
     Effect.gen(function* () {
       const h = yield* makeHarness();
