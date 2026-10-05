@@ -8,6 +8,7 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
@@ -62,14 +63,64 @@ export const ZED_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
 ];
 
+const decodeZedCatalog = Schema.decodeSync(
+  Schema.fromJsonString(
+    Schema.Array(
+      Schema.Struct({
+        slug: Schema.String,
+        name: Schema.String,
+      }),
+    ),
+  ),
+);
+
+export function parseLatestZedModels(output: string): ReadonlyArray<ServerProviderModel> {
+  const catalog = decodeZedCatalog(output);
+  const families = [
+    /^zed\.dev\/claude-sonnet-(\d+(?:[.-]\d+)*)(?:-latest)?$/,
+    /^zed\.dev\/gpt-(\d+(?:\.\d+)*)-luna(?:-\d{8})?$/,
+  ];
+  return families.flatMap((family, familyIndex) => {
+    const candidates = catalog.flatMap((entry) => {
+      const match = family.exec(entry.slug);
+      if (!match?.[1]) return [];
+      const version = match[1].split(/[.-]/).map(Number);
+      const snapshot = version.at(-1);
+      if (snapshot !== undefined && snapshot >= 10_000_000) version.pop();
+      return [{ slug: entry.slug, name: entry.name, version }];
+    });
+    candidates.sort((left, right) => {
+      for (let index = 0; index < Math.max(left.version.length, right.version.length); index++) {
+        const difference = (right.version[index] ?? 0) - (left.version[index] ?? 0);
+        if (difference !== 0) return difference;
+      }
+      return right.slug.localeCompare(left.slug, undefined, { numeric: true });
+    });
+    const newest = candidates[0];
+    return newest
+      ? [
+          {
+            slug: newest.slug,
+            name: newest.name,
+            isCustom: false,
+            ...(familyIndex === 0 ? { isDefault: true } : {}),
+            badge: "new",
+            capabilities: EMPTY_CAPABILITIES,
+          },
+        ]
+      : [];
+  });
+}
+
 export const ZED_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
   COMPACT_SLASH_COMMAND,
 ];
 
 function zedModelsFromSettings(
   customModels: ZedSettings["customModels"],
+  builtInModels: ReadonlyArray<ServerProviderModel> = ZED_BUILT_IN_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(ZED_BUILT_IN_MODELS, customModels, EMPTY_CAPABILITIES);
+  return providerModelsFromSettings(builtInModels, customModels, EMPTY_CAPABILITIES);
 }
 
 export function buildInitialZedProviderSnapshot(
@@ -118,9 +169,10 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
   zedSettings: ZedSettings,
   environment: NodeJS.ProcessEnv = process.env,
   cwd?: string,
+  previousModels: ReadonlyArray<ServerProviderModel> = ZED_BUILT_IN_MODELS,
 ): Effect.fn.Return<ServerProviderDraft, never, ChildProcessSpawner.ChildProcessSpawner> {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
-  const models = zedModelsFromSettings(zedSettings.customModels);
+  let models = zedModelsFromSettings(zedSettings.customModels, previousModels);
 
   if (!zedSettings.enabled) {
     return buildServerProvider({
@@ -173,6 +225,37 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
     });
   }
 
+  const catalogResult = yield* spawnAndCollect(
+    spawnInput.command,
+    ChildProcess.make(
+      spawnInput.command,
+      [
+        "--list-models",
+        ...(zedSettings.dataDir?.trim() ? ["--data-dir", zedSettings.dataDir.trim()] : []),
+      ],
+      {
+        cwd: spawnInput.cwd,
+        env: spawnInput.env,
+        extendEnv: true,
+      },
+    ),
+  ).pipe(
+    Effect.flatMap((result) =>
+      Effect.try(() => {
+        if (result.code !== 0) throw new Error("Zed model discovery failed");
+        const discovered = parseLatestZedModels(result.stdout);
+        if (discovered.length !== 2)
+          throw new Error("Zed did not supply both Sonnet and Luna models");
+        return discovered;
+      }),
+    ),
+    Effect.timeout("40 seconds"),
+    Effect.result,
+  );
+  if (Result.isSuccess(catalogResult)) {
+    models = zedModelsFromSettings(zedSettings.customModels, catalogResult.success);
+  }
+
   return buildServerProvider({
     presentation: ZED_PRESENTATION,
     enabled: true,
@@ -183,6 +266,12 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
       installed: true,
       version: "0.1.0",
       status: "ready",
+      ...(Result.isFailure(catalogResult)
+        ? {
+            message:
+              "Could not refresh Zed models. Keeping the previous list. Sign in to Zed and use a bridge with --list-models support.",
+          }
+        : {}),
       auth: { status: "authenticated" },
       usageLimits: unavailableZedAccountUsage(checkedAt),
     },

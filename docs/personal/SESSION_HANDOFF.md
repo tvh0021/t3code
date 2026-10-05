@@ -206,3 +206,24 @@ The earlier Codex usage reconciliation and separate
 [Zed billing issue](./ISSUE_TRACKER.md#zed-001-read-zed-account-usage-from-the-billing-service)
 remain recorded in the personal changelog. Session cost must not substitute for
 account-wide Zed spend.
+
+## Zed catalog verification, October 5
+
+The companion bridge now exposes `--list-models`. It authenticates with stored
+credentials without opening interactive sign-in and exits before applying ACP
+session settings. T3's existing manual and periodic provider refreshes use this
+catalog. The latest successful list stays cached for the provider instance.
+Custom models remain available, and failed or incomplete discovery keeps the
+previous list. Live discovery returned Sonnet 5.5 and GPT-6 Luna.
+
+Focused discovery, ACP support, and adapter checks passed 27 tests, with one
+hosted smoke test skipped. Server typechecking and targeted lint passed. The
+companion bridge passed offline `cargo check -p eval_cli --bin zed-acp-server`
+and Rust formatting checks. The older direct-binary streaming harness starts
+without a selected model and fails with `no language model configured`. Its
+other five checks passed. This harness bypasses T3 provider discovery.
+
+The installed Personal app and its running server remain untouched. Install
+the rebuilt app and restart its server only when authorized. Preserve the
+companion checkout's unrelated README review marker and T3's unrelated
+Antigravity and issue-tracker edits.

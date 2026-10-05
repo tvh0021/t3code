@@ -256,7 +256,10 @@ release-ready. The changelog records the verified streaming repair only.
 - The protocol harness targets
   `/Users/tvh0021/git_repos/zed-dev/target/debug/zed-acp-server`, but the
   streaming path is now verified in an isolated web client.
-- Limited the built-in Zed model catalog to `zed.dev/claude-sonnet-5` (Claude Sonnet 5) and `zed.dev/gpt-5.6-luna` (GPT 5.6 Luna), while retaining support for explicitly configured custom models.
+- Discover the newest hosted Sonnet and Luna through the bridge's `--list-models`
+  command on manual and periodic provider refreshes. Custom models remain
+  available. Failed or incomplete discovery retains the last successful list.
+  The original Sonnet 5 and GPT-5.6 Luna list remains the startup fallback.
 
 ### Modifications
 

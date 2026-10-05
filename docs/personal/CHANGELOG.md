@@ -96,3 +96,14 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
 - Two real Zed and Sonnet 5 probes created files in isolated workspaces with zero approval requests under both Supervised and Full access. This covers file creation only, not terminal permissions. No Zed code changed.
 - Kept the current Zed bridge after reviewing Delta's official docs. Delta documents its CLI for app launch and authentication. Its planned ACP work brings external agents into Delta. Its safety docs say Delta has no permission system or sandbox. These sources do not establish an agent-side ACP path for T3. See the [CLI docs](https://delta.dev/docs/installation), [roadmap](https://delta.dev/roadmap), and [agentic safety docs](https://delta.dev/docs/privacy-and-security/agentic-safety).
 - Focused verification passed 257 tests and scoped contracts, server, and mobile typechecks. An Antigravity subprocess probe covered all four saved permission preferences on initial start and three resumes. Web typechecking still reports 11 pre-existing HAST errors in untouched files. No authenticated Google inference or browser/native-mobile UI pass was run.
+
+### 2026-10-05
+
+- Zed discovers its hosted catalog through the companion bridge's `--list-models`
+  command using existing sign-in. Manual and periodic refreshes select one newest
+  Sonnet and one newest Luna, preserve custom models, and retain the previous
+  catalog on failure. Live discovery selected Sonnet 5.5 and GPT-6 Luna.
+- Verified 27 focused tests, with one hosted smoke test skipped, server
+  typechecking, targeted lint, bridge compilation, and Rust formatting. The old
+  direct-binary streaming harness fails with `no language model configured`; it
+  does not use the changed provider discovery path.

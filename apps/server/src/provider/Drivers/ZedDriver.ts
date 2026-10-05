@@ -13,7 +13,11 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import type * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeZedAdapter } from "../Layers/ZedAdapter.ts";
-import { buildInitialZedProviderSnapshot, checkZedProviderStatus } from "../Layers/ZedProvider.ts";
+import {
+  buildInitialZedProviderSnapshot,
+  checkZedProviderStatus,
+  ZED_BUILT_IN_MODELS,
+} from "../Layers/ZedProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
@@ -96,7 +100,18 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         generateThreadTitle: () => unsupportedTextGen("generateThreadTitle"),
       };
 
-      const checkProvider = checkZedProviderStatus(effectiveConfig, processEnv, cwd).pipe(
+      let latestModels = ZED_BUILT_IN_MODELS;
+      const checkZed = (workspaceCwd: string) =>
+        Effect.suspend(() =>
+          checkZedProviderStatus(effectiveConfig, processEnv, workspaceCwd, latestModels),
+        ).pipe(
+          Effect.tap((draft) =>
+            Effect.sync(() => {
+              latestModels = draft.models.filter((model) => !model.isCustom);
+            }),
+          ),
+        );
+      const checkProvider = checkZed(cwd).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
@@ -127,7 +142,7 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
       const snapshotForCwd = (workspaceCwd: string) =>
         !effectiveConfig.enabled
           ? snapshot.getSnapshot
-          : checkZedProviderStatus(effectiveConfig, processEnv, workspaceCwd).pipe(
+          : checkZed(workspaceCwd).pipe(
               Effect.map(stampIdentity),
               Effect.provideService(Crypto.Crypto, crypto),
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
