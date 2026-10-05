@@ -1,7 +1,7 @@
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
+import { runtimeModeConfig } from "./runtimeModeConfig";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
@@ -36,6 +36,8 @@ import type {
 } from "@t3tools/contracts";
 import {
   ProviderDriverKind,
+  getProviderRuntimeModes,
+  resolveProviderRuntimeMode,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
@@ -1068,6 +1070,7 @@ function useRestingComposerControlsLayout(host: HTMLDivElement | null, useContro
 }
 
 const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
+  providerDriver: ProviderDriverKind;
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
@@ -1079,7 +1082,8 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   const size = props.size ?? "sm";
   const composerFloatingLayerProps = useComposerMenuProps();
   const [open, setOpen] = useComposerMenuState(props.hidden);
-  const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
+  const effectiveRuntimeMode = resolveProviderRuntimeMode(props.providerDriver, props.runtimeMode);
+  const runtimeModeOption = runtimeModeConfig[effectiveRuntimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
   const interactionModeTooltip =
     props.interactionMode === "plan"
@@ -1138,8 +1142,10 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
         <Select
           open={open}
           onOpenChange={setOpen}
-          value={props.runtimeMode}
-          onValueChange={(value) => props.onRuntimeModeChange(value!)}
+          value={effectiveRuntimeMode}
+          onValueChange={(value) => {
+            if (value && value !== effectiveRuntimeMode) props.onRuntimeModeChange(value);
+          }}
         >
           <TooltipTrigger
             render={
@@ -1155,7 +1161,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             <SelectValue data-composer-control-label>{runtimeModeOption.label}</SelectValue>
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
-            {runtimeModeOptions.map((mode) => {
+            {getProviderRuntimeModes(props.providerDriver).map((mode) => {
               const option = runtimeModeConfig[mode];
               const OptionIcon = option.icon;
               return (
@@ -4971,6 +4977,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       id: "mode",
       content: (
         <ComposerFooterModeControls
+          providerDriver={selectedProvider}
           showInteractionModeToggle={planModeUiEnabled}
           interactionMode={interactionMode}
           runtimeMode={runtimeMode}
@@ -5128,6 +5135,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           )}
         >
           <CompactComposerControlsMenu
+            providerDriver={selectedProvider}
             interactionMode={interactionMode}
             runtimeMode={runtimeMode}
             size={composerControlsInStrip ? "xs" : "sm"}

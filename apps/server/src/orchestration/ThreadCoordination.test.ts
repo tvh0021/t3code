@@ -743,6 +743,73 @@ describe("T3 orchestration layer coordination", () => {
         }
       }),
   );
+
+  it.effect(
+    "initializes quota handoff destination thread with full-access when destination model is Gemini",
+    () =>
+      Effect.gen(function* () {
+        const app = yield* system();
+        try {
+          yield* app.start("gpt-6-sol", true);
+          const sourceId = yield* app.spawn("source-child", "gpt-6-luna");
+          yield* app.coordinate(parentId, { type: "advance" });
+          yield* app.session(sourceId, "running");
+          const destinationId = ThreadId.make("gemini-child");
+          yield* app.coordinate(parentId, {
+            type: "quota-trigger",
+            affectedThreadId: sourceId,
+            destinationThreadId: destinationId,
+            destinationModelSelection: {
+              instanceId: ProviderInstanceId.make("antigravity"),
+              model: "gemini-3.8-flash-high",
+            },
+            switchProvider: true,
+          });
+
+          // Destination thread created should have runtimeMode: "full-access"
+          const snapshot = yield* app.read();
+          const destinationThread = snapshot.threads.find((t) => t.id === destinationId);
+          expect(destinationThread?.runtimeMode).toBe("full-access");
+          expect(destinationThread?.modelSelection.model).toBe("gemini-3.8-flash-high");
+
+          // When settled and advance planned, continuation turn also runs with full-access
+          yield* app.session(sourceId, "idle");
+          yield* app.coordinate(parentId, {
+            type: "quota-settle",
+            destinationThreadId: destinationId,
+          });
+          yield* app.coordinate(parentId, { type: "advance" });
+          yield* app.coordinate(destinationId, {
+            type: "handoff-summary-complete",
+            text: "Interrupted at step 2; continue the task.",
+          });
+
+          const afterSettleSnapshot = yield* app.read();
+          const continuationPlan = planCoordination(
+            {
+              type: "thread.coordination",
+              threadId: parentId,
+              action: { type: "advance" },
+              commandId: commandId(),
+              createdAt: now,
+            },
+            afterSettleSnapshot.threads,
+            () => false,
+            () => false,
+          );
+          if (typeof continuationPlan === "string") throw new Error(continuationPlan);
+          const continuationStart = continuationPlan.find(
+            (command) => command.type === "thread.turn.start" && command.threadId === destinationId,
+          );
+          expect(continuationStart).toBeDefined();
+          if (continuationStart?.type === "thread.turn.start") {
+            expect(continuationStart.runtimeMode).toBe("full-access");
+          }
+        } finally {
+          yield* app.dispose();
+        }
+      }),
+  );
 });
 
 it("uses explicit limits and exact price boundaries for new models", () => {

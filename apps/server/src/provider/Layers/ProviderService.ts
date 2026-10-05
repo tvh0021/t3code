@@ -20,6 +20,7 @@ import {
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
   RuntimeRequestId,
+  resolveProviderRuntimeMode,
   ProviderSendTurnInput,
   type ChatImageAttachment,
   type SnapShotAccessibility,
@@ -1445,6 +1446,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...parsed,
           threadId,
           provider: resolvedProvider,
+          runtimeMode: resolveProviderRuntimeMode(resolvedProvider, parsed.runtimeMode),
         };
         if (!instanceInfo.enabled) {
           return yield* toValidationError(

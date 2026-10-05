@@ -642,6 +642,73 @@ describe("ProviderCommandReactor", () => {
     };
   }
 
+  effectIt.effect.each(["new", "ready"] as const)(
+    "starts an Antigravity %s thread with full access while preserving its permission preference",
+    (sessionStatus) =>
+      Effect.gen(function* () {
+        const sent = yield* Deferred.make<void>();
+        const instanceId = ProviderInstanceId.make("antigravity-personal");
+        const harness = yield* Effect.promise(() =>
+          createHarness({
+            threadModelSelection: { instanceId, model: "native-default" },
+            afterSendTurn: () => Deferred.succeed(sent, undefined).pipe(Effect.asVoid),
+          }),
+        );
+        const threadId = ThreadId.make("thread-1");
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        if (sessionStatus === "ready") {
+          yield* harness.startSession(threadId, {
+            threadId,
+            provider: "antigravity",
+            providerInstanceId: instanceId,
+            modelSelection: { instanceId, model: "native-default" },
+            cwd: "/tmp/provider-project",
+            runtimeMode: "approval-required",
+          });
+          yield* harness.engine.dispatch({
+            type: "thread.session.set",
+            commandId: CommandId.make("old-antigravity-session"),
+            threadId,
+            createdAt,
+            session: {
+              threadId,
+              providerName: "antigravity",
+              providerInstanceId: instanceId,
+              status: "ready",
+              runtimeMode: "approval-required",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: createdAt,
+            },
+          });
+        }
+        yield* harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("antigravity-next-turn"),
+          threadId,
+          createdAt,
+          message: {
+            messageId: MessageId.make("antigravity-next-message"),
+            role: "user",
+            text: "Scratch permission probe",
+            attachments: [],
+          },
+          runtimeMode: "approval-required",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        });
+        yield* Deferred.await(sent);
+        yield* Effect.promise(() => harness.drain());
+        expect(harness.startSession.mock.calls.at(-1)?.[1]).toMatchObject({
+          runtimeMode: "full-access",
+        });
+        const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+          (t) => t.id === threadId,
+        );
+        expect(thread?.runtimeMode).toBe("approval-required");
+        expect(thread?.session?.runtimeMode).toBe("full-access");
+      }),
+  );
+
   effectIt.effect.each(["new", "ready", "stopped"] as const)(
     "handles sign-out for a %s thread before worktree repair, text helpers, or startup",
     (sessionStatus) =>

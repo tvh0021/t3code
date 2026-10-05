@@ -1,3 +1,4 @@
+import { getProviderRuntimeModes, resolveProviderRuntimeMode } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   ModelSelection,
@@ -289,6 +290,7 @@ export function useExistingThreadSettingsRoutePresentation() {
 }
 
 type ThreadSettingsSessionValue = {
+  readonly runtimeModes: ReadonlyArray<RuntimeMode>;
   readonly environmentId: EnvironmentId | null;
   readonly providerInstanceId?: ProviderInstanceId;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
@@ -446,13 +448,25 @@ function ThreadSettingsSessionProvider(
     [isApplied],
   );
 
+  const permissionDriver =
+    pendingModel?.providerDriver ??
+    props.providerGroups.find((group) =>
+      group.models.some(
+        (model) =>
+          model.selection.instanceId ===
+          (props.selectedModel?.instanceId ?? props.providerInstanceId),
+      ),
+    )?.models[0]?.providerDriver;
+
   const value = useMemo<ThreadSettingsSessionValue>(
     () => ({
       environmentId: props.environmentId,
       providerInstanceId: props.providerInstanceId,
       providerGroups: props.providerGroups,
-      runtimeMode: props.runtimeMode,
-      onUpdateRuntimeMode: props.onUpdateRuntimeMode,
+      runtimeMode: resolveProviderRuntimeMode(permissionDriver, props.runtimeMode),
+      runtimeModes: getProviderRuntimeModes(permissionDriver),
+      onUpdateRuntimeMode:
+        permissionDriver === "antigravity" ? () => {} : props.onUpdateRuntimeMode,
       displayedDescriptors,
       favoriteKeys,
       favoritesLoaded,
@@ -491,6 +505,7 @@ function ThreadSettingsSessionProvider(
       props.onUpdateRuntimeMode,
       props.providerGroups,
       props.runtimeMode,
+      permissionDriver,
       searchQuery,
       showLegacyToggle,
       toggleProvider,
@@ -945,7 +960,9 @@ function ThreadSettingsChoiceContent(props: {
   const submenuContent =
     props.submenu.kind === "runtime"
       ? {
-          rows: RUNTIME_MODE_CHOICES.map((choice) => ({
+          rows: RUNTIME_MODE_CHOICES.filter((choice) =>
+            session.runtimeModes.includes(choice.mode),
+          ).map((choice) => ({
             id: choice.mode,
             label: choice.label,
             description: choice.description,

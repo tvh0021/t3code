@@ -1134,6 +1134,23 @@ const antigravityInstanceRouting = makeProviderServiceLayer({
   },
 });
 antigravityInstanceRouting.layer("ProviderServiceLive instance-owned conversations", (it) => {
+  it.effect.each(["approval-required", "auto", "auto-accept-edits", "full-access"] as const)(
+    "enforces the Antigravity instance policy before adapter startup for preference %s",
+    (runtimeMode) =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId(`antigravity-policy-${runtimeMode}`);
+        const session = yield* provider.startSession(threadId, {
+          threadId,
+          providerInstanceId: replacementAntigravityInstanceId,
+          runtimeMode,
+          modelSelection: { instanceId: replacementAntigravityInstanceId, model: "native-default" },
+        });
+        assert.equal(session.runtimeMode, "full-access");
+        yield* provider.stopSession({ threadId });
+      }),
+  );
+
   it.effect(
     "does not replace a native conversation with another instance or a removed-instance fallback",
     () =>

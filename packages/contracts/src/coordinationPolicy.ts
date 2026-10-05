@@ -1,3 +1,5 @@
+import type { RuntimeMode } from "./orchestration.ts";
+
 /** One budget identity across provider prefixes, aliases, and dated releases. */
 export function coordinationModelKey(model: string): string {
   const name = model.trim().toLowerCase().split("/").at(-1) ?? model;
@@ -16,6 +18,23 @@ export function coordinationModelKey(model: string): string {
     [/^gemini-3[.-]8-flash(?:-.*)?$/, "gemini-3.8-flash"],
   ];
   return aliases.find(([pattern]) => pattern.test(normalized))?.[1] ?? normalized;
+}
+
+export function isGptModel(model: string): boolean {
+  return coordinationModelKey(model).startsWith("gpt-");
+}
+
+export function resolveChildRuntimeMode(input: {
+  readonly mode: "edit" | "review";
+  readonly parentRuntimeMode: RuntimeMode;
+  readonly childModel?: string | undefined;
+  readonly childDriver?: string | undefined;
+}): RuntimeMode {
+  if (input.childDriver === "antigravity") {
+    return "full-access";
+  }
+  const gptChild = input.childModel !== undefined && isGptModel(input.childModel);
+  return input.mode === "review" && !gptChild ? "approval-required" : input.parentRuntimeMode;
 }
 
 export const DEFAULT_COORDINATION_LIMITS: Readonly<Record<string, number | null>> = {

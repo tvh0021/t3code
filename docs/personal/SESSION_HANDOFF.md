@@ -168,6 +168,40 @@ evidence.
 - Preserve unrelated desktop edits, DMG artwork and the Zed README review marker.
   Use focused checks only; no repo-wide tests/builds or unrelated cleanup.
 
+## Personal 0.1.2 release record
+
+Antigravity now uses full access for every model on new sessions and resumes. T3
+does not interrupt running turns. Its selectors show only Full access, while
+the thread or draft permission preference stays saved for provider switches.
+The provider layer compares effective session modes before restarting a
+session, and GPT review and edit children inherit the parent's mode. Other
+providers retain their prior mode behavior. Permission policy now lives at the
+provider boundary rather than depending on model names in coordination code.
+
+The fix passed 257 focused tests, scoped contracts, server, and mobile
+typechecks, plus an Antigravity adapter and subprocess ACP probe. The probe
+captured `yolo` for all four saved permission preferences on initial start and
+three resumes, then completed a follow-up against the local protocol mock.
+Registered MCP probes used isolated SQLite and coordination state. Web
+typechecking still has 11 pre-existing HAST errors in untouched files. No
+Google-authenticated inference or browser/native-mobile UI verification ran.
+Evidence is in `/tmp/t3-permission-verify/fix-report.txt`,
+`fix-tests.log`, `reactor-tests.log`, `antigravity-transport-results.json`,
+`antigravity-requests.ndjson`, `fix-mcp-results.json`, and `fix-revision.json`.
+
+Two real Zed and Sonnet 5 probes used the existing T3 Zed adapter and rebuilt
+binary. Both created files in temporary workspaces without approval requests,
+one under Supervised and one under Full access. This is file-creation evidence;
+terminal permissions remain unverified. No paid turns were run for this
+release.
+
+Delta research supports keeping the current Zed bridge. The [CLI docs](https://delta.dev/docs/installation)
+document app launch and authentication. The [roadmap](https://delta.dev/roadmap)
+describes ACP for bringing external agents into Delta. The [agentic safety
+docs](https://delta.dev/docs/privacy-and-security/agentic-safety) say Delta has
+no permission system or sandbox. None establishes an agent-side ACP interface
+for T3.
+
 The earlier Codex usage reconciliation and separate
 [Zed billing issue](./ISSUE_TRACKER.md#zed-001-read-zed-account-usage-from-the-billing-service)
 remain recorded in the personal changelog. Session cost must not substitute for

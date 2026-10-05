@@ -1,4 +1,10 @@
-import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
+import {
+  getProviderRuntimeModes,
+  resolveProviderRuntimeMode,
+  type ProviderDriverKind,
+  ProviderInteractionMode,
+  RuntimeMode,
+} from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import { EllipsisIcon } from "lucide-react";
 import {
@@ -9,11 +15,13 @@ import {
   MenuSeparator as MenuDivider,
   MenuTrigger,
 } from "../ui/menu";
+import { runtimeModeConfig } from "./runtimeModeConfig";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
 import { useComposerMenuState } from "./useComposerMenuState";
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
+  providerDriver: ProviderDriverKind;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
@@ -30,6 +38,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const size = props.size ?? "sm";
+  const effectiveRuntimeMode = resolveProviderRuntimeMode(props.providerDriver, props.runtimeMode);
   const [open, setOpen] = useComposerMenuState(props.hidden);
 
   return (
@@ -74,16 +83,17 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         ) : null}
         <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
         <MenuRadioGroup
-          value={props.runtimeMode}
+          value={effectiveRuntimeMode}
           onValueChange={(value) => {
-            if (!value || value === props.runtimeMode) return;
+            if (!value || value === effectiveRuntimeMode) return;
             props.onRuntimeModeChange(value as RuntimeMode);
           }}
         >
-          <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
-          <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
-          <MenuRadioItem value="auto">Auto</MenuRadioItem>
-          <MenuRadioItem value="full-access">Full access</MenuRadioItem>
+          {getProviderRuntimeModes(props.providerDriver).map((mode) => (
+            <MenuRadioItem key={mode} value={mode}>
+              {runtimeModeConfig[mode].label}
+            </MenuRadioItem>
+          ))}
         </MenuRadioGroup>
       </MenuPopup>
     </Menu>

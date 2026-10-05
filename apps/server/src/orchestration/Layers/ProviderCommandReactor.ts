@@ -1,6 +1,7 @@
 import { coordinationRole as workflowRole } from "@t3tools/contracts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import {
+  resolveProviderRuntimeMode,
   type ChatAttachment,
   CommandId,
   EventId,
@@ -583,7 +584,6 @@ const make = Effect.gen(function* () {
       return yield* Effect.die(new Error(`Thread '${threadId}' was not found in read model.`));
     }
 
-    const desiredRuntimeMode = thread.runtimeMode;
     const requestedModelSelection = options?.modelSelection;
     const resolveActiveSession = (threadId: ThreadId) =>
       providerService
@@ -650,6 +650,7 @@ const make = Effect.gen(function* () {
       });
     }
     const preferredProvider: ProviderDriverKind = desiredDriverKind;
+    const desiredRuntimeMode = resolveProviderRuntimeMode(preferredProvider, thread.runtimeMode);
     if (options?.pendingTurnStart === true && thread.session?.status !== "running") {
       yield* setThreadSession({
         threadId,
@@ -763,7 +764,7 @@ const make = Effect.gen(function* () {
     const existingSessionThreadId =
       thread.session && thread.session.status !== "stopped" && activeSession ? thread.id : null;
     if (existingSessionThreadId) {
-      const runtimeModeChanged = thread.runtimeMode !== thread.session?.runtimeMode;
+      const runtimeModeChanged = desiredRuntimeMode !== thread.session?.runtimeMode;
       const cwdChanged = effectiveCwd !== activeSession?.cwd;
       const sessionModelSwitch = (yield* providerService.getCapabilities(desiredInstanceId))
         .sessionModelSwitch;
@@ -804,7 +805,7 @@ const make = Effect.gen(function* () {
         desiredInstanceId,
         desiredProvider: desiredModelSelection.instanceId,
         currentRuntimeMode: thread.session?.runtimeMode,
-        desiredRuntimeMode: thread.runtimeMode,
+        desiredRuntimeMode,
         runtimeModeChanged,
         previousCwd: activeSession?.cwd,
         desiredCwd: effectiveCwd,

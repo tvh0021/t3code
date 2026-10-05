@@ -1,3 +1,4 @@
+import { getProviderRuntimeModes } from "@t3tools/contracts";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
@@ -158,6 +159,26 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
   const isMixed = (key: keyof ServerSettings) =>
     reference === null ||
     displayTargets.some((entry) => entry.settings[key] !== reference.settings[key]);
+  const permissionDriver =
+    displayTargets.length > 0 &&
+    displayTargets.every((target) => {
+      const selection = target.settings.defaultModelSelection;
+      if (!selection) return false;
+      return (
+        target.environment.serverConfig.providers.find(
+          (provider) => provider.instanceId === selection.instanceId,
+        )?.driver === "antigravity"
+      );
+    })
+      ? "antigravity"
+      : undefined;
+  const permissionChoices = RUNTIME_MODE_CHOICES.filter((choice) =>
+    getProviderRuntimeModes(permissionDriver).includes(choice.mode),
+  );
+  const preferredRuntimeMode = uniform("defaultRuntimeMode");
+  const effectiveRuntimeMode =
+    permissionDriver === "antigravity" ? "full-access" : preferredRuntimeMode;
+
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     label: "environment settings update",
     reportFailure: true,
@@ -301,20 +322,23 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                   <SettingsSection
                     title="Default permissions"
                     trailing={
-                      pendingWrites === 0 && uniform("defaultRuntimeMode") === null ? (
+                      pendingWrites === 0 && effectiveRuntimeMode === null ? (
                         <MixedValuesLabel projectSelected={projectSelected} />
                       ) : null
                     }
                   >
-                    {RUNTIME_MODE_CHOICES.map((choice, index) => (
+                    {permissionChoices.map((choice, index) => (
                       <ChoiceRow
                         key={choice.mode}
                         label={choice.label}
                         description={choice.description}
-                        selected={uniform("defaultRuntimeMode") === choice.mode}
+                        selected={effectiveRuntimeMode === choice.mode}
                         separated={index > 0}
                         disabled={disabledFor("defaultRuntimeMode")}
-                        onPress={() => write({ defaultRuntimeMode: choice.mode })}
+                        onPress={() => {
+                          if (choice.mode !== effectiveRuntimeMode)
+                            write({ defaultRuntimeMode: choice.mode });
+                        }}
                       />
                     ))}
                   </SettingsSection>

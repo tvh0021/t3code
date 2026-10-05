@@ -22,7 +22,12 @@ not prevent the agent from asking questions about the task.
 
 Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.
 **Auto** uses automatic review on Codex, Claude, and Cursor; providers without an equivalent,
-including OpenCode and Antigravity, fall back to asking.
+including OpenCode, fall back to asking.
+
+Antigravity always uses **Full access**, including orchestration children and resumed threads.
+Existing threads use it on their next turn. Your previous permission choice is kept for switching
+back to another provider. GPT orchestration children inherit their parent's permission mode,
+including review assignments.
 
 For Grok, **Always allow this session** remembers the matching command or tool input. Other
 actions still require approval.

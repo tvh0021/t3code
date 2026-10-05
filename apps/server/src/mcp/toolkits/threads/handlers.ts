@@ -4,6 +4,7 @@ import {
   CommandId,
   MessageId,
   ThreadId,
+  resolveChildRuntimeMode,
   type ModelSelection,
   type OrchestrationThreadShell,
   type ServerProvider,
@@ -319,6 +320,12 @@ const make = Effect.gen(function* () {
             Effect.mapError(failed("prepare fixed review snapshot")),
           );
         }
+        const runtimeMode = resolveChildRuntimeMode({
+          mode: input.mode,
+          parentRuntimeMode: parent.runtimeMode,
+          childModel: modelSelection.model,
+          childDriver: provider?.driver,
+        });
         yield* coordinate({
           type: "spawn",
           child: {
@@ -328,7 +335,7 @@ const make = Effect.gen(function* () {
             projectId: parent.projectId,
             title: input.title,
             modelSelection,
-            runtimeMode: input.mode === "review" ? "approval-required" : parent.runtimeMode,
+            runtimeMode,
             interactionMode: parent.interactionMode,
             branch: input.mode === "review" ? null : (input.branch ?? parent.branch),
             worktreePath,

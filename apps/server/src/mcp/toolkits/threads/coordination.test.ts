@@ -15,6 +15,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationCommand,
+  type RuntimeMode,
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -54,6 +55,7 @@ const client = McpSchema.McpServerClient.of({
 });
 const encodeUnknownJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeCreatedThread = Schema.decodeUnknownSync(ThreadCreatedResult);
+const antigravityInstanceId = ProviderInstanceId.make("antigravity");
 const catalog: ReadonlyArray<ServerProvider> = [
   {
     instanceId,
@@ -73,13 +75,34 @@ const catalog: ReadonlyArray<ServerProvider> = [
       capabilities: null,
     })),
   },
+  {
+    instanceId: antigravityInstanceId,
+    driver: ProviderDriverKind.make("antigravity"),
+    enabled: true,
+    installed: true,
+    version: null,
+    status: "ready",
+    auth: { status: "authenticated" },
+    checkedAt: new Date().toISOString(),
+    slashCommands: [],
+    skills: [],
+    models: ["gemini-3.8-flash-high", "gemini-3.8-flash"].map((slug) => ({
+      slug,
+      name: slug,
+      isCustom: false,
+      capabilities: null,
+    })),
+  },
 ];
 
 type CommandInput<C = OrchestrationCommand> = C extends OrchestrationCommand
   ? Omit<C, "commandId"> & { commandId?: CommandId }
   : never;
 
-const fixture = Effect.fn(function* (startReactor = true) {
+const fixture = Effect.fn(function* (
+  startReactor = true,
+  parentRuntimeMode: RuntimeMode = "full-access",
+) {
   const core = makeCoordinationTestLayer();
   const scope = yield* Scope.make();
   const context = yield* Layer.buildWithScope(
@@ -151,7 +174,7 @@ const fixture = Effect.fn(function* (startReactor = true) {
     projectId,
     title: "Parent",
     modelSelection: { instanceId, model: "gpt-6-sol" },
-    runtimeMode: "full-access",
+    runtimeMode: parentRuntimeMode,
     interactionMode: "default",
     branch: null,
     worktreePath: null,
@@ -526,4 +549,73 @@ it.effect("clears pending approval state when a cancelled child turn is interrup
       yield* app.dispose();
     }
   }),
+);
+
+it.effect(
+  "launches Gemini child threads with full-access even when parent is auto or supervised",
+  () =>
+    Effect.gen(function* () {
+      const app = yield* fixture(true, "auto");
+      try {
+        yield* app.call("start_orchestration_layer");
+
+        // 1. Sol (auto) spawns Gemini in review mode -> must be full-access
+        const geminiReviewResult = yield* app.call("spawn_child", {
+          title: "Gemini Review",
+          prompt: "Review revision",
+          mode: "review",
+          reviewRef: "HEAD",
+          modelSelection: { instanceId: antigravityInstanceId, model: "gemini-3.8-flash-high" },
+        });
+        expect(geminiReviewResult.isError).toBe(false);
+        const geminiReviewId = decodeCreatedThread(geminiReviewResult.structuredContent).threadId;
+        const geminiReviewThread = (yield* app.read()).threads.find((t) => t.id === geminiReviewId);
+        expect(geminiReviewThread?.runtimeMode).toBe("full-access");
+
+        // 2. Sol (auto) spawns Gemini in edit mode -> must be full-access
+        const geminiWorktreePath = app.path.join(app.workspace, "..", "gemini-worktree");
+        yield* app.git(app.workspace, ["worktree", "add", geminiWorktreePath, "HEAD"]);
+        const geminiEditResult = yield* app.call("spawn_child", {
+          title: "Gemini Edit",
+          prompt: "Edit files",
+          mode: "edit",
+          worktreePath: geminiWorktreePath,
+          modelSelection: { instanceId: antigravityInstanceId, model: "gemini-3.8-flash-high" },
+        });
+        expect(geminiEditResult.isError).toBe(false);
+        const geminiEditId = decodeCreatedThread(geminiEditResult.structuredContent).threadId;
+        const geminiEditThread = (yield* app.read()).threads.find((t) => t.id === geminiEditId);
+        expect(geminiEditThread?.runtimeMode).toBe("full-access");
+
+        // 3. Sol (auto) spawns GPT (Luna) in edit mode -> keeps auto
+        const lunaWorktreePath = app.path.join(app.workspace, "..", "luna-worktree");
+        yield* app.git(app.workspace, ["worktree", "add", lunaWorktreePath, "HEAD"]);
+        const lunaEditResult = yield* app.call("spawn_child", {
+          title: "Luna Edit",
+          prompt: "Edit files",
+          mode: "edit",
+          worktreePath: lunaWorktreePath,
+          modelSelection: { instanceId, model: "gpt-6-luna" },
+        });
+        expect(lunaEditResult.isError).toBe(false);
+        const lunaEditId = decodeCreatedThread(lunaEditResult.structuredContent).threadId;
+        const lunaEditThread = (yield* app.read()).threads.find((t) => t.id === lunaEditId);
+        expect(lunaEditThread?.runtimeMode).toBe("auto");
+
+        // GPT reviewers inherit the parent permission choice.
+        const lunaReviewResult = yield* app.call("spawn_child", {
+          title: "Luna Review",
+          prompt: "Review revision",
+          mode: "review",
+          reviewRef: "HEAD",
+          modelSelection: { instanceId, model: "gpt-6-luna" },
+        });
+        expect(lunaReviewResult.isError).toBe(false);
+        const lunaReviewId = decodeCreatedThread(lunaReviewResult.structuredContent).threadId;
+        const lunaReviewThread = (yield* app.read()).threads.find((t) => t.id === lunaReviewId);
+        expect(lunaReviewThread?.runtimeMode).toBe("auto");
+      } finally {
+        yield* app.dispose();
+      }
+    }),
 );

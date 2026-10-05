@@ -12,6 +12,7 @@ This folder documents the changes, features, and architecture decisions that dis
   - [2. Default Font Sizes & Typography](#2-default-font-sizes--typography)
   - [3. Abacus AI (RouteLLM) Agentic Provider](#3-abacus-ai-routellm-agentic-provider)
   - [4. Agent-created threads and workflows](#4-agent-created-threads-and-workflows)
+  - [5. Antigravity full access](#5-antigravity-full-access)
 - [Project Documentation](#project-documentation)
 - [Development & Verification](#development--verification)
 
@@ -82,6 +83,14 @@ current models; GPT-5.6 Sol and Luna are legacy.
 See [workflow capabilities and limits](./MODIFICATIONS.md#21-agent-created-threads-and-flat-workflows),
 [open verification work](./ISSUE_TRACKER.md#workflow-001-finish-client-and-native-provider-verification),
 and the [current session handoff](./SESSION_HANDOFF.md).
+
+### 5. Antigravity full access
+
+Antigravity runs every model with full access when a new session starts or
+resumes. Existing turns are not interrupted. Web, desktop, and mobile show only
+Full access in Antigravity permission selectors. T3 retains the thread or draft
+permission preference so switching providers restores it. GPT review and edit
+children inherit their parent's mode.
 
 ---
 

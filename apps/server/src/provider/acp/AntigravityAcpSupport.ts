@@ -4,7 +4,6 @@ import {
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ProviderSendTurnInput,
-  type RuntimeMode,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -87,18 +86,6 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
   );
   return yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(Effect.provide(context));
 });
-
-export function antigravityPermissionMode(runtimeMode: RuntimeMode): string {
-  switch (runtimeMode) {
-    case "full-access":
-      return "yolo";
-    case "auto-accept-edits":
-      return "auto_edit";
-    case "auto":
-    case "approval-required":
-      return "default";
-  }
-}
 
 export function antigravityModelOptions(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,

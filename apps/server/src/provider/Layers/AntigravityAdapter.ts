@@ -64,7 +64,6 @@ import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import { parsePermissionRequest, type AcpToolCallState } from "../acp/AcpRuntimeModel.ts";
 import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 import {
-  antigravityPermissionMode,
   antigravityModelOptions,
   applyAntigravityAcpModelSelection,
   buildAntigravityPrompt,
@@ -891,7 +890,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                 defaultModel: yield* options.defaultModel ?? Effect.succeed(undefined),
                 mapError: (cause) => cause,
               });
-              yield* runtime.setMode(antigravityPermissionMode(input.runtimeMode));
+              yield* runtime.setMode("yolo");
               yield* options.onSessionStarted?.(started, cwd) ?? Effect.void;
               const createdAt = yield* nowIso;
               const session: ProviderSession = {
@@ -900,7 +899,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                 threadId: input.threadId,
                 cwd,
                 status: "ready",
-                runtimeMode: input.runtimeMode,
+                runtimeMode: "full-access",
                 ...(model ? { model } : {}),
                 resumeCursor: { schemaVersion: 1, sessionId: started.sessionId },
                 createdAt,
@@ -1114,7 +1113,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
             model,
             mapError: (cause) => cause,
           });
-          yield* context.runtime.setMode(antigravityPermissionMode(context.session.runtimeMode));
+          yield* context.runtime.setMode("yolo");
           context.session = {
             ...context.session,
             status: "running",

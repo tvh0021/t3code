@@ -374,6 +374,8 @@ it.layer(layer)("AntigravityAdapter", (it) => {
           resumeCursor: original.resumeCursor,
         });
         expect(resumed.model).toBe(nativeAlternative);
+        expect(original.runtimeMode).toBe("full-access");
+        expect(resumed.runtimeMode).toBe("full-access");
         yield* adapter.sendTurn({ threadId, input: "Reply with one short line." });
         yield* Deferred.await(completed);
         expect(commands).toEqual(["plan", "logout", "plan", "logout"]);
@@ -398,7 +400,22 @@ it.layer(layer)("AntigravityAdapter", (it) => {
           requests
             .filter((request) => request.method === "session/set_config_option")
             .map((request) => request.params),
-        ).toContainEqual({ sessionId: "mock-session-1", configId: "mode", value: "auto_edit" });
+        ).toContainEqual({ sessionId: "mock-session-1", configId: "mode", value: "yolo" });
+      }),
+  );
+
+  it.effect.each(["approval-required", "auto", "auto-accept-edits", "full-access"] as const)(
+    "starts the Antigravity harness with full access for preferred mode %s",
+    (runtimeMode) =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness();
+        const session = yield* h.adapter.startSession({
+          threadId,
+          cwd: process.cwd(),
+          runtimeMode,
+        });
+        expect(session.runtimeMode).toBe("full-access");
+        expect(h.calls).toContain("mode:yolo");
       }),
   );
 
@@ -427,10 +444,10 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       expect(h.calls).toEqual([
         "start",
         `model:${nativeAlternative}`,
-        "mode:auto_edit",
+        "mode:yolo",
         "start",
         `model:${nativeAlternative}`,
-        "mode:auto_edit",
+        "mode:yolo",
       ]);
       expect(h.commandUpdates.at(-1)?.map((command) => command.name)).toEqual(["plan", "logout"]);
       expect(h.adapter.capabilities.supportsConversationRollback).toBe(false);
@@ -700,7 +717,7 @@ it.layer(layer)("AntigravityAdapter", (it) => {
         "cancel:1",
         "drained:1",
         `model:${nativeAlternative}`,
-        "mode:default",
+        "mode:yolo",
         "prompt:2",
       ]);
       yield* Deferred.succeed(replacement.result, { stopReason: "end_turn" });

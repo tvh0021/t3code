@@ -5,7 +5,6 @@ import {
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ChatAttachment,
-  type RuntimeMode,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -16,7 +15,6 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import {
   ANTIGRAVITY_MAX_TEXT_ATTACHMENT_BYTES,
-  antigravityPermissionMode,
   applyAntigravityAcpModelSelection,
   buildAntigravityPrompt,
 } from "./AntigravityAcpSupport.ts";
@@ -169,20 +167,6 @@ describe("applyAntigravityAcpModelSelection", () => {
 
       expect(error).toEqual({ operation: "select-model", cause: nativeError });
     }),
-  );
-});
-
-describe("antigravityPermissionMode", () => {
-  it.each([
-    { runtimeMode: "approval-required", nativeMode: "default" },
-    { runtimeMode: "auto", nativeMode: "default" },
-    { runtimeMode: "auto-accept-edits", nativeMode: "auto_edit" },
-    { runtimeMode: "full-access", nativeMode: "yolo" },
-  ] satisfies ReadonlyArray<{ runtimeMode: RuntimeMode; nativeMode: string }>)(
-    "maps $runtimeMode to $nativeMode",
-    ({ runtimeMode, nativeMode }) => {
-      expect(antigravityPermissionMode(runtimeMode)).toBe(nativeMode);
-    },
   );
 });
 

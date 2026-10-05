@@ -88,3 +88,11 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
 - Updated the Zed ACP worker tool names and permissions. Rebuilt the worker binary and verified a Zed review child report.
 - Verified a live quota handoff from a Codex Luna child at 95% to a Gemini Flash High child. The Gemini child reported, and the parent resumed and completed the layer.
 - Set the web, desktop, and server package versions to 0.1.1 so About shows the release version.
+
+### 2026-10-05: Personal 0.1.2
+
+- Antigravity starts every model with full access on new sessions and resumes. Existing turns keep running. Web, desktop, and mobile permission selectors show only Full access for Antigravity. The saved thread or draft preference returns when users switch providers. Provider policy compares effective session modes to avoid redundant restarts. GPT review and edit children inherit their parent's mode.
+- Removed model-name permission overrides from coordination policy. The provider boundary now owns that decision.
+- Two real Zed and Sonnet 5 probes created files in isolated workspaces with zero approval requests under both Supervised and Full access. This covers file creation only, not terminal permissions. No Zed code changed.
+- Kept the current Zed bridge after reviewing Delta's official docs. Delta documents its CLI for app launch and authentication. Its planned ACP work brings external agents into Delta. Its safety docs say Delta has no permission system or sandbox. These sources do not establish an agent-side ACP path for T3. See the [CLI docs](https://delta.dev/docs/installation), [roadmap](https://delta.dev/roadmap), and [agentic safety docs](https://delta.dev/docs/privacy-and-security/agentic-safety).
+- Focused verification passed 257 tests and scoped contracts, server, and mobile typechecks. An Antigravity subprocess probe covered all four saved permission preferences on initial start and three resumes. Web typechecking still reports 11 pre-existing HAST errors in untouched files. No authenticated Google inference or browser/native-mobile UI pass was run.
