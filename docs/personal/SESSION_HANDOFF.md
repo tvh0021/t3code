@@ -223,6 +223,12 @@ and Rust formatting checks. The older direct-binary streaming harness starts
 without a selected model and fails with `no language model configured`. Its
 other five checks passed. This harness bypasses T3 provider discovery.
 
+Built Personal 0.1.2 for macOS arm64 from a detached checkout at `cd7dbee84`,
+excluding unrelated local edits. The DMG and ZIP are in the ignored
+`release/zed-catalog-20261005/` directory. T3's change is on
+`origin/feat/zed-integration`; the companion bridge commit `56ef4a4236` is on
+`origin/integration/zed-abacus`.
+
 The installed Personal app and its running server remain untouched. Install
 the rebuilt app and restart its server only when authorized. Preserve the
 companion checkout's unrelated README review marker and T3's unrelated

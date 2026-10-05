@@ -107,3 +107,6 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
   typechecking, targeted lint, bridge compilation, and Rust formatting. The old
   direct-binary streaming harness fails with `no language model configured`; it
   does not use the changed provider discovery path.
+- Rebuilt Personal 0.1.2 for macOS arm64 in an isolated checkout. The DMG and ZIP
+  are under `release/zed-catalog-20261005/`. The installed app and running server
+  remain unchanged.
