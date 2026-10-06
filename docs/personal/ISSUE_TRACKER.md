@@ -1,6 +1,6 @@
 # Issue tracker
 
-Updated September 27, 2026.
+Updated October 6, 2026.
 
 ## Accepted mobile limitation
 
@@ -262,6 +262,21 @@ issues. Mobile, remote connections, cancellation, and quota exhaustion were not
 tested. No app restart or configuration change was required.
 
 ## Resolved issues
+
+### ZED-005: Complex tools crash or stall native subagents
+
+Status: Resolved October 6, 2026 in companion Zed commit `317b394ae4`.
+
+The live thread reported `ACP transport operation read-process-exit-status failed`.
+The crash report showed a missing headless web-search registry. Native child
+sessions also lacked event subscriptions, so child approvals could wait without
+reaching T3. Streamed tool inputs remained stuck at their first fragment.
+
+The bridge initializes web search, subscribes to child and nested-child sessions,
+forwards pending approvals, routes answers to the child, and emits current tool
+details with duplicate suppression. Seven focused Rust tests passed. A real
+Sonnet 5.5 child search and parent file read completed normally; all 31 captured
+ACP messages passed T3's schemas. Website 403 responses are a separate restriction.
 
 ### CHAT-002: Show context-window usage in the composer
 

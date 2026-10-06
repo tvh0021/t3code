@@ -245,8 +245,9 @@ Mixing ChatLLM into the top-level token and cost figures skewed subscription tok
 
 ## 19. Zed ACP integration status
 
-Status: Partial. The adapter is present for investigation, but Zed ACP is not
-release-ready. The changelog records the verified streaming repair only.
+Status: Partial. Streaming, permissions, model discovery, and native subagent
+tools have focused verification. Account billing and broader workflow/client
+coverage remain open.
 
 ### Verification Scope
 
@@ -288,6 +289,10 @@ release-ready. The changelog records the verified streaming repair only.
 
 ### Current status
 
+- Personal 0.1.3 requires companion Zed commit `317b394ae4`. Its headless runtime
+  initializes web search and forwards native child and nested-child approvals
+  and tool updates. A real Sonnet 5.5 child search and parent file read completed
+  with one child approval, and all 31 captured messages passed T3 ACP schemas.
 - Zed streaming, permission, and context-window usage flows are verified.
 - Zed account spend is reported as unavailable. T3's stored native credential
   can read `/client/users/me`, but Zed's billing routes return `401` because

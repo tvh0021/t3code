@@ -233,3 +233,20 @@ The installed Personal app and its running server remain untouched. Install
 the rebuilt app and restart its server only when authorized. Preserve the
 companion checkout's unrelated README review marker and T3's unrelated
 Antigravity and issue-tracker edits.
+
+## Zed complex-tool repair and Personal 0.1.3, October 6
+
+Inspected the failing live thread and crash report. Native web search crashed
+because its registry was missing in the headless runtime. Child approvals were
+not subscribed or forwarded, and streamed tool details could remain incomplete.
+Companion Zed commit `317b394ae4` fixes those paths and propagates prompt errors.
+
+Seven focused Rust tests passed repeatedly. The rebuilt configured bridge
+completed a real Sonnet 5.5 turn with a native child web search, one child
+approval, and a parent file read. All 31 captured ACP messages passed T3 schemas.
+Temporary copied credentials were removed after the isolated test. Website 403
+responses remain a separate website restriction.
+
+Personal 0.1.3 packages the committed T3 source, excluding pending Antigravity
+edits. The companion bridge remains configured separately; the desktop installer
+does not bundle it. The user authorized publication and reinstallation.

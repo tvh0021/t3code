@@ -110,3 +110,11 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
 - Rebuilt Personal 0.1.2 for macOS arm64 in an isolated checkout. The DMG and ZIP
   are under `release/zed-catalog-20261005/`. The installed app and running server
   remain unchanged.
+
+### 2026-10-06: Personal 0.1.3
+
+- Fixed the companion Zed bridge crash when native tools call `search_web` by initializing the headless web-search registry and providers.
+- Forwarded native subagent tool updates and approvals, including approvals already waiting when a child or nested child is attached. Permission answers reach the requesting child. Child tool IDs are distinct, and child text does not replace the parent answer.
+- Kept tool titles, inputs, output, content, and locations current as calls stream. Identical snapshots are suppressed. Prompt failures return an ACP error instead of a successful completion.
+- Seven bridge tests passed, including the startup, permission, nested-child, and streamed-tool regressions. A real Sonnet 5.5 turn completed a child web search and parent file read, including one child approval; all 31 captured messages passed T3's ACP schemas.
+- Requires companion Zed commit `317b394ae4` on `integration/zed-abacus`. The macOS arm64 desktop release excludes unrelated pending Antigravity edits. Website `403 Access Denied` responses remain upstream website restrictions.
