@@ -302,6 +302,33 @@ const layer = ServerConfig.layerTest(process.cwd(), {
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(layer)("AntigravityAdapter", (it) => {
+  it.effect("routes native task notifications into the work trace without ending the prompt", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      yield* h.adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+      const sending = yield* h.adapter
+        .sendTurn({ threadId, input: "Build" })
+        .pipe(Effect.forkChild);
+      const prompt = yield* h.nextPrompt;
+      yield* h.emitNative({
+        _tag: "ContentDelta",
+        text: `<task_notification>\nTask ${nativeSessionId}/task-113 completed with status: SUCCESS.\nTask output:\nBuild finished.\n</task_notification>`,
+        rawPayload: {},
+      });
+      yield* h.drainEvents;
+      expect(h.seen.filter((event) => event.type === "content.delta")).toHaveLength(0);
+      expect(h.seen.find((event) => event.type === "task.completed")?.payload).toMatchObject({
+        taskId: `${nativeSessionId}/task-113`,
+        taskType: "local_bash",
+        status: "completed",
+        summary: "Build finished.",
+      });
+      expect(sending.pollUnsafe()).toBeUndefined();
+      yield* Deferred.succeed(prompt.result, { stopReason: "end_turn" });
+      yield* Fiber.join(sending);
+    }),
+  );
+
   it.effect(
     "runs native auth, resume, models, commands, and streaming through the ACP transport",
     () =>

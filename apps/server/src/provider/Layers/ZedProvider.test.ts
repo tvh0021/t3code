@@ -21,6 +21,12 @@ describe("buildInitialZedProviderSnapshot", () => {
     Effect.gen(function* () {
       const snapshot = yield* buildInitialZedProviderSnapshot(decodeSettings({ enabled: true }));
 
+      expect(snapshot).toMatchObject({
+        installed: false,
+        status: "warning",
+        auth: { status: "unknown" },
+      });
+
       expect(snapshot.usageLimits).toMatchObject({
         windows: [],
         unavailable: {

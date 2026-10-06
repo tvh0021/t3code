@@ -8,6 +8,7 @@ import {
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import { mergeProviderSnapshot } from "./Layers/ProviderRegistry.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Logger from "effect/Logger";
 
@@ -297,4 +298,73 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
       fallbackCodex,
     );
   });
+});
+
+const zedModels = (slugs: string[]) =>
+  slugs.map((slug) => ({
+    slug,
+    name: slug,
+    isCustom: false,
+    capabilities: emptyCapabilities,
+  }));
+
+it("replaces superseded Zed models after hosted discovery", () => {
+  const previous = makeProvider(ProviderDriverKind.make("zed"), {
+    models: zedModels(["zed.dev/claude-sonnet-5", "zed.dev/gpt-5.6-luna"]),
+  });
+  const refreshed = {
+    ...previous,
+    models: zedModels(["zed.dev/claude-sonnet-5-5", "zed.dev/gpt-6-luna"]),
+  };
+  assert.deepStrictEqual(mergeProviderSnapshot(previous, refreshed).models, refreshed.models);
+});
+
+it("hydrates the discovered Zed catalog without resurrecting seed models", () => {
+  const fallback = makeProvider(ProviderDriverKind.make("zed"), {
+    models: zedModels(["zed.dev/claude-sonnet-5", "zed.dev/gpt-5.6-luna"]),
+  });
+  const cached = {
+    ...fallback,
+    models: zedModels(["zed.dev/claude-sonnet-5-5", "zed.dev/gpt-6-luna"]),
+  };
+  assert.deepStrictEqual(
+    hydrateCachedProvider({ fallbackProvider: fallback, cachedProvider: cached }).models,
+    cached.models,
+  );
+});
+
+it("preserves Zed custom settings and the previous catalog when refresh fails", () => {
+  const discovered = makeProvider(ProviderDriverKind.make("zed"), {
+    models: zedModels(["zed.dev/claude-sonnet-5-5", "zed.dev/gpt-6-luna"]),
+  });
+  const custom = { ...zedModels(["custom"])[0]!, isCustom: true };
+  const fallback = { ...discovered, models: [...zedModels(["seed"]), custom] };
+  assert.deepStrictEqual(
+    hydrateCachedProvider({ fallbackProvider: fallback, cachedProvider: discovered }).models,
+    [...discovered.models, custom],
+  );
+  const failed = { ...discovered, status: "error" as const, models: [] };
+  assert.deepStrictEqual(mergeProviderSnapshot(discovered, failed).models, discovered.models);
+});
+
+it("keeps cached Zed discovery through boot seeding and a failed initial probe", () => {
+  const cached = makeProvider(ProviderDriverKind.make("zed"), {
+    models: zedModels(["zed.dev/claude-sonnet-5-5", "zed.dev/gpt-6-luna"]),
+  });
+  const custom = { ...zedModels(["custom"])[0]!, isCustom: true };
+  const pending = {
+    ...cached,
+    installed: false,
+    status: "warning" as const,
+    models: [...zedModels(["seed"]), custom],
+  };
+  const hydrated = hydrateCachedProvider({ fallbackProvider: pending, cachedProvider: cached });
+  const seeded = mergeProviderSnapshot(hydrated, pending);
+  assert.deepStrictEqual(seeded.models, [...cached.models, custom]);
+  const failed = { ...pending, installed: true, status: "error" as const };
+  assert.deepStrictEqual(mergeProviderSnapshot(seeded, failed).models, [...cached.models, custom]);
+  assert.deepStrictEqual(
+    mergeProviderSnapshot(seeded, { ...failed, models: zedModels(["seed"]) }).models,
+    cached.models,
+  );
 });

@@ -103,7 +103,12 @@ export function upsertProviderWorkspaceSnapshot(
 const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean => {
   const isAntigravity = provider.driver === ProviderDriverKind.make("antigravity");
   const isCodex = provider.driver === ProviderDriverKind.make("codex");
-  if (!isAntigravity && !isCodex && provider.driver !== ProviderDriverKind.make("opencode")) {
+  if (
+    !isAntigravity &&
+    !isCodex &&
+    provider.driver !== ProviderDriverKind.make("opencode") &&
+    provider.driver !== ProviderDriverKind.make("zed")
+  ) {
     return true;
   }
 
@@ -140,6 +145,16 @@ const mergeProviderModels = (
   // current list, so a custom model missing from `nextModels` was removed by
   // the user and must not be resurrected from the previous snapshot.
   const retainablePreviousModels = previousModels.filter((model) => !model.isCustom);
+
+  // A pending or failed Zed probe carries seed models, not a new inventory.
+  // Keep the discovered inventory while applying the current custom settings.
+  if (
+    provider.driver === "zed" &&
+    shouldRetainMissingModels &&
+    retainablePreviousModels.length > 0
+  ) {
+    return [...retainablePreviousModels, ...nextModels.filter((model) => model.isCustom)];
+  }
 
   if (shouldRetainMissingModels && nextModels.length === 0 && retainablePreviousModels.length > 0) {
     return retainablePreviousModels;

@@ -155,10 +155,11 @@ export function buildInitialZedProviderSnapshot(
       models,
       slashCommands: ZED_SLASH_COMMANDS,
       probe: {
-        installed: true,
+        installed: false,
         version: null,
-        status: "ready",
-        auth: { status: "authenticated" },
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Zed discovery has not completed yet.",
         usageLimits: unavailableZedAccountUsage(checkedAt),
       },
     });

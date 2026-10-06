@@ -16,6 +16,32 @@ const TOOL_TEXT_LIMIT = 8_000;
 const TOOL_TEXT_TRUNCATED = "[Earlier output truncated]\n\n";
 const QUESTION_LABEL_LIMIT = 512;
 
+/** Recognizes complete native task-result messages without treating quoted markup as a task. */
+export function parseAntigravityTaskNotification(text: string, sessionId: string) {
+  const match =
+    /^<task_notification>\s*Task ([^\s<>]+) completed with status: (SUCCESS|FAILED|CANCELLED)\.\s*Task output:\r?\n([\s\S]*?)\s*<\/task_notification>$/.exec(
+      text.trim(),
+    );
+  if (!match) return undefined;
+  const [, taskId, status, output] = match;
+  if (
+    !taskId?.startsWith(`${sessionId}/task-`) ||
+    !/^\d+$/.test(taskId.slice(sessionId.length + 6))
+  ) {
+    return undefined;
+  }
+  return {
+    taskId,
+    status:
+      status === "SUCCESS"
+        ? ("completed" as const)
+        : status === "FAILED"
+          ? ("failed" as const)
+          : ("stopped" as const),
+    summary: output?.trim() ? boundText(output.trim()) : undefined,
+  };
+}
+
 const NativeToolFields = Schema.Struct({
   command: Schema.optional(Schema.String),
   CommandLine: Schema.optional(Schema.String),

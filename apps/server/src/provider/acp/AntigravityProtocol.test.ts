@@ -13,12 +13,51 @@ import {
   makeAntigravityUserInputResponse,
   normalizeAntigravitySessionUpdate,
   normalizeAntigravityToolCall,
+  parseAntigravityTaskNotification,
   sanitizeAntigravityToolPayload,
   selectAntigravityPermissionOptionId,
 } from "./AntigravityProtocol.ts";
 import { mergeToolCallState, parseSessionUpdateEvent } from "./AcpRuntimeModel.ts";
 
 const isSessionNotification = Schema.is(EffectAcpSchema.SessionNotification);
+
+describe("native Antigravity task notifications", () => {
+  const notification = (status: string, output = "Build finished.", sessionId = "session-1") =>
+    `<task_notification>\nTask ${sessionId}/task-113 completed with status: ${status}.\nTask output:\n${output}\n</task_notification>`;
+
+  it.each([
+    ["SUCCESS", "completed"],
+    ["FAILED", "failed"],
+    ["CANCELLED", "stopped"],
+  ])("maps %s into a task result", (nativeStatus, status) => {
+    expect(parseAntigravityTaskNotification(notification(nativeStatus), "session-1")).toEqual({
+      taskId: "session-1/task-113",
+      status,
+      summary: "Build finished.",
+    });
+  });
+
+  it("bounds task output while retaining the final lines", () => {
+    const task = parseAntigravityTaskNotification(
+      notification("SUCCESS", `${"x".repeat(32_000)}\nBuild finished.`),
+      "session-1",
+    );
+    expect(task?.summary?.length).toBeLessThan(8_100);
+    expect(task?.summary?.endsWith("Build finished.")).toBe(true);
+  });
+
+  it("preserves ordinary, quoted, partial, unknown, and foreign-session messages", () => {
+    for (const text of [
+      "Build finished.",
+      `Here is the notification:\n${notification("SUCCESS")}`,
+      notification("SUCCESS").replace("</task_notification>", ""),
+      notification("PENDING"),
+      notification("SUCCESS", "Build finished.", "other-session"),
+    ]) {
+      expect(parseAntigravityTaskNotification(text, "session-1")).toBeUndefined();
+    }
+  });
+});
 
 describe("native Antigravity subagent tools", () => {
   it("recognizes only native invocation titles and excludes MCP tools", () => {

@@ -36,6 +36,28 @@ reopened the app. The subsequent installed Zed test passed.
 Verify cold launch with retained projects and workflows. A slow background task
 should not leave the app without a usable window after the backend becomes ready.
 
+### PERMISSION-001: Orchestration triggers unrelated macOS folder prompts
+
+Status: Open. Observed September 28, 2026.
+
+While a T3 orchestration layer runs, macOS repeatedly asks for access to
+Downloads, Documents, Desktop, and Apple Music. The agent should already have
+access to the folders explicitly granted for the task. These unrelated prompts
+interrupt orchestration.
+
+Find which process makes each request and why it reaches folders outside the
+task's configured access. Starting orchestration should not trigger requests for
+unrelated locations.
+
+#### Acceptance criteria
+
+- Starting or running orchestration does not prompt for access to unrelated
+  folders such as Downloads, Documents, Desktop, or Apple Music.
+- Parent and child agents can access the folders explicitly granted for the
+  task.
+- A prompt for another protected location appears only when a task operation
+  actually needs that location.
+
 ### WORKFLOW-001: Finish client and native-provider verification
 
 Status: Isolated desktop workflow verified; mobile and remote flows pending.

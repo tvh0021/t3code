@@ -300,3 +300,27 @@ Its signature matches the repaired installed app; deep signature and DMG
 integrity checks passed. GitHub's uploaded digests match the local SHA256SUMS.
 The installed app retains the previously verified launch repair. Publishing
 the versioned release did not require another app restart.
+
+## Provider verification and Personal 0.1.5, October 6
+
+Verified the pending Antigravity task reporting, Zed catalog replacement, and ACP
+error details through the real server WebSocket RPC interface. All state and
+provider executables were isolated under `/private/tmp/t3-pending-verify`; no
+live database or provider credentials were used. The controlled ACP process
+produced a task result, ordinary text, foreign-session markup, and a prompt that
+ignored cancellation. The client received the expected persisted task activity,
+chat content, and complete cancellation-timeout explanation.
+
+The restart probe exposed a gap missed by direct hydration tests. A Zed startup
+snapshot overwrote cached discovered models with seeds before discovery. The
+initial snapshot now reports a pending probe, and pending or failed updates
+retain the discovered built-in inventory while applying current custom settings.
+A new regression test covers hydration, boot seeding, failed probing, and custom
+model removal. The repeated real-server restart probe passed with discovery
+forced to fail.
+
+All seven runtime probes passed. Evidence is retained in
+`/private/tmp/t3-pending-verify/evidence/verification.json`. Six focused suites
+passed 155 tests; scoped server typechecking and targeted lint passed. Live
+Google inference, mobile UI, and remote connections remain unverified. The
+folder-access orchestration issue is documentation only and remains open.

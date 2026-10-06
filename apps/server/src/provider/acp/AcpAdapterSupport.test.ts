@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as EffectAcpErrors from "effect-acp/errors";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind, ThreadId } from "@t3tools/contracts";
 
 import {
   acpPermissionOutcome,
@@ -9,6 +9,23 @@ import {
 } from "./AcpAdapterSupport.ts";
 
 describe("AcpAdapterSupport", () => {
+  it("explains a cancellation timeout instead of hiding the transport detail", () => {
+    const error = mapAcpToAdapterError(
+      ProviderDriverKind.make("antigravity"),
+      ThreadId.make("thread-1"),
+      "session/prompt",
+      new EffectAcpErrors.AcpTransportError({
+        operation: "call-rpc",
+        method: "session/cancel",
+        detail: "The ACP agent did not finish cancellation. Its process was stopped.",
+        cause: undefined,
+      }),
+    );
+    expect(error.message).toContain(
+      "The ACP agent did not finish cancellation. Its process was stopped.",
+    );
+  });
+
   it("maps ACP approval decisions to permission outcomes", () => {
     expect(acpPermissionOutcome("accept")).toBe("allow-once");
     expect(acpPermissionOutcome("acceptForSession")).toBe("allow-always");

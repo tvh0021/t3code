@@ -80,6 +80,7 @@ import {
   isAntigravityUserInputRequest,
   makeAntigravityUserInputResponse,
   normalizeAntigravityToolCall,
+  parseAntigravityTaskNotification,
   sanitizeAntigravityToolPayload,
   selectAntigravityPermissionOptionId,
 } from "../acp/AntigravityProtocol.ts";
@@ -631,6 +632,25 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
         return;
       case "ThoughtDelta":
       case "ContentDelta":
+        if (event._tag === "ContentDelta") {
+          const task = parseAntigravityTaskNotification(event.text, context.nativeSessionId);
+          if (task) {
+            yield* emit({
+              type: "task.completed",
+              ...(yield* stamp),
+              provider: PROVIDER,
+              threadId: context.threadId,
+              turnId: context.activeTurnId,
+              payload: {
+                taskId: RuntimeTaskId.make(task.taskId),
+                taskType: "local_bash",
+                status: task.status,
+                ...(task.summary ? { summary: task.summary } : {}),
+              },
+            });
+            return;
+          }
+        }
         yield* emit(
           makeAcpContentDeltaEvent({
             stamp: yield* stamp,

@@ -127,3 +127,11 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
 - Automatic Keychain requests no longer interrupt launch with password dialogs when an old or locked credential is inaccessible. Encryption stays enabled; explicit browser-cookie imports can still request Keychain approval.
 - Installed the repaired app and verified two normal launches with existing projects and threads. macOS logs showed no Documents or Keychain prompts. Passed 107 focused tests, desktop typechecking, targeted lint, and signature verification.
 - This patch excludes pending Antigravity changes. The previously recorded cold-start timeout remains a separate issue.
+
+### 2026-10-06: Personal 0.1.5
+
+- Antigravity native task results now appear in the work trace without ending the active prompt. Ordinary text, quoted or incomplete markup, and foreign-session notifications remain chat content.
+- Zed catalog refresh removes retired built-in models while preserving custom settings. Fixed a restart gap found during runtime verification: a pending or failed startup probe now preserves the cached discovered inventory instead of restoring old seed models.
+- ACP provider errors include transport details, including the explanation when an agent ignores cancellation and its process is stopped.
+- Verified seven probes through a real isolated server and WebSocket client using controlled ACP executables. Task reporting, ordinary replies, foreign-session content, cancellation errors, successful and failed catalog refreshes, and restart hydration passed. All 155 focused tests, server typechecking, and targeted lint passed. Live Google inference, mobile UI, and remote connections were not exercised.
+- Recorded the separate open issue for orchestration requesting access to unrelated macOS folders. Corrected its placement in the issue notes; this release does not resolve that issue.
