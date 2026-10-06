@@ -291,3 +291,12 @@ and threads. macOS logs recorded no Documents prompt or SecurityAgent activity
 for those launches. Focused verification passed 107 tests, desktop typechecking,
 targeted lint, native interaction-flag checks, and deep signature verification.
 Personal 0.1.4 contains this launch fix and excludes pending Antigravity edits.
+
+Published Personal 0.1.4 at
+https://github.com/tvh0021/t3code/releases/tag/personal-v0.1.4 from commit
+`b67039843`. The macOS arm64 DMG and ZIP were built from an isolated snapshot
+of that commit. The extracted app reports 0.1.4 and includes the launch fix.
+Its signature matches the repaired installed app; deep signature and DMG
+integrity checks passed. GitHub's uploaded digests match the local SHA256SUMS.
+The installed app retains the previously verified launch repair. Publishing
+the versioned release did not require another app restart.
