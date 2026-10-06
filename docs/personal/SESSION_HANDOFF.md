@@ -324,3 +324,11 @@ All seven runtime probes passed. Evidence is retained in
 passed 155 tests; scoped server typechecking and targeted lint passed. Live
 Google inference, mobile UI, and remote connections remain unverified. The
 folder-access orchestration issue is documentation only and remains open.
+
+Personal 0.1.5 is published at
+https://github.com/tvh0021/t3code/releases/tag/personal-v0.1.5 from commit
+`b1061c8e1`. The isolated-build macOS arm64 DMG and ZIP passed signature and
+archive integrity checks. The packaged app reports 0.1.5 and includes the
+launch, task-reporting, and Zed startup repairs. Its signing identity matches
+0.1.4. Uploaded artifact digests match the local SHA256SUMS. The release has not
+replaced the currently running installed app.
