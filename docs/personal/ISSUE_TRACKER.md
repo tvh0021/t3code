@@ -23,6 +23,19 @@ name.
 
 ## Open issues
 
+### DESKTOP-001: Slow backend startup exceeds the window readiness timeout
+
+Status: Open. Observed during Personal 0.1.3 reinstallation, October 6, 2026.
+
+The desktop readiness probe timed out after 60 seconds. Server startup spent
+about 60 seconds in coordination-reactor startup and another 60 seconds in
+project auto-pull, becoming ready after about 120 seconds. The server eventually
+responded as 0.1.3, but the desktop window remained unavailable until the user
+reopened the app. The subsequent installed Zed test passed.
+
+Verify cold launch with retained projects and workflows. A slow background task
+should not leave the app without a usable window after the backend becomes ready.
+
 ### WORKFLOW-001: Finish client and native-provider verification
 
 Status: Isolated desktop workflow verified; mobile and remote flows pending.

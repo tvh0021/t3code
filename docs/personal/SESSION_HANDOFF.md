@@ -229,10 +229,10 @@ excluding unrelated local edits. The DMG and ZIP are in the ignored
 `origin/feat/zed-integration`; the companion bridge commit `56ef4a4236` is on
 `origin/integration/zed-abacus`.
 
-The installed Personal app and its running server remain untouched. Install
-the rebuilt app and restart its server only when authorized. Preserve the
-companion checkout's unrelated README review marker and T3's unrelated
-Antigravity and issue-tracker edits.
+The October 5 build did not replace the installed app. Personal 0.1.3 superseded
+those artifacts on October 6. Preserve the companion checkout's unrelated README
+review marker and cloud-model edits, and T3's pending Antigravity and issue-tracker
+edits.
 
 ## Zed complex-tool repair and Personal 0.1.3, October 6
 
@@ -250,3 +250,23 @@ responses remain a separate website restriction.
 Personal 0.1.3 packages the committed T3 source, excluding pending Antigravity
 edits. The companion bridge remains configured separately; the desktop installer
 does not bundle it. The user authorized publication and reinstallation.
+
+Personal 0.1.3 is published at
+https://github.com/tvh0021/t3code/releases/tag/personal-v0.1.3 and installed in
+`/Applications/T3 Code - Personal.app`. Its archive matches the verified ZIP;
+About shows `0.1.3 (39dac3cbf8f9)`. The previous app is retained at
+`/private/tmp/t3-personal-before-0.1.3/T3 Code - Personal.app`.
+
+After the user reopened the app, an installed desktop test with Zed Sonnet 5.5
+and Supervised mode completed a parent file read, native child web search,
+forwarded child approval, and child completion. The search returned five results.
+A second turn read the file again and returned `ZED_INSTALLED_013_OK`. Persisted
+tool events show four completed calls, one resolved approval, and a ready session
+with no error. Evidence is at
+`/private/tmp/t3-zed-installed-verification/evidence/verification.json`; the
+retained thread is `6fc5cf89-0115-41ef-8088-38c4fa7fe162`.
+
+Initial startup took about 120 seconds and exceeded the desktop's 60-second
+readiness timeout. The backend eventually responded as 0.1.3, and reopening the
+app restored its window. Cold-start timing remains open as DESKTOP-001. This
+verification does not cover mobile, remote connections, or T3 orchestration layers.
