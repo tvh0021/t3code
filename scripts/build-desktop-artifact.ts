@@ -2691,7 +2691,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           schemes: ["t3code", "t3code-dev"],
         },
       ],
-      ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
+      sign: path.join(
+        repoRoot,
+        signed ? "scripts/sign-macos.ts" : "scripts/sign-macos-personal.ts",
+      ),
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,

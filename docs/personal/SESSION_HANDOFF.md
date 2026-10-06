@@ -270,3 +270,24 @@ Initial startup took about 120 seconds and exceeded the desktop's 60-second
 readiness timeout. The backend eventually responded as 0.1.3, and reopening the
 app restored its window. Cold-start timing remains open as DESKTOP-001. This
 verification does not cover mobile, remote connections, or T3 orchestration layers.
+
+## macOS launch permissions and Personal 0.1.4, October 6
+
+The Personal installer used ad hoc signing, so each build changed the identity
+recorded by macOS for Documents permissions and Keychain access. Logs confirmed
+that saved access rules referenced previous executable hashes.
+
+Personal builds now retain a local signing certificate and private key under
+`~/Library/Application Support/T3 Code Personal Signing`, with restricted file
+permissions. Signing uses a temporary Keychain that is removed afterward. No
+login Keychain entries or certificate trust settings were changed.
+
+Automatic Keychain access is noninteractive before Electron becomes ready.
+Inaccessible keys return an error without a password dialog. Explicit browser
+cookie imports temporarily allow user interaction. Encryption remains enabled.
+
+The repaired installed app completed two normal launches with existing projects
+and threads. macOS logs recorded no Documents prompt or SecurityAgent activity
+for those launches. Focused verification passed 107 tests, desktop typechecking,
+targeted lint, native interaction-flag checks, and deep signature verification.
+Personal 0.1.4 contains this launch fix and excludes pending Antigravity edits.

@@ -28,6 +28,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { LinuxBrowserSecretPath } from "./LinuxBrowserSecret.ts";
+import { withKeychainUserInteraction } from "../../electron/MacKeychain.ts";
 
 const KEY_SALT = "saltysalt";
 const KEY_LENGTH = 16;
@@ -108,7 +109,7 @@ const readKeychainSecret = Effect.fn("ChromiumKeys.readKeychainSecret")(function
     catch: (cause) => new ChromiumKeyError({ reason: "keychainUnavailable", cause }),
   });
   const secret = yield* Effect.try({
-    try: () => new Keyring.Entry(service, account).getPassword(),
+    try: () => withKeychainUserInteraction(() => new Keyring.Entry(service, account).getPassword()),
     catch: (cause) => {
       const message = String((cause as { message?: unknown } | undefined)?.message ?? "");
       // Distinguish the causes rather than reporting "approve the prompt" for

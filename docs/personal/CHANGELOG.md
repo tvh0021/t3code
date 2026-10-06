@@ -120,3 +120,10 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
 - Requires companion Zed commit `317b394ae4` on `integration/zed-abacus`. The macOS arm64 desktop release excludes unrelated pending Antigravity edits. Website `403 Access Denied` responses remain upstream website restrictions.
 
 - Published the macOS arm64 DMG and ZIP, reinstalled Personal, and confirmed About reports `0.1.3 (39dac3cbf8f9)`. In the installed app, a supervised Sonnet 5.5 parent read and native child search completed with one resolved child approval. A second turn read the fixture successfully. The session returned to ready with no error. Initial startup exceeded the desktop readiness timeout; reopening restored the window, and cold-start timing remains tracked as DESKTOP-001.
+
+### 2026-10-06: Personal 0.1.4
+
+- Fixed repeated macOS Documents permission requests after installing a new Personal build. Builds now retain a local signing identity instead of tying permissions to a changing executable hash.
+- Automatic Keychain requests no longer interrupt launch with password dialogs when an old or locked credential is inaccessible. Encryption stays enabled; explicit browser-cookie imports can still request Keychain approval.
+- Installed the repaired app and verified two normal launches with existing projects and threads. macOS logs showed no Documents or Keychain prompts. Passed 107 focused tests, desktop typechecking, targeted lint, and signature verification.
+- This patch excludes pending Antigravity changes. The previously recorded cold-start timeout remains a separate issue.

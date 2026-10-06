@@ -132,7 +132,8 @@ Runtime-discovered entrypoints and dependency exceptions belong in [knip.jsonc](
 
 ## Desktop artifacts
 
-Local artifact builds are unsigned by default and write to `release/`:
+Local artifact builds write to `release/`. macOS Personal builds use a persistent
+local signing certificate. Windows and Linux builds are unsigned by default:
 
 ```sh
 vp run dist:desktop:dmg
@@ -143,6 +144,14 @@ vp run dist:desktop:win
 DMGs default to the host architecture. Use `--arch` to choose another target and `--keep-stage`
 to retain packaging files for inspection. Run `vp run dist:desktop:artifact --help` for other
 options.
+
+Personal macOS builds retain their certificate and private key in
+`~/Library/Application Support/T3 Code Personal Signing`. Keep this directory across
+builds so macOS can recognize updates and retain folder and Keychain access grants.
+Set `T3CODE_PERSONAL_SIGNING_DIR` to use another persistent directory. The build uses
+a temporary signing Keychain and removes it afterward, without using the login
+Keychain. Local signing does not provide Developer ID distribution or notarization.
+The first update from an ad hoc build can still require a new permission grant.
 
 ### Linux AppImage prerequisites
 

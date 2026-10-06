@@ -677,7 +677,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(linux.files, [...DESKTOP_FILE_EXCLUSIONS, ...LINUX_FILE_EXCLUSIONS]);
       assert.deepStrictEqual(win.files, DESKTOP_FILE_EXCLUSIONS);
       assert.deepStrictEqual(winWithoutWslRuntime.files, win.files);
-      assert.notProperty(mac.mac as Record<string, unknown>, "sign");
+      assert.match(
+        String((mac.mac as Record<string, unknown>).sign),
+        /[\\/]scripts[\\/]sign-macos-personal\.ts$/,
+      );
       assert.equal(mac.appId, "com.t3tools.t3code.personal");
       assert.equal((mac.mac as Record<string, unknown>).identity, "-");
       assert.equal((mac.mac as Record<string, unknown>).hardenedRuntime, false);

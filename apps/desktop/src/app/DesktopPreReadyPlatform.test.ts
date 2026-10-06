@@ -13,6 +13,7 @@ const {
   setDesktopNameMock,
   mkdirSyncMock,
   writeFileSyncMock,
+  disableKeychainPromptsMock,
 } = vi.hoisted(() => ({
   appendSwitchMock: vi.fn(),
   getSwitchValueMock: vi.fn(),
@@ -21,6 +22,11 @@ const {
   setDesktopNameMock: vi.fn(),
   mkdirSyncMock: vi.fn(),
   writeFileSyncMock: vi.fn(),
+  disableKeychainPromptsMock: vi.fn(),
+}));
+
+vi.mock("../electron/MacKeychain.ts", () => ({
+  disableAutomaticKeychainPrompts: disableKeychainPromptsMock,
 }));
 
 vi.mock("electron", () => ({
@@ -55,6 +61,7 @@ describe("DesktopPreReadyPlatform", () => {
     setDesktopNameMock.mockReset();
     mkdirSyncMock.mockReset();
     writeFileSyncMock.mockReset();
+    disableKeychainPromptsMock.mockReset();
   });
 
   it.effect("preserves an explicit Linux password-store switch", () => {
@@ -103,7 +110,7 @@ describe("DesktopPreReadyPlatform", () => {
             const identity = yield* Effect.promise(() => portalIdentity);
             assert.equal(identity.desktopName, "com.t3tools.T3Code.desktop");
             assert.include(identity.desktopEntry ?? "", 'Exec="/Applications/current.AppImage" %U');
-            assert.include(identity.desktopEntry ?? "", "Name=T3 Code (Alpha)");
+            assert.include(identity.desktopEntry ?? "", "Name=T3 Code - Personal");
             assert.include(identity.desktopEntry ?? "", "MimeType=x-scheme-handler/t3code;");
           }),
         ).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
@@ -132,6 +139,10 @@ describe("DesktopPreReadyPlatform", () => {
         ) {}
 
         const events: Array<string> = [];
+        let keychainInteractionAllowed = true;
+        disableKeychainPromptsMock.mockImplementation(() => {
+          keychainInteractionAllowed = false;
+        });
         registerSchemesMock.mockImplementation(() => {
           events.push("pre-ready");
         });
@@ -144,6 +155,10 @@ describe("DesktopPreReadyPlatform", () => {
           ClerkShaped,
           Effect.promise(() => Promise.resolve()).pipe(
             Effect.map(() => {
+              assert.isFalse(
+                keychainInteractionAllowed,
+                "app readiness must not open a Keychain prompt",
+              );
               events.push("clerk");
               return { ready: true as const };
             }),
