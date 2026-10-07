@@ -105,6 +105,15 @@ export function resolveSelectableModelSelection(
   if (driver === "antigravity") {
     return selection;
   }
+  if (
+    driver === "zed" &&
+    provider?.enabled &&
+    provider.installed &&
+    provider.auth.status !== "unauthenticated"
+  ) {
+    const model = provider.models.find((candidate) => candidate.slug === selection.model);
+    return normalizeSelectionOptions(selection, model?.capabilities ?? null);
+  }
   return provider &&
     provider.enabled &&
     provider.installed &&
@@ -180,6 +189,11 @@ export function buildModelOptions(
           {
             instanceId: provider.instanceId,
             model: model.slug,
+            ...(provider.driver === "zed" &&
+            fallbackModelSelection?.instanceId === provider.instanceId &&
+            fallbackModelSelection.options
+              ? { options: fallbackModelSelection.options }
+              : {}),
           },
           model.capabilities,
         ),

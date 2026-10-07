@@ -9,6 +9,7 @@ import { readMcpProviderSession } from "../../mcp/McpProviderSession.ts";
 import {
   ApprovalRequestId,
   type ZedSettings,
+  type ProviderOptionSelection,
   EventId,
   type ProviderApprovalDecision,
   type ProviderRuntimeEvent,
@@ -21,6 +22,7 @@ import {
   type ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { getProviderOptionStringSelectionValue } from "@t3tools/shared/model";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -263,6 +265,40 @@ export function makeZedAdapter(
         sessions.delete(ctx.threadId);
       });
 
+    const applyThinkingEffort = (
+      acp: AcpSessionRuntime.AcpSessionRuntime["Service"],
+      selections: ReadonlyArray<ProviderOptionSelection> | undefined,
+      threadId: ThreadId,
+    ) =>
+      Effect.gen(function* () {
+        const configOptions = yield* acp.getConfigOptions;
+        const descriptor = configOptions.find((option) => option.id === "thinking_effort");
+        const requested = getProviderOptionStringSelectionValue(selections, "thinking_effort");
+        if (!descriptor || descriptor.type !== "select") {
+          if (requested) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "sendTurn",
+              issue:
+                "This Zed bridge or model does not support thinking effort. Refresh the model catalog or rebuild zed-acp-server.",
+            });
+          }
+          return;
+        }
+        // Missing selections restore the native default, including after a model switch.
+        const nativeDefault = descriptor._meta?.["defaultValue"];
+        const value =
+          requested ??
+          (typeof nativeDefault === "string" ? nativeDefault : descriptor.currentValue);
+        yield* acp
+          .setConfigOption(descriptor.id, value)
+          .pipe(
+            Effect.mapError((error) =>
+              mapAcpToAdapterError(PROVIDER, threadId, "session/set_config_option", error),
+            ),
+          );
+      });
+
     const startSession: ZedAdapterShape["startSession"] = (input) =>
       withThreadLock(
         input.threadId,
@@ -451,6 +487,10 @@ export function makeZedAdapter(
               ),
             );
 
+          yield* applyThinkingEffort(acp, input.modelSelection?.options, input.threadId).pipe(
+            Effect.onError(() => Scope.close(sessionScope, Exit.void)),
+          );
+
           if (
             input.coordinationRole &&
             startResult.initializeResult._meta?.["t3WorkerPolicy"] !== input.coordinationRole
@@ -627,6 +667,26 @@ export function makeZedAdapter(
               operation: "sendTurn",
               issue: "Turn requires non-empty text.",
             });
+          }
+
+          if (input.modelSelection) {
+            const model = input.modelSelection.model;
+            if (model !== "default" && model !== ctx.session.model) {
+              yield* ctx.acp
+                .setModel(model)
+                .pipe(
+                  Effect.mapError((error) =>
+                    mapAcpToAdapterError(
+                      PROVIDER,
+                      input.threadId,
+                      "session/set_config_option",
+                      error,
+                    ),
+                  ),
+                );
+              ctx.session = { ...ctx.session, model };
+            }
+            yield* applyThinkingEffort(ctx.acp, input.modelSelection.options, input.threadId);
           }
 
           const turnId = TurnId.make(yield* randomUUIDv4);

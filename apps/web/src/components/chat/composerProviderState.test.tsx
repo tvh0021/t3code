@@ -490,3 +490,45 @@ describe("provider traits render guards", () => {
     expect(renderProviderTraitsMenuContent(args)).toBeNull();
   });
 });
+
+describe("Zed effort dispatch", () => {
+  it("retains supported efforts, uses the destination default for unsupported efforts, and drops effort for plain models", () => {
+    const models: ServerProviderModel[] = [
+      {
+        slug: "thinking",
+        name: "Thinking",
+        isCustom: false,
+        capabilities: {
+          optionDescriptors: [
+            selectDescriptor("thinking_effort", [
+              { id: "low", label: "Low", isDefault: true },
+              { id: "high", label: "High" },
+            ]),
+          ],
+        },
+      },
+      {
+        slug: "low-only",
+        name: "Low only",
+        isCustom: false,
+        capabilities: {
+          optionDescriptors: [
+            selectDescriptor("thinking_effort", [{ id: "low", label: "Low", isDefault: true }]),
+          ],
+        },
+      },
+      { slug: "plain", name: "Plain", isCustom: false, capabilities: { optionDescriptors: [] } },
+    ];
+    const dispatch = (model: string) =>
+      getComposerProviderState({
+        provider: ProviderDriverKind.make("zed"),
+        model,
+        models,
+        modelOptions: [{ id: "thinking_effort", value: "high" }],
+        planModeEnabled: false,
+      }).modelOptionsForDispatch;
+    expect(dispatch("thinking")).toEqual([{ id: "thinking_effort", value: "high" }]);
+    expect(dispatch("low-only")).toEqual([{ id: "thinking_effort", value: "low" }]);
+    expect(dispatch("plain")).toBeUndefined();
+  });
+});

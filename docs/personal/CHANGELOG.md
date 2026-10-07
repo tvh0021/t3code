@@ -135,3 +135,8 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
 - ACP provider errors include transport details, including the explanation when an agent ignores cancellation and its process is stopped.
 - Verified seven probes through a real isolated server and WebSocket client using controlled ACP executables. Task reporting, ordinary replies, foreign-session content, cancellation errors, successful and failed catalog refreshes, and restart hydration passed. All 155 focused tests, server typechecking, and targeted lint passed. Live Google inference, mobile UI, and remote connections were not exercised.
 - Recorded the separate open issue for orchestration requesting access to unrelated macOS folders. Corrected its placement in the issue notes; this release does not resolve that issue.
+
+### 2026-10-06: Personal 0.2.0
+
+- **Zed thinking effort**: Model controls use native supported effort values and defaults. Selections reach the ACP bridge before prompts and survive thread reloads. Model switches retain only compatible values. Requires companion Zed bridge commit `11708bd472` or later.
+- **Verification**: Two hosted Luna turns completed through the browser at Low and High effort, including a replacement provider session. Focused T3 and native bridge tests, scoped typechecks, and targeted lint passed. Native mobile and remote/relay runtime verification remain pending.

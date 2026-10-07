@@ -69,13 +69,48 @@ const decodeZedCatalog = Schema.decodeSync(
       Schema.Struct({
         slug: Schema.String,
         name: Schema.String,
+        effortLevels: Schema.optional(
+          Schema.Array(
+            Schema.Struct({
+              value: Schema.String,
+              name: Schema.String,
+              isDefault: Schema.Boolean,
+            }),
+          ),
+        ),
       }),
     ),
   ),
 );
 
+function parseZedCatalog(output: string) {
+  return decodeZedCatalog(output).map((entry) => {
+    const levels = entry.effortLevels ?? [];
+    const defaultValue = levels.find((level) => level.isDefault)?.value;
+    const capabilities = createModelCapabilities({
+      optionDescriptors:
+        levels.length > 0
+          ? [
+              {
+                id: "thinking_effort",
+                label: "Thinking effort",
+                type: "select",
+                ...(defaultValue ? { currentValue: defaultValue } : {}),
+                options: levels.map((level) => ({
+                  id: level.value,
+                  label: level.name,
+                  isDefault: level.isDefault,
+                })),
+              },
+            ]
+          : [],
+    });
+    return { ...entry, capabilities };
+  });
+}
+
 export function parseLatestZedModels(output: string): ReadonlyArray<ServerProviderModel> {
-  const catalog = decodeZedCatalog(output);
+  const catalog = parseZedCatalog(output);
   const families = [
     /^zed\.dev\/claude-sonnet-(\d+(?:[.-]\d+)*)(?:-latest)?$/,
     /^zed\.dev\/gpt-(\d+(?:\.\d+)*)-luna(?:-\d{8})?$/,
@@ -87,7 +122,7 @@ export function parseLatestZedModels(output: string): ReadonlyArray<ServerProvid
       const version = match[1].split(/[.-]/).map(Number);
       const snapshot = version.at(-1);
       if (snapshot !== undefined && snapshot >= 10_000_000) version.pop();
-      return [{ slug: entry.slug, name: entry.name, version }];
+      return [{ slug: entry.slug, name: entry.name, version, capabilities: entry.capabilities }];
     });
     candidates.sort((left, right) => {
       for (let index = 0; index < Math.max(left.version.length, right.version.length); index++) {
@@ -105,7 +140,7 @@ export function parseLatestZedModels(output: string): ReadonlyArray<ServerProvid
             isCustom: false,
             ...(familyIndex === 0 ? { isDefault: true } : {}),
             badge: "new",
-            capabilities: EMPTY_CAPABILITIES,
+            capabilities: newest.capabilities,
           },
         ]
       : [];
@@ -247,14 +282,24 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
         const discovered = parseLatestZedModels(result.stdout);
         if (discovered.length !== 2)
           throw new Error("Zed did not supply both Sonnet and Luna models");
-        return discovered;
+        return { discovered, catalog: parseZedCatalog(result.stdout) };
       }),
     ),
     Effect.timeout("40 seconds"),
     Effect.result,
   );
   if (Result.isSuccess(catalogResult)) {
-    models = zedModelsFromSettings(zedSettings.customModels, catalogResult.success);
+    models = zedModelsFromSettings(zedSettings.customModels, catalogResult.success.discovered).map(
+      (model) => {
+        const authored = zedSettings.customModels.find(
+          (entry) => typeof entry !== "string" && entry.slug === model.slug,
+        );
+        if (!model.isCustom || (typeof authored !== "string" && authored?.capabilities))
+          return model;
+        const discovered = catalogResult.success.catalog.find((entry) => entry.slug === model.slug);
+        return discovered ? { ...model, capabilities: discovered.capabilities } : model;
+      },
+    );
   }
 
   return buildServerProvider({

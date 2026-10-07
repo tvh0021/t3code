@@ -13,6 +13,77 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
+  it("preserves Zed effort across configuration reloads and normalizes it for destination models", () => {
+    const config = {
+      providers: [
+        {
+          instanceId: "zed",
+          driver: "zed",
+          displayName: "Zed",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          models: [
+            {
+              slug: "thinking",
+              name: "Thinking",
+              isCustom: false,
+              capabilities: {
+                optionDescriptors: [
+                  {
+                    id: "thinking_effort",
+                    label: "Thinking effort",
+                    type: "select",
+                    currentValue: "low",
+                    options: [
+                      { id: "low", label: "Low", isDefault: true },
+                      { id: "high", label: "High" },
+                    ],
+                  },
+                ],
+              },
+            },
+            {
+              slug: "plain",
+              name: "Plain",
+              isCustom: false,
+              capabilities: { optionDescriptors: [] },
+            },
+          ],
+        },
+      ],
+    } as unknown as ServerConfig;
+    const selection: ModelSelection = {
+      instanceId: ProviderInstanceId.make("zed"),
+      model: "thinking",
+      options: [{ id: "thinking_effort", value: "high" }],
+    };
+    expect(resolveSelectableModelSelection(config, selection)).toEqual(selection);
+    expect(buildModelOptions(config, selection)[0]?.selection).toEqual(selection);
+    expect(buildModelOptions(config, selection)[1]?.selection.options).toBeUndefined();
+    const provider = config.providers[0]!;
+    const switchedConfig = {
+      ...config,
+      providers: [
+        { ...provider, models: [...provider.models, { ...provider.models[0]!, slug: "second" }] },
+      ],
+    };
+    expect(
+      buildModelOptions(switchedConfig, selection).find(
+        (option) => option.selection.model === "second",
+      )?.selection.options,
+    ).toEqual(selection.options);
+    expect(
+      resolveSelectableModelSelection(config, { ...selection, model: "plain" })?.options,
+    ).toBeUndefined();
+    expect(
+      resolveSelectableModelSelection(config, {
+        ...selection,
+        options: [{ id: "thinking_effort", value: "invalid" }],
+      })?.options,
+    ).toEqual([{ id: "thinking_effort", value: "low" }]);
+  });
+
   it("groups models by provider and flags legacy entries", () => {
     const config = {
       providers: [

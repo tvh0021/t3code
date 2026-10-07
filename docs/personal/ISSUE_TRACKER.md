@@ -226,6 +226,55 @@ otherwise reference `runtimeMode`.
 - Verify approval-required behavior separately. Do not bypass permissions
   merely to hide the mismatch.
 
+### ZED-006: Model thinking effort is unavailable in T3
+
+Status: Implemented and browser verified October 6, 2026. Personal 0.2.0 release prepared.
+
+The Zed ACP bridge previously exported model names and IDs without effort
+metadata, and T3 assigned empty model capabilities. The adapter also ignored
+model option selections.
+
+The bridge now exports native effort values and defaults and validates ACP
+configuration changes against the selected model. T3 exposes those values through
+its existing web/desktop and mobile option controls and applies selections before
+prompts, including reapplication from stored thread selections. Mobile keeps
+compatible choices on a model switch and removes options unsupported by the
+destination model. No new wire contract or storage format is needed.
+
+#### Acceptance criteria
+
+- Expose thinking-effort choices for Zed models that support them, using the
+  model's actual supported values and default.
+- Pass the selected effort to Zed and verify it affects the provider request.
+- Preserve the selection across thread reload and session resume. When switching
+  models, retain it only if the destination model supports that value.
+- Cover web, desktop, and mobile model controls. Remote connections preserve
+  the same selection.
+- Models without configurable thinking effort do not show an ineffective control.
+
+#### Verification
+
+- 56 focused T3 tests pass across discovery, ACP dispatch, web/desktop composer
+  dispatch, and mobile option handling. Cases cover defaults, changes during an
+  active session, supported/unsupported model switches, custom hosted models,
+  and reapplication of a serialized selection after restarting the adapter.
+- Seven native bridge tests pass. The new test changes effort through the ACP
+  handler and captures actual native `LanguageModelRequest.thinking_effort`
+  values, without a hosted provider turn. Invalid values are rejected.
+- Scoped server, web, and mobile typechecks and targeted lint pass. The local
+  `zed-acp-server` binary is rebuilt in `zed-dev/target/debug`.
+- Authorized computer-use verification in an isolated browser discovered Sonnet
+  5.5 and GPT-6 Luna. Sonnet Max resets to Luna's native Medium default on a
+  model switch. A real Luna Low turn and a High turn after restarting the server
+  completed successfully; captured ACP configuration requests precede each
+  prompt. High and both replies survive a page reload.
+- Evidence is retained under `/private/tmp/t3-zed-effort-ui/evidence`. Temporary
+  copied Zed credentials were removed and the isolated server was stopped.
+- Native mobile and remote/relay runtime verification remain pending. Native
+  conversation history resumption was not added; replacement sessions reapply
+  the stored effort. The companion bridge commit is `11708bd472`; the desktop
+  installer does not bundle this separately configured executable.
+
 ### MATH-001: KaTeX vector accent renders inside base glyph instead of above it
 
 Status: Open. Observed September 23, 2026.

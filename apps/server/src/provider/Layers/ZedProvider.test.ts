@@ -65,6 +65,33 @@ describe("checkZedProviderStatus", () => {
 });
 
 describe("Zed model discovery", () => {
+  it("exposes the bridge's supported thinking efforts and default", () => {
+    const models = parseLatestZedModels(
+      encodeJson([
+        {
+          slug: "zed.dev/gpt-6.1-luna",
+          name: "Luna",
+          effortLevels: [
+            { value: "low", name: "Low", isDefault: false },
+            { value: "high", name: "High", isDefault: true },
+          ],
+        },
+      ]),
+    );
+    expect(models[0]?.capabilities?.optionDescriptors).toEqual([
+      {
+        id: "thinking_effort",
+        label: "Thinking effort",
+        type: "select",
+        currentValue: "high",
+        options: [
+          { id: "low", label: "Low", isDefault: false },
+          { id: "high", label: "High", isDefault: true },
+        ],
+      },
+    ]);
+  });
+
   const catalog = [
     { slug: "zed.dev/claude-sonnet-5", name: "Sonnet 5" },
     { slug: "zed.dev/claude-sonnet-5-5-20260901", name: "Sonnet 5.5" },
@@ -76,6 +103,14 @@ describe("Zed model discovery", () => {
     { slug: "other/gpt-10-luna", name: "Other Luna" },
     { slug: "zed.dev/gpt-10-luna-preview", name: "Preview" },
   ];
+
+  it("keeps controls absent on models without effort metadata", () => {
+    expect(
+      parseLatestZedModels(encodeJson(catalog)).every(
+        (model) => model.capabilities?.optionDescriptors?.length === 0,
+      ),
+    ).toBe(true);
+  });
 
   it("selects one newest version per supplied family regardless of catalog order", () => {
     for (const entries of [catalog, catalog.toReversed()]) {
@@ -108,6 +143,39 @@ describe("Zed model discovery", () => {
         "zed.dev/custom",
       ]);
       expect(snapshot.message).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("discovers capabilities for custom hosted models as well", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const entries = [
+        ...catalog,
+        {
+          slug: "zed.dev/custom",
+          name: "Custom",
+          effortLevels: [{ value: "medium", name: "Medium", isDefault: true }],
+        },
+      ];
+      const binaryPath = writeFakeCli({
+        directory,
+        name: "zed",
+        source: `if (process.argv.includes("--list-models")) console.log(${encodeJson(encodeJson(entries))});`,
+      });
+      const snapshot = yield* checkZedProviderStatus(
+        decodeSettings({ enabled: true, binaryPath, customModels: ["zed.dev/custom"] }),
+      );
+      expect(
+        snapshot.models.find((model) => model.slug === "zed.dev/custom")?.capabilities
+          ?.optionDescriptors,
+      ).toMatchObject([
+        {
+          id: "thinking_effort",
+          currentValue: "medium",
+          options: [{ id: "medium", isDefault: true }],
+        },
+      ]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
