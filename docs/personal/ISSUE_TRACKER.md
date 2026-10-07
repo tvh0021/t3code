@@ -228,7 +228,7 @@ otherwise reference `runtimeMode`.
 
 ### ZED-006: Model thinking effort is unavailable in T3
 
-Status: Implemented and browser verified October 6, 2026. Personal 0.2.0 release prepared.
+Status: Fixed, browser and desktop verified October 6, 2026. Released and installed in Personal 0.2.0.
 
 The Zed ACP bridge previously exported model names and IDs without effort
 metadata, and T3 assigned empty model capabilities. The adapter also ignored
@@ -270,6 +270,14 @@ destination model. No new wire contract or storage format is needed.
   prompt. High and both replies survive a page reload.
 - Evidence is retained under `/private/tmp/t3-zed-effort-ui/evidence`. Temporary
   copied Zed credentials were removed and the isolated server was stopped.
+- Installed Electron 0.2.0 shows Sonnet 5.5 and its Low, Medium, High default,
+  Extra High, and Max choices. Selecting Low updates the composer; the draft was
+  restored to High. About confirms `0.2.0 (6a29039bf7f6)`.
+- Personal 0.2.0 is published at
+  https://github.com/tvh0021/t3code/releases/tag/personal-v0.2.0 and installed in
+  `/Applications/T3 Code - Personal.app`. DMG and ZIP integrity, deep signature,
+  matching Personal signing identity, and uploaded artifact digests pass. The
+  previous install is retained at `/private/tmp/t3-personal-before-0.2.0`.
 - Native mobile and remote/relay runtime verification remain pending. Native
   conversation history resumption was not added; replacement sessions reapply
   the stored effort. The companion bridge commit is `11708bd472`; the desktop
