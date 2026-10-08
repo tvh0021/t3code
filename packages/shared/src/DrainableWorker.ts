@@ -68,3 +68,67 @@ export const makeDrainableWorker = <A, E, R>(
 
     return { enqueue, drain } satisfies DrainableWorker<A>;
   });
+
+/** Processes different keys concurrently, preserving FIFO order within each key. */
+export const makeKeyedDrainableWorker = <A, K, E, R>(options: {
+  readonly key: (item: A) => K;
+  readonly concurrency: number;
+  readonly process: (item: A) => Effect.Effect<void, E, R>;
+}): Effect.Effect<DrainableWorker<A>, never, Scope.Scope | R> =>
+  Effect.gen(function* () {
+    const queue = yield* Effect.acquireRelease(TxQueue.unbounded<K>(), TxQueue.shutdown);
+    const pending = yield* TxRef.make(new Map<K, readonly A[]>());
+    const outstanding = yield* TxRef.make(0);
+
+    const processNext = TxQueue.take(queue).pipe(
+      Effect.flatMap((key) =>
+        Effect.gen(function* () {
+          const item = yield* TxRef.modify(pending, (current) => {
+            const items = current.get(key)!;
+            const next = new Map(current);
+            next.set(key, items.slice(1));
+            return [items[0]!, next];
+          }).pipe(Effect.tx);
+
+          yield* options.process(item).pipe(
+            Effect.ensuring(
+              Effect.gen(function* () {
+                yield* TxRef.update(outstanding, (count) => count - 1);
+                const current = yield* TxRef.get(pending);
+                if (current.get(key)!.length > 0) {
+                  yield* TxQueue.offer(queue, key);
+                } else {
+                  const next = new Map(current);
+                  next.delete(key);
+                  yield* TxRef.set(pending, next);
+                }
+              }).pipe(Effect.tx),
+            ),
+          );
+        }),
+      ),
+      Effect.forever,
+    );
+    for (let index = 0; index < options.concurrency; index++) {
+      yield* Effect.forkScoped(processNext);
+    }
+
+    const enqueue = (item: A) =>
+      Effect.gen(function* () {
+        const key = options.key(item);
+        const current = yield* TxRef.get(pending);
+        const items = current.get(key);
+        const next = new Map(current);
+        next.set(key, items === undefined ? [item] : [...items, item]);
+        yield* TxRef.set(pending, next);
+        yield* TxRef.update(outstanding, (count) => count + 1);
+        if (items === undefined) yield* TxQueue.offer(queue, key);
+      }).pipe(Effect.tx);
+
+    const drain = TxRef.get(outstanding).pipe(
+      Effect.tap((count) => (count > 0 ? Effect.txRetry : Effect.void)),
+      Effect.asVoid,
+      Effect.tx,
+    );
+    return { enqueue, drain } satisfies DrainableWorker<A>;
+  });

@@ -9,6 +9,56 @@ import {
 } from "./AcpAdapterSupport.ts";
 
 describe("AcpAdapterSupport", () => {
+  it("preserves native authentication timeout details and the failing operation", () => {
+    const error = mapAcpToAdapterError(
+      ProviderDriverKind.make("antigravity"),
+      ThreadId.make("thread-1"),
+      "session/start",
+      EffectAcpErrors.AcpRequestError.fromProtocolError(
+        {
+          code: -32603,
+          message: "Internal error",
+          data: { details: "[Errno 60] Operation timed out" },
+        },
+        { method: "authenticate" },
+      ),
+    );
+
+    expect(error.message).toBe(
+      "Provider adapter request failed (antigravity) for authenticate: Internal error: [Errno 60] Operation timed out",
+    );
+  });
+
+  it("redacts native request details without exposing other response data", () => {
+    const error = mapAcpToAdapterError(
+      ProviderDriverKind.make("antigravity"),
+      ThreadId.make("thread-1"),
+      "session/start",
+      EffectAcpErrors.AcpRequestError.internalError("Internal error", {
+        details: "Request failed with Authorization: Bearer private-token",
+        access_token: "private-access-token",
+      }),
+    );
+    expect(error.message).toContain("Request failed with Authorization: Bearer [redacted]");
+    expect(error.message).not.toContain("private-token");
+    expect(error.message).not.toContain("private-access-token");
+  });
+
+  it.each([undefined, null, "raw error data", { details: 42 }, { details: "  " }])(
+    "ignores request data without a nonempty text detail: %j",
+    (data) => {
+      const error = mapAcpToAdapterError(
+        ProviderDriverKind.make("antigravity"),
+        ThreadId.make("thread-1"),
+        "session/start",
+        EffectAcpErrors.AcpRequestError.internalError("Internal error", data),
+      );
+      expect(error.message).toBe(
+        "Provider adapter request failed (antigravity) for session/start: Internal error",
+      );
+    },
+  );
+
   it("explains a cancellation timeout instead of hiding the transport detail", () => {
     const error = mapAcpToAdapterError(
       ProviderDriverKind.make("antigravity"),

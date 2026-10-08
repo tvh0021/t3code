@@ -729,7 +729,7 @@ describe("shouldUseMarkdownFileBrowserPrimaryAction", () => {
     ).toBe(true);
   });
 
-  it("preserves the normal editor and panel defaults for HTML files", () => {
+  it("opens HTML files in the browser even when an editor or panel is available", () => {
     expect(
       shouldUseMarkdownFileBrowserPrimaryAction({
         iconPath: "/tmp/report.html",
@@ -737,7 +737,7 @@ describe("shouldUseMarkdownFileBrowserPrimaryAction", () => {
         canOpenInBrowser: true,
         canOpenInPanel: false,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldUseMarkdownFileBrowserPrimaryAction({
         iconPath: "/tmp/report.html",
@@ -745,7 +745,7 @@ describe("shouldUseMarkdownFileBrowserPrimaryAction", () => {
         canOpenInBrowser: true,
         canOpenInPanel: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("continues to open PDF files in the browser by default", () => {

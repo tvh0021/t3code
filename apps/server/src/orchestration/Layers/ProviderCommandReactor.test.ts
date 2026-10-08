@@ -75,6 +75,8 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { ServerActivation } from "../../serverActivation.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
+import { mapAcpToAdapterError } from "../../provider/acp/AcpAdapterSupport.ts";
+import * as AcpErrors from "effect-acp/errors";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -923,6 +925,63 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  effectIt.effect("starts independent threads while another provider is still authenticating", () =>
+    Effect.gen(function* () {
+      const firstStarted = yield* Deferred.make<void>();
+      const releaseFirst = yield* Deferred.make<void>();
+      const secondStarted = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          startSessionEffect: (session) =>
+            session.threadId === "thread-1"
+              ? Deferred.succeed(firstStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(releaseFirst)),
+                  Effect.as(session),
+                )
+              : Deferred.succeed(secondStarted, undefined).pipe(Effect.as(session)),
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+      yield* harness.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-independent-thread"),
+        threadId: ThreadId.make("thread-2"),
+        projectId: asProjectId("project-1"),
+        title: "Independent thread",
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4"),
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: now,
+      });
+      const start = (id: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-independent-start-${id}`),
+          threadId: ThreadId.make(id),
+          message: {
+            messageId: asMessageId(`message-${id}`),
+            role: "user",
+            text: "Read the project",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: now,
+        });
+      yield* start("thread-1");
+      yield* Deferred.await(firstStarted);
+      yield* start("thread-2");
+      yield* Deferred.await(secondStarted);
+      expect(harness.startSession).toHaveBeenCalledTimes(2);
+      expect(yield* Deferred.isDone(releaseFirst)).toBe(false);
+      yield* Deferred.succeed(releaseFirst, undefined);
+      yield* Effect.promise(() => harness.drain());
+      expect(harness.startSession).toHaveBeenCalledTimes(2);
+    }),
+  );
+
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
@@ -1533,6 +1592,56 @@ describe("ProviderCommandReactor", () => {
 
       yield* Deferred.succeed(releaseStart, undefined);
       yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+    }),
+  );
+
+  effectIt.effect("persists the provider and operation for native authentication failures", () =>
+    Effect.gen(function* () {
+      const attempted = yield* Deferred.make<void>();
+      const authError = mapAcpToAdapterError(
+        ProviderDriverKind.make("antigravity"),
+        ThreadId.make("thread-1"),
+        "session/start",
+        AcpErrors.AcpRequestError.fromProtocolError(
+          {
+            code: -32603,
+            message: "Internal error",
+            data: { details: "[Errno 60] Operation timed out" },
+          },
+          { method: "authenticate" },
+        ),
+      );
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          startSessionEffect: () =>
+            Deferred.succeed(attempted, undefined).pipe(Effect.andThen(Effect.fail(authError))),
+        }),
+      );
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-native-auth-failure"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("auth-failure-message"),
+          role: "user",
+          text: "Read the project",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      yield* Deferred.await(attempted);
+      yield* Effect.promise(() => harness.drain());
+      const thread = (yield* Effect.promise(() => harness.readModel())).threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      expect(thread?.session?.lastError).toBe(authError.message);
+      expect(
+        thread?.activities.find((activity) => activity.kind === "provider.turn.start.failed")
+          ?.payload,
+      ).toMatchObject({ detail: authError.message });
+      expect(harness.sendTurn).not.toHaveBeenCalled();
     }),
   );
 

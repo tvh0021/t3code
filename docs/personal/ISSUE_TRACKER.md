@@ -36,6 +36,13 @@ reopened the app. The subsequent installed Zed test passed.
 Verify cold launch with retained projects and workflows. A slow background task
 should not leave the app without a usable window after the backend becomes ready.
 
+October 6 source check: `DesktopBackendManager` already retries readiness while
+the backend remains alive. Its regression covers two expired readiness budgets
+before a successful probe. All 26 backend-manager tests pass. Keep this issue
+open until an installed cold launch with retained state establishes why the
+reported launch still required reopening. Project auto-pull still runs before
+server command readiness.
+
 ### PERMISSION-001: Orchestration triggers unrelated macOS folder prompts
 
 Status: Open. Observed September 28, 2026.
@@ -108,6 +115,231 @@ ChatLLM now forwards parent coordination tools; its tool loop and the real MCP
 HTTP protocol are tested. Zed forwards the scoped server and restricts worker
 MCP tools explicitly. Compilation passed; actual native discovery remains in
 WORKFLOW-001. Model-limit entries alone do not make a model available.
+
+### WORKFLOW-003: Gemini authentication fails in standalone and orchestration threads
+
+Status: Network-specific failure. Observed October 6, 2026 in installed Personal 0.1.5.
+All six children failed. A standalone Gemini thread failed at the same step.
+The native failure is isolated to IPv6 connectivity during onboarding. The user
+reports Gemini works on hotspot after failing on eduroam Wi-Fi. The experimental
+relay and its integration/tests were removed at the user's request. No network
+workaround remains in the source. An October 8 full-adapter Gemini turn passed on the new network. Orchestration recovery remains unverified.
+
+The user reported that OpenAI-to-Gemini orchestration remains broken and may
+have regressed. In `Streamline Apartment Search Document`, parent thread
+`8627c083-1d92-47ce-bc0e-b363ffd03e83` uses Codex `gpt-6.1-sol` with medium
+reasoning. It assigned six read-only research tasks to Antigravity
+`gemini-3.8-flash-medium`, with four concurrent child slots. All six children
+failed before executing their assignments. No Gemini research result was
+produced.
+
+#### Confirmed evidence
+
+The persisted model selections point to Antigravity and the requested Gemini
+model. Native ACP logs show successful `initialize`, followed by failed
+`authenticate` with `errorTag: Die` after roughly 75 seconds. These logs contain
+no `session/new` or task execution for the failed children.
+
+| Child thread                           | Authentication started, EDT | Authentication failed, EDT |
+| -------------------------------------- | --------------------------- | -------------------------- |
+| `e6de8648-babf-4938-85db-e6e292451bcf` | 5:57:19 PM                  | 5:58:34 PM                 |
+| `6b5ce4e8-738e-4d7e-8ff7-8c0d3ab00d30` | 5:58:36 PM                  | 5:59:51 PM                 |
+| `5033ad5e-d0a0-49d0-b4fe-f1e5b1d11e3f` | 5:59:53 PM                  | 6:01:08 PM                 |
+| `0ee0c485-37c0-4634-baa4-ef298f0fbc90` | 6:01:10 PM                  | 6:02:25 PM                 |
+| `eea72a7a-a7c2-400a-bcf1-395d8eff8f01` | 6:02:27 PM                  | 6:03:42 PM                 |
+| `d1d3a5bc-df09-40e9-837c-1b7fe33dffe8` | 6:03:44 PM                  | 6:05:00 PM                 |
+
+The user's new standalone thread, `Workspace Project Inventory`,
+`1bb25504-c290-424a-8c79-950f3f64623a`, selected
+`gemini-3.8-flash-high`. It also initialized successfully, began authentication
+at 6:05:02 PM, and failed at 6:06:17 PM. Its session status became `error`.
+The failure therefore does not require orchestration or a cross-provider branch.
+
+A direct, credential-redacted Google OAuth check accepted the existing stored
+refresh token with HTTP 200 in 0.12 seconds and returned an access token with
+3,599 seconds of validity. The profile contains a refresh token. Neither the
+credential file nor live T3 state was modified. This rules out a missing token,
+Google rejecting that token during this check, and general inability to reach
+the token endpoint from the diagnostic process. It does not prove the native
+runtime's subsequent authentication calls succeed.
+
+The cached provider snapshot still said `ready` and `authenticated`, with
+`checkedAt: 2026-10-06T21:57:46.968Z`. That snapshot does not establish current
+session authentication health.
+
+#### Native authentication finding
+
+An isolated probe ran the installed `agy_acp_server_1.1.1` binary against a
+temporary copy of the Google profile. It sent only ACP `initialize` and
+`authenticate`, with browser launch suppressed. It sent no model prompt and
+removed the temporary profile after stopping its own process.
+
+Initialization succeeded. Authentication failed after 76.87 seconds with this
+native JSON-RPC response:
+
+```json
+{
+  "code": -32603,
+  "message": "Internal error",
+  "data": { "details": "[Errno 60] Operation timed out" }
+}
+```
+
+Native stderr identified `oauth_manager.py:294` and stated:
+`Failed to run onboarding after obtaining access token`.
+
+Further authentication-only probes reproduced the native timeout in 77.07 and
+76.77 seconds with isolated copies of the Personal credential. The traceback
+identifies the first `loadCodeAssist` request to
+`https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`.
+The native process remained in `SYN_SENT` on an IPv6 connection to Google.
+The bundled `httplib2` client raises on socket timeout before trying the next
+address.
+
+An unauthenticated IPv4 connectivity check returned HTTP 404 in 0.066 seconds;
+the same IPv6 check timed out. Routing the unchanged native authentication
+probe through a temporary localhost CONNECT tunnel that connects to Google
+over IPv4 produced successful authentication in 2.50 seconds. TLS remained
+end-to-end, and the tunnel allowed only the OAuth and CCPA Google hosts.
+The tunnel and native processes stopped after the probe, and temporary
+credential copies were removed. No live credential or network setting changed.
+
+The direct authentication diagnostic is
+`python3 /private/tmp/t3-gemini-auth-probe.py`. It requires network access and
+sends no model prompt. The temporary IPv4 tunnel and source relay were removed
+at the user's request; their results above are historical diagnostic evidence.
+
+This establishes a failing IPv6 path plus missing native fallback as the
+immediate cause. The user reports previously working Gemini; the September 28
+handoff records successful native Gemini work. The pinned runtime remains
+1.1.1, and installed Personal is confirmed as 0.1.5. The time and cause of the
+network change are not established. Matching runtime and sanitized provider
+configuration fingerprints between the September 28 success and current
+Personal install show no relevant boundary change in those artifacts; they do
+not capture the intervening host network state. T3's displayed error also drops
+the useful native `data.details` timeout message.
+
+Despite four child slots, these startup attempts occurred sequentially. The
+next child initialized only after the previous authentication failed. At
+6:03 PM, child `d1d3a5bc-df09-40e9-837c-1b7fe33dffe8` had coordination phase
+`running` but no session row or native log yet. At 6:04 PM, its session status
+was `starting`. This mismatch needs investigation before treating the child
+as executing its assignment.
+
+Each failed child has session status `error`, coordination phase `reported`,
+and a synthetic report beginning `Assignment could not start: Error: Internal
+error`. T3 delivered the first two failure reports to the parent as ordinary
+`Child reports arrived` messages. The parent remained `active`, with session
+status `ready`, `waiting: false`, and no blocked reason. A delivered failure
+report does not establish that the parent resumed and handled it.
+
+The projection timestamps for all four startup failures are
+`2026-10-06T21:57:17.207Z`, although the native failures occurred minutes apart.
+Use the native request timestamps above when measuring startup latency.
+
+#### Reproduction and investigation scope
+
+Observed trigger: start a T3 layer from the Codex parent, assign six Gemini
+3.8 Flash Medium review tasks, then call `wait_for_children`. Inspect each
+child's provider startup and the reports delivered to the parent.
+
+Evidence comes from read-only queries of
+`~/.t3-personal/userdata/state.sqlite` and the matching
+`~/.t3-personal/userdata/logs/provider/events.<child-thread-id>.log` files.
+Seven existing attempts show the same failure sequence, and the isolated
+authentication-only probe reproduced it. Those attempts predate the source
+workaround. They involved no paid model turn, app restart, browser interaction,
+or live credential change. The orchestration monitor was paused after all six
+original children failed.
+
+The IPv4 comparison identifies the authentication failure independently of
+provider routing, model selection, and orchestration. Gemini works on hotspot;
+the eduroam network failure remains outside the retained source repairs. Child
+reports, parent recovery, and concurrency still need an integrated pass on the
+working network.
+
+#### Source repairs, October 6
+
+ACP request errors now retain the native operation and text `data.details`,
+using the existing bounded credential redaction. The recorded failure becomes
+`Provider adapter request failed (antigravity) for authenticate: Internal error:
+[Errno 60] Operation timed out`. Other response data is omitted. A regression
+covers failed authentication cleanup and a subsequent successful session retry.
+An engine-backed test verifies that session errors and failure activities retain
+the provider, operation, and timeout detail sent to clients and child reports.
+
+The provider command reactor used one queue for every thread, serializing
+authentication attempts. It now processes up to four thread queues concurrently,
+preserving command order within each thread and existing workspace leases.
+An engine-backed regression holds one authentication attempt open while another
+thread starts. Worker tests cover four active threads, queued overflow, same-thread
+ordering, and drain completion. The coordination layer still owns child-slot limits.
+
+The ACP error and concurrency repairs above did not resolve the native onboarding
+timeout. Installed Gemini authentication, substantive child reports, parent
+recovery, and client state labels remain unverified. No live credentials, paid
+model turns, or app restart were used for those source repairs.
+
+Verification: 326 focused tests pass across the provider command reactor,
+coordination, quota policy, keyed worker, and affected ACP adapters. Server and
+shared typechecks pass. Targeted lint passes with existing unused-parameter
+warnings; formatting and `git diff --check` pass. The separate desktop
+backend-manager suite passes 26 tests.
+
+#### Release-boundary audit, October 6
+
+The last two implementation releases are `b67039843` (Personal 0.1.4) and
+`b1061c8e1` (Personal 0.1.5); `HEAD` `7da4d5dbe` only records the 0.1.5
+publication. Comparing the provider launch files from the 0.1.4 parent through
+0.1.5 shows no changes to Antigravity binary selection, profile/auth setup,
+arguments, or child environment. The 0.1.5 Antigravity changes parse task
+notifications after content arrives and retain bounded native error details.
+They do not run before `authenticate`. The 0.1.4 macOS change disables
+automatic keychain prompts in the Electron process; the native child is a
+separate process and uses file-backed profile storage (`GEMINI_HOME` and
+`AGY_ACP_FORCE_FILE_STORAGE=1`). This narrows the demonstrated release boundary
+away from the authentication launch path; it does not prove there were no
+other regressions.
+
+Read-only Personal provider logs show successful native `initialize`,
+`authenticate`, and `session/new` on October 5, including a later re-auth at
+7:48 PM EDT. The user reports that Gemini worked yesterday and that the Wi-Fi
+or VPN changed. The current direct native probe stalls on IPv6 during
+`loadCodeAssist`; the same binary and temporary profile succeed through the
+provider-scoped IPv4 relay. This makes the changed network path the leading
+explanation, but available evidence does not identify a specific router, VPN,
+or network configuration change. The user later confirmed Gemini works on hotspot and identified the failing
+network as eduroam. The experimental provider relay was removed; no installed
+app or system settings were changed.
+
+The release audit also found a separate 0.1.5 performance regression in
+`parseAntigravityTaskNotification`: an incomplete task message followed by
+whitespace made its lazy output capture backtrack quadratically. The capture is
+now greedy and must match the closing tag; summary trimming still removes
+trailing whitespace. A focused regression test covers a valid whitespace-padded
+message and an incomplete whitespace-heavy message. Direct measurements of the
+real function changed from about 404 ms for 16,000 spaces before the fix to
+about 0.06 ms afterward (`/private/tmp/t3-gemini-verification/parser-before.log`
+and `parser-after.log`). This content-parsing issue is separate from startup
+authentication.
+
+Relevant code is `AntigravityAdapter.ts`, where `runtime.start()` precedes model
+application, and `ThreadCoordinationReactor.ts`, which converts a matching
+`provider.turn.start.failed` activity into a child failure report. The synthetic
+report is expected recovery behavior; its existence is not itself the defect.
+
+#### Acceptance criteria
+
+- A real Codex parent can start the requested Gemini children, receive their
+  substantive reports, and resume or complete the layer.
+- Authentication failure identifies the failing provider and operation with an
+  actionable, secret-free explanation instead of only `Internal error`.
+- Child and parent states distinguish failed startup, pending startup, and
+  actual execution. Failure delivery must not imply useful work completed.
+- Verify four simultaneous child assignments and queued overflow. Explain or
+  remove serialized authentication delays without exceeding provider limits.
+- Add focused coverage for ACP authentication failure and parent recovery,
+  then verify the full cycle against the installed runtime.
 
 ### ZED-001: Read Zed account usage from the billing service
 
@@ -214,10 +446,12 @@ replaces the composer with `Resolve this approval request to continue`.
 Approving the command succeeds and produces `t3code-dev`. Full access remains
 selected afterward.
 
-The displayed permission mode does not match the effective behavior.
-`ZedAdapter.ts` stores `input.runtimeMode` on the session, but its permission
-callback always opens a request and waits for a decision. The adapter does not
-otherwise reference `runtimeMode`.
+At the time of the report, the displayed permission mode did not match the
+effective behavior. October 6 source inspection found that `ZedAdapter.ts`
+now selects a provider-supplied allow option automatically in Full access.
+When no allow option exists, it retains the approval flow. Reproduce the
+installed terminal command before changing this policy again. Approval-required
+behavior still needs a separate installed check.
 
 #### Acceptance criteria
 
@@ -285,7 +519,8 @@ destination model. No new wire contract or storage format is needed.
 
 ### MATH-001: KaTeX vector accent renders inside base glyph instead of above it
 
-Status: Open. Observed September 23, 2026.
+Status: Fixed and verified in the installed Personal 0.3.1 candidate on October 8, 2026. Included in this release.
+Observed September 23, 2026.
 
 In mathematical expressions containing vector notation such as `\vec{B}` (e.g.
 `(\nabla \cdot \vec{B} = 0),`), the right-pointing arrow accent is rendered
@@ -304,33 +539,37 @@ italicized letter $B$ rather than clearing the top of the letter.
 
 #### Root cause investigation
 
-1. **Rendering stack**: Equations are parsed via `remark-math` and compiled
-   to HTML via `rehype-katex` with `katex/dist/katex.min.css`.
-2. **Accent construction**: KaTeX renders `\vec` by wrapping the accent body in
-   a vertical alignment list (`.vlist-t > .vlist-r > .vlist`), using a strut span
-   (`.pstrut`) and `<span class="accent-body">` holding an inline `<svg>` arrow.
-3. **CSS vertical alignment & overrides**: Custom vertical translations in
-   `apps/web/src/index.css` (lines 2237–2256) adjust radical bars (`.katex .sqrt`)
-   and fraction denominators (`.katex .mfrac`). In addition, global Tailwind
-   resets, line-height defaults, or missing font-metric height adjustments can
-   cause the strut height or `.accent-body` translation to collapse to baseline,
-   causing the SVG arrow to drop into the letter bounding box.
+`rehype-katex` resolved KaTeX 0.16.47, while `ChatMarkdown.tsx` imported the
+stylesheet from the web app's direct KaTeX 0.18.7 dependency. The renderer
+generated `.accent` and `.overlay`; the stylesheet targeted `.katex-accent`
+and `.katex-overlay`. Those rules never matched, leaving the accent body
+statically positioned and its SVG wrapper inline. The real chat renderer
+reproduced the original overlap in an isolated copy of runtime state.
 
 #### Remediation
 
-- Inspect the computed DOM structure and CSS properties of `.katex .accent` and
-  `.katex .accent-body` in the web client.
-- Add targeted clearance / vertical-align rules in `apps/web/src/index.css` for
-  `.katex .accent-body` or SVG accents to ensure the accent arrow consistently
-  clears uppercase glyphs and ascenders without interfering with surrounding
-  delimiters.
+Added a `rehype-katex>katex` override for 0.18.7 in `pnpm-workspace.yaml` and
+updated the lockfile. Markup and stylesheet now use the same version. No custom
+accent offsets or changes to the existing root and fraction CSS were needed.
+
+#### Verification
+
+Browser verification covered inline and display `\\vec{B}`, `\\vec{v}`,
+`\\vec{E}`, hats, bars, tildes, dots, square roots with superscripts, fractions,
+and scalable delimiters. All seven vector SVG paths cleared their base glyphs
+by about 1.8 CSS pixels, using KaTeX font heights and the rendered vertical-list
+baseline. The 54 existing `ChatMarkdown` tests passed.
+
+This fixes the shared web renderer used by local, hosted, remote, and desktop
+clients. The installed Personal 0.3.1 candidate also rendered inline and display vectors with arrows above their base glyphs. Native mobile uses its own
+markdown renderer and was not changed or verified here.
 
 #### Acceptance criteria
 
-- `\vec{B}`, `\vec{v}`, `\vec{E}`, and related accented math symbols render
-  with the arrow floating cleanly above the character glyph.
-- No visual collision or overlap between the accent arrow and the letter strokes.
-- Existing math adjustments for square roots and fractions remain unaffected.
+- [x] `\vec{B}`, `\vec{v}`, `\vec{E}`, and related accented math symbols render
+      with the arrow floating cleanly above the character glyph.
+- [x] No visual collision or overlap between the accent arrow and the letter strokes.
+- [x] Existing math adjustments for square roots and fractions remain unaffected.
 
 ## Verification scope
 

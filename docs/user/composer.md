@@ -313,7 +313,12 @@ Follow an agent's file link to read a report or other file outside the workspace
 These files open read-only. An HTML file outside the workspace cannot load scripts,
 styles, or images from neighboring files.
 
-## HTML and PDF files in the file viewer
+## HTML links and the file viewer
+
+On web and desktop, select an HTML file link in a message to open it in your
+system browser. Right-click the link to choose **Open in system browser** or
+**Open in integrated browser** where available. Links with a line number open
+the source in your editor. The file comes from its owning environment.
 
 On web and desktop, HTML and PDF files open as rendered pages. Switch an HTML
 file to source view to read its markup; a link to a specific line opens source

@@ -99,7 +99,13 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
   const calls: string[] = [];
   const launches: Array<Parameters<AntigravityAdapterOptions["makeRuntime"]>[0]> = [];
   const stops: Array<Effect.Effect<void>> = [];
-  const controls = { failModel: false, failAuth: false, authInvalidations: 0, closed: 0 };
+  const controls = {
+    failModel: false,
+    failAuth: false,
+    authTimeout: false,
+    authInvalidations: 0,
+    closed: 0,
+  };
   let currentModel = nativeDefault;
   let promptIndex = 0;
   let active: NativePrompt | undefined;
@@ -149,6 +155,16 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
       }),
     start: () =>
       Effect.gen(function* () {
+        if (controls.authTimeout) {
+          return yield* AcpErrors.AcpRequestError.fromProtocolError(
+            {
+              code: -32603,
+              message: "Internal error",
+              data: { details: "[Errno 60] Operation timed out" },
+            },
+            { method: "authenticate" },
+          );
+        }
         if (controls.failAuth) {
           return yield* new AcpErrors.AcpTransportError({
             detail: ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE,
@@ -1373,6 +1389,35 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       expect(h.controls.authInvalidations).toBe(1);
       expect(h.controls.closed).toBe(1);
       expect(yield* h.adapter.hasSession(threadId)).toBe(false);
+    }),
+  );
+
+  it.effect("explains authentication timeouts, cleans up, and allows a later retry", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      h.controls.authTimeout = true;
+      const error = yield* h.adapter
+        .startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" })
+        .pipe(Effect.flip);
+      expect(error.message).toBe(
+        "Provider adapter request failed (antigravity) for authenticate: Internal error: [Errno 60] Operation timed out",
+      );
+      expect(h.controls.authInvalidations).toBe(0);
+      expect(h.controls.closed).toBe(1);
+      expect(yield* h.adapter.hasSession(threadId)).toBe(false);
+      expect(h.seen.some((event) => event.type === "thread.started")).toBe(false);
+
+      h.controls.authTimeout = false;
+      yield* h.adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
+      expect(yield* h.adapter.hasSession(threadId)).toBe(true);
+      const sending = yield* h.adapter
+        .sendTurn({ threadId, input: "Retry after onboarding timeout" })
+        .pipe(Effect.forkChild);
+      const prompt = yield* h.nextPrompt;
+      yield* Deferred.succeed(prompt.result, { stopReason: "end_turn" });
+      const turn = yield* Fiber.join(sending);
+      const completed = yield* h.waitForEvent((event) => event.type === "turn.completed");
+      expect(completed.turnId).toBe(turn.turnId);
     }),
   );
 

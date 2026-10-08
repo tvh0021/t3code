@@ -46,7 +46,7 @@ export function shouldOpenMarkdownFileLinkInEditor(
 }
 
 export function shouldOpenMarkdownFileLinkInBrowserByDefault(path: string): boolean {
-  return /\.pdf$/i.test(path.split(/[?#]/, 1)[0] ?? "");
+  return /\.(?:html?|pdf)$/i.test(path.split(/[?#]/, 1)[0] ?? "");
 }
 
 export function isWindowsDrivePathHref(href: string): boolean {

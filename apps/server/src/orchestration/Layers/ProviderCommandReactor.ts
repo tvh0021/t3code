@@ -33,7 +33,7 @@ import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { makeDrainableWorker, makeKeyedDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
@@ -375,7 +375,9 @@ const make = Effect.gen(function* () {
   const formatFailureDetail = (cause: Cause.Cause<unknown>): string => {
     const failReason = cause.reasons.find(Cause.isFailReason);
     if (isProviderAdapterRequestError(failReason?.error)) {
-      return failReason.error.detail;
+      return failReason.error.method === "authenticate"
+        ? failReason.error.message
+        : failReason.error.detail;
     }
     if (isProviderAdapterProcessError(failReason?.error)) {
       return failReason.error.detail;
@@ -1899,7 +1901,11 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const worker = yield* makeDrainableWorker(processDomainEventSafely);
+  const worker = yield* makeKeyedDrainableWorker({
+    key: (event: ProviderIntentEvent) => event.payload.threadId,
+    concurrency: 4,
+    process: processDomainEventSafely,
+  });
 
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
     const pendingTitles = yield* findPendingThreadTitles().pipe(

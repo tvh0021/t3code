@@ -46,6 +46,19 @@ describe("native Antigravity task notifications", () => {
     expect(task?.summary?.endsWith("Build finished.")).toBe(true);
   });
 
+  it("trims whitespace from complete output and rejects incomplete whitespace-heavy messages", () => {
+    expect(
+      parseAntigravityTaskNotification(notification("SUCCESS", "Build finished.   \n"), "session-1")
+        ?.summary,
+    ).toBe("Build finished.");
+
+    const incomplete =
+      "<task_notification>Task session-1/task-113 completed with status: SUCCESS.\nTask output:\n" +
+      " ".repeat(8_192) +
+      "X";
+    expect(parseAntigravityTaskNotification(incomplete, "session-1")).toBeUndefined();
+  });
+
   it("preserves ordinary, quoted, partial, unknown, and foreign-session messages", () => {
     for (const text of [
       "Build finished.",

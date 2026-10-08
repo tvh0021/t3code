@@ -19,7 +19,7 @@ const QUESTION_LABEL_LIMIT = 512;
 /** Recognizes complete native task-result messages without treating quoted markup as a task. */
 export function parseAntigravityTaskNotification(text: string, sessionId: string) {
   const match =
-    /^<task_notification>\s*Task ([^\s<>]+) completed with status: (SUCCESS|FAILED|CANCELLED)\.\s*Task output:\r?\n([\s\S]*?)\s*<\/task_notification>$/.exec(
+    /^<task_notification>\s*Task ([^\s<>]+) completed with status: (SUCCESS|FAILED|CANCELLED)\.\s*Task output:\r?\n([\s\S]*)<\/task_notification>$/.exec(
       text.trim(),
     );
   if (!match) return undefined;
