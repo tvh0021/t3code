@@ -38,6 +38,16 @@ const threadId = ThreadId.make("antigravity-thread");
 const nativeSessionId = "b75db7e9-cd99-40e5-aa63-ac2b4674a6a9";
 const nativeDefault = "gemini-test-low";
 const nativeAlternative = "gemini-test-high";
+const nativeClaudeOpus = "claude-opus-5-5-medium";
+const nativeClaudeSonnet = "claude-sonnet-5-5-medium";
+const nativeClaudeModels = [
+  { value: "claude-opus-5-5-low", name: "Claude Opus 5.5 (Low)" },
+  { value: nativeClaudeOpus, name: "Claude Opus 5.5 (Medium)" },
+  { value: "claude-opus-5-5-high", name: "Claude Opus 5.5 (High)" },
+  { value: "claude-sonnet-5-5-low", name: "Claude Sonnet 5.5 (Low)" },
+  { value: nativeClaudeSonnet, name: "Claude Sonnet 5.5 (Medium)" },
+  { value: "claude-sonnet-5-5-high", name: "Claude Sonnet 5.5 (High)" },
+] as const;
 const decodeSettings = Schema.decodeSync(AntigravitySettings);
 const decodeRequestLog = Schema.decodeEffect(
   Schema.Array(
@@ -74,6 +84,7 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
   readonly holdCancel?: boolean;
   readonly holdClose?: boolean;
   readonly holdDispatch?: boolean;
+  readonly modelOptions?: ReadonlyArray<{ readonly value: string; readonly name: string }>;
 }) {
   const runtimeEvents = yield* Queue.unbounded<AcpSessionRuntimeEvent>();
   const canonicalEvents = yield* Queue.unbounded<ProviderRuntimeEvent>();
@@ -112,6 +123,7 @@ const makeHarness = Effect.fn("makeAntigravityAdapterHarness")(function* (option
       options: [
         { value: nativeDefault, name: "Gemini test low" },
         { value: nativeAlternative, name: "Gemini test high" },
+        ...(options?.modelOptions ?? []),
       ],
     },
   ];
@@ -329,9 +341,13 @@ it.layer(layer)("AntigravityAdapter", (it) => {
     }),
   );
 
-  it.effect(
-    "runs native auth, resume, models, commands, and streaming through the ACP transport",
-    () =>
+  it.effect.each([
+    { name: "Gemini", model: nativeAlternative },
+    { name: "Claude Opus 5.5", model: nativeClaudeOpus },
+    { name: "Claude Sonnet 5.5", model: nativeClaudeSonnet },
+  ] as const)(
+    "runs native auth, resume, models, commands, and streaming through the ACP transport with $name",
+    ({ model: selectedModel }) =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -390,24 +406,24 @@ it.layer(layer)("AntigravityAdapter", (it) => {
           threadId,
           cwd,
           runtimeMode: "auto-accept-edits",
-          modelSelection: { instanceId, model: nativeAlternative },
+          modelSelection: { instanceId, model: selectedModel },
         });
         yield* adapter.stopSession(threadId);
         const resumed = yield* adapter.startSession({
           threadId,
           cwd,
           runtimeMode: "auto-accept-edits",
-          modelSelection: { instanceId, model: nativeAlternative },
+          modelSelection: { instanceId, model: selectedModel },
           resumeCursor: original.resumeCursor,
         });
-        expect(resumed.model).toBe(nativeAlternative);
+        expect(resumed.model).toBe(selectedModel);
         expect(original.runtimeMode).toBe("full-access");
         expect(resumed.runtimeMode).toBe("full-access");
         yield* adapter.sendTurn({ threadId, input: "Reply with one short line." });
         yield* Deferred.await(completed);
         expect(commands).toEqual(["plan", "logout", "plan", "logout"]);
         expect(modelSelections.length).toBeGreaterThan(0);
-        expect(modelSelections.every((model) => model === nativeAlternative)).toBe(true);
+        expect(modelSelections.every((model) => model === selectedModel)).toBe(true);
         expect(
           observed
             .filter((event) => event.type === "content.delta")
@@ -446,34 +462,37 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       }),
   );
 
-  it.effect("reapplies the exact saved model and mode after a native resume", () =>
+  it.effect.each([
+    { name: "Gemini", model: nativeAlternative, modelOptions: [] },
+    { name: "Claude Opus 5.5", model: nativeClaudeOpus, modelOptions: nativeClaudeModels },
+  ] as const)("reapplies the exact saved $name model and mode after a native resume", (selection) =>
     Effect.gen(function* () {
-      const h = yield* makeHarness();
+      const h = yield* makeHarness({ modelOptions: selection.modelOptions });
       const first = yield* h.adapter.startSession({
         threadId,
         cwd: process.cwd(),
         runtimeMode: "auto-accept-edits",
-        modelSelection: { instanceId, model: nativeAlternative },
+        modelSelection: { instanceId, model: selection.model },
       });
-      expect(first.model).toBe(nativeAlternative);
+      expect(first.model).toBe(selection.model);
       yield* h.adapter.stopSession(threadId);
       const second = yield* h.adapter.startSession({
         threadId,
         cwd: "/tmp",
         runtimeMode: "auto-accept-edits",
         resumeCursor: first.resumeCursor,
-        modelSelection: { instanceId, model: nativeAlternative },
+        modelSelection: { instanceId, model: selection.model },
       });
-      expect(second.model).toBe(nativeAlternative);
+      expect(second.model).toBe(selection.model);
       // The adapter resolves the cwd it was given through the host Path.
       expect(second.cwd).toBe((yield* Path.Path).resolve("/tmp"));
       expect(h.launches[1]?.resumeSessionId).toBe(nativeSessionId);
       expect(h.calls).toEqual([
         "start",
-        `model:${nativeAlternative}`,
+        `model:${selection.model}`,
         "mode:yolo",
         "start",
-        `model:${nativeAlternative}`,
+        `model:${selection.model}`,
         "mode:yolo",
       ]);
       expect(h.commandUpdates.at(-1)?.map((command) => command.name)).toEqual(["plan", "logout"]);
@@ -531,41 +550,53 @@ it.layer(layer)("AntigravityAdapter", (it) => {
     }),
   );
 
-  it.effect("does not auto-approve a remaining native request in full access", () =>
-    Effect.gen(function* () {
-      const h = yield* makeHarness();
-      yield* h.adapter.startSession({ threadId, cwd: process.cwd(), runtimeMode: "full-access" });
-      const permission = yield* h
-        .invokePermission({
-          sessionId: nativeSessionId,
-          toolCall: { toolCallId: "write-1", kind: "edit", title: "Write probe.txt" },
-          options: [
-            { optionId: "native:allow", name: "Allow", kind: "allow_once" },
-            { optionId: "native:deny", name: "Deny", kind: "reject_once" },
-          ],
-        })
-        .pipe(Effect.forkChild);
-      const opened = yield* h.waitForEvent((event) => event.type === "request.opened");
-      expect(h.calls).toContain("mode:yolo");
-      expect(opened.payload.options).toEqual([
-        { decision: "accept", label: "Allow once" },
-        { decision: "decline", label: "Deny" },
-        { decision: "cancel", label: "Cancel" },
-      ]);
-      expect(permission.pollUnsafe()).toBeUndefined();
-      const always = yield* h.adapter
-        .respondToRequest(threadId, ApprovalRequestId.make(opened.requestId!), "acceptAlways")
-        .pipe(Effect.exit);
-      expect(Exit.isFailure(always)).toBe(true);
-      yield* h.adapter.respondToRequest(
-        threadId,
-        ApprovalRequestId.make(opened.requestId!),
-        "decline",
-      );
-      expect(yield* Fiber.join(permission)).toEqual({
-        outcome: { outcome: "selected", optionId: "native:deny" },
-      });
-    }),
+  it.effect.each([
+    { name: "Gemini", model: nativeAlternative, modelOptions: [] },
+    { name: "Claude Opus 5.5", model: nativeClaudeOpus, modelOptions: nativeClaudeModels },
+  ] as const)(
+    "does not auto-approve a remaining native request in full access for $name",
+    (selection) =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({ modelOptions: selection.modelOptions });
+        const session = yield* h.adapter.startSession({
+          threadId,
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          modelSelection: { instanceId, model: selection.model },
+        });
+        expect(session.model).toBe(selection.model);
+        expect(h.calls).toContain(`model:${selection.model}`);
+        const permission = yield* h
+          .invokePermission({
+            sessionId: nativeSessionId,
+            toolCall: { toolCallId: "write-1", kind: "edit", title: "Write probe.txt" },
+            options: [
+              { optionId: "native:allow", name: "Allow", kind: "allow_once" },
+              { optionId: "native:deny", name: "Deny", kind: "reject_once" },
+            ],
+          })
+          .pipe(Effect.forkChild);
+        const opened = yield* h.waitForEvent((event) => event.type === "request.opened");
+        expect(h.calls).toContain("mode:yolo");
+        expect(opened.payload.options).toEqual([
+          { decision: "accept", label: "Allow once" },
+          { decision: "decline", label: "Deny" },
+          { decision: "cancel", label: "Cancel" },
+        ]);
+        expect(permission.pollUnsafe()).toBeUndefined();
+        const always = yield* h.adapter
+          .respondToRequest(threadId, ApprovalRequestId.make(opened.requestId!), "acceptAlways")
+          .pipe(Effect.exit);
+        expect(Exit.isFailure(always)).toBe(true);
+        yield* h.adapter.respondToRequest(
+          threadId,
+          ApprovalRequestId.make(opened.requestId!),
+          "decline",
+        );
+        expect(yield* Fiber.join(permission)).toEqual({
+          outcome: { outcome: "selected", optionId: "native:deny" },
+        });
+      }),
   );
 
   it.effect("allows a review child to report through T3 MCP without an approval prompt", () =>
@@ -700,64 +731,75 @@ it.layer(layer)("AntigravityAdapter", (it) => {
     }),
   );
 
-  it.effect("waits for native cancellation before a steer changes the model", () =>
-    Effect.gen(function* () {
-      const h = yield* makeHarness({ holdCancel: true });
-      yield* h.adapter.startSession({
-        threadId,
-        cwd: process.cwd(),
-        runtimeMode: "approval-required",
-      });
-      const first = yield* h.adapter
-        .sendTurn({ threadId, input: "First prompt" })
-        .pipe(Effect.forkChild);
-      const initialPrompt = yield* h.nextPrompt;
-      expect(initialPrompt.content).toEqual([
-        { type: "text", text: "First prompt" },
-        { type: "text", text: expect.stringContaining(`Antigravity harness, as ${nativeDefault}`) },
-      ]);
-      const marker = h.calls.length;
-      const second = yield* h.adapter
-        .sendTurn({
+  it.effect.each([
+    { name: "Gemini", model: nativeAlternative, modelOptions: [] },
+    { name: "Claude Sonnet 5.5", model: nativeClaudeSonnet, modelOptions: nativeClaudeModels },
+  ] as const)(
+    "waits for native cancellation before a steer changes the model to $name",
+    (selection) =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({
+          holdCancel: true,
+          modelOptions: selection.modelOptions,
+        });
+        yield* h.adapter.startSession({
           threadId,
-          input: "Steer the turn",
-          modelSelection: { instanceId, model: nativeAlternative },
-        })
-        .pipe(Effect.forkChild);
-      expect(yield* h.nextCancellation).toBe(1);
-      expect(h.calls.slice(marker)).toEqual(["cancel:1"]);
-      yield* h.emitNative({
-        _tag: "ContentDelta",
-        text: "The first prompt stopped.",
-        rawPayload: {},
-      });
-      yield* Deferred.succeed(h.cancelRelease, undefined);
-      const replacement = yield* h.nextPrompt;
-      expect(replacement.content).toEqual([
-        { type: "text", text: "Steer the turn" },
-        {
-          type: "text",
-          text: expect.stringContaining(`Antigravity harness, as ${nativeAlternative}`),
-        },
-      ]);
-      expect(h.calls.slice(marker)).toEqual([
-        "cancel:1",
-        "drained:1",
-        `model:${nativeAlternative}`,
-        "mode:yolo",
-        "prompt:2",
-      ]);
-      yield* Deferred.succeed(replacement.result, { stopReason: "end_turn" });
-      const [oldResult, newResult] = yield* Effect.all([Fiber.join(first), Fiber.join(second)]);
-      expect(oldResult.turnId).toBe(newResult.turnId);
-      yield* h.waitForEvent((event) => event.type === "turn.completed");
-      expect(h.seen.filter((event) => event.type === "turn.completed")).toHaveLength(1);
-      expect((yield* h.adapter.listSessions())[0]).toMatchObject({
-        status: "ready",
-        activeTurnId: undefined,
-        model: nativeAlternative,
-      });
-    }),
+          cwd: process.cwd(),
+          runtimeMode: "approval-required",
+        });
+        const first = yield* h.adapter
+          .sendTurn({ threadId, input: "First prompt" })
+          .pipe(Effect.forkChild);
+        const initialPrompt = yield* h.nextPrompt;
+        expect(initialPrompt.content).toEqual([
+          { type: "text", text: "First prompt" },
+          {
+            type: "text",
+            text: expect.stringContaining(`Antigravity harness, as ${nativeDefault}`),
+          },
+        ]);
+        const marker = h.calls.length;
+        const second = yield* h.adapter
+          .sendTurn({
+            threadId,
+            input: "Steer the turn",
+            modelSelection: { instanceId, model: selection.model },
+          })
+          .pipe(Effect.forkChild);
+        expect(yield* h.nextCancellation).toBe(1);
+        expect(h.calls.slice(marker)).toEqual(["cancel:1"]);
+        yield* h.emitNative({
+          _tag: "ContentDelta",
+          text: "The first prompt stopped.",
+          rawPayload: {},
+        });
+        yield* Deferred.succeed(h.cancelRelease, undefined);
+        const replacement = yield* h.nextPrompt;
+        expect(replacement.content).toEqual([
+          { type: "text", text: "Steer the turn" },
+          {
+            type: "text",
+            text: expect.stringContaining(`Antigravity harness, as ${selection.model}`),
+          },
+        ]);
+        expect(h.calls.slice(marker)).toEqual([
+          "cancel:1",
+          "drained:1",
+          `model:${selection.model}`,
+          "mode:yolo",
+          "prompt:2",
+        ]);
+        yield* Deferred.succeed(replacement.result, { stopReason: "end_turn" });
+        const [oldResult, newResult] = yield* Effect.all([Fiber.join(first), Fiber.join(second)]);
+        expect(oldResult.turnId).toBe(newResult.turnId);
+        yield* h.waitForEvent((event) => event.type === "turn.completed");
+        expect(h.seen.filter((event) => event.type === "turn.completed")).toHaveLength(1);
+        expect((yield* h.adapter.listSessions())[0]).toMatchObject({
+          status: "ready",
+          activeTurnId: undefined,
+          model: selection.model,
+        });
+      }),
   );
 
   it.effect("rejects an unavailable steer model without cancelling current work", () =>

@@ -30,6 +30,11 @@ const modelConfig = {
   ],
 } satisfies EffectAcpSchema.SessionConfigOption;
 
+const claudeModelOptions = [
+  { value: "claude-opus-5-5-medium", name: "Claude Opus 5.5 (Medium)" },
+  { value: "claude-sonnet-5-5-medium", name: "Claude Sonnet 5.5 (Medium)" },
+] as const;
+
 function makeModelRuntime(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> = [modelConfig],
   failure?: EffectAcpErrors.AcpError,
@@ -58,6 +63,27 @@ describe("applyAntigravityAcpModelSelection", () => {
       expect(model).toBe("gemini-saved");
       expect(selections).toEqual(["gemini-saved"]);
     }),
+  );
+
+  it.effect.each(claudeModelOptions)(
+    "selects the exact advertised Claude model ID $value",
+    ({ value }) =>
+      Effect.gen(function* () {
+        const { runtime, selections } = makeModelRuntime([
+          {
+            ...modelConfig,
+            options: [...modelConfig.options, ...claudeModelOptions],
+          },
+        ]);
+        const model = yield* applyAntigravityAcpModelSelection({
+          runtime,
+          model: value,
+          mapError: (cause) => cause,
+        });
+
+        expect(model).toBe(value);
+        expect(selections).toEqual([value]);
+      }),
   );
 
   it.effect("reapplies an explicit selection even when setup reports the same model", () =>

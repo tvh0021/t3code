@@ -36,6 +36,8 @@ const modelSelection = {
   instanceId: ProviderInstanceId.make("antigravity-test"),
   model: "gemini-test",
 };
+const claudeOpusModel = "claude-opus-5-5-medium";
+const claudeSonnetModel = "claude-sonnet-5-5-medium";
 const encodeMetadata = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ cwd: Schema.String })),
 );
@@ -56,6 +58,7 @@ interface PromptContext {
 const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* (
   options: {
     readonly outputs?: ReadonlyArray<string>;
+    readonly requestedModel?: string;
     readonly prompt?: (context: PromptContext) => Effect.Effect<AcpSchema.PromptResponse, AcpError>;
     readonly startError?: AcpError;
     readonly rejectAdmission?: boolean;
@@ -87,6 +90,13 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
     stop: undefined as Effect.Effect<void> | undefined,
   };
   const outputs = [...(options.outputs ?? ['{"title":"Repair login"}'])];
+  const requestedModel = options.requestedModel ?? modelSelection.model;
+  const advertisedModels = [
+    { value: modelSelection.model, name: "Gemini test" },
+    ...(requestedModel === modelSelection.model
+      ? []
+      : [{ value: requestedModel, name: requestedModel }]),
+  ];
   const incoming: Omit<PromptContext, "cwd" | "emit"> = {
     permission: () => Effect.die("No permission handler."),
     question: () => Effect.die("No question handler."),
@@ -162,7 +172,7 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
             category: "model",
             type: "select",
             currentValue: modelSelection.model,
-            options: [{ value: modelSelection.model, name: "Gemini test" }],
+            options: advertisedModels,
           },
         ]),
         getEvents: () => Stream.fromQueue(events),
@@ -246,7 +256,11 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
     makeRuntime,
     withProcess,
   });
-  const titleInput = { cwd: projectDirectory, message: "Repair Google login", modelSelection };
+  const titleInput = {
+    cwd: projectDirectory,
+    message: "Repair Google login",
+    modelSelection: { ...modelSelection, model: requestedModel },
+  };
   const assertCleaned = Effect.gen(function* () {
     expect(state.closed).toEqual(state.workspaces);
     for (const workspace of state.workspaces) {
@@ -278,11 +292,16 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
 });
 
 it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
-  it.effect(
-    "generates all helper types in empty workspaces and removes only owned session files",
-    () =>
+  it.effect.each([
+    { name: "Gemini", model: modelSelection.model },
+    { name: "Claude Opus 5.5", model: claudeOpusModel },
+    { name: "Claude Sonnet 5.5", model: claudeSonnetModel },
+  ] as const)(
+    "generates all helper types with the selected advertised $name model and removes only owned session files",
+    ({ model }) =>
       Effect.gen(function* () {
         const fixture = yield* makeFixture({
+          requestedModel: model,
           outputs: [
             '{"subject":"  Repair Google login.\\nExtra line","body":"  Keep the remote callback.  ","branch":"Repair Login"}',
             '```json\n{"title":" Repair Google login\\nExtra line","body":"  ## Summary\\nSupport remote callbacks.  "}\n```',
@@ -290,7 +309,10 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
             '{"title":"  \\"Repair Google login\\"  "}',
           ],
         });
-        const common = { cwd: fixture.projectDirectory, modelSelection };
+        const common = {
+          cwd: fixture.projectDirectory,
+          modelSelection: fixture.titleInput.modelSelection,
+        };
         expect(
           yield* fixture.textGeneration.generateCommitMessage({
             ...common,
@@ -327,7 +349,7 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
         expect(fixture.state.workspaces).not.toContain(fixture.projectDirectory);
         expect(fixture.state.nativeFilesAtClose).toEqual([true, true, true, true]);
         expect(fixture.state.selectedModes).toEqual(["default", "default", "default", "default"]);
-        expect(fixture.state.selectedModels).toEqual(Array(4).fill(modelSelection.model));
+        expect(fixture.state.selectedModels).toEqual(Array(4).fill(model));
         expect(fixture.state.prompts[0]?.prompt).toEqual([
           { type: "text", text: expect.stringContaining("+handleRemoteCallback()") },
         ]);

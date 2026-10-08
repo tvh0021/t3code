@@ -413,3 +413,13 @@ Resolved by:
 2. Ingesting historical SQLite conversation sessions via `UsageService.ts` and
    `antigravityConversations.ts` across both user data and provider state
    directories.
+
+### AG-CLAUDE-001: Claude 5.5 through Antigravity
+
+Status: Verified in installed Personal 0.3.0 on October 8, 2026.
+
+The managed runtime is ACP 1.3.0 and the shared client identity exposes the account's eligible Claude Opus and Sonnet 5.5 variants alongside Gemini. Native IDs reach chat and text helpers unchanged. Local classification preserves these variants across upstream manifest refreshes. Availability remains account-driven and relies on Google's undocumented recognized-client behavior.
+
+The isolated release snapshot passed 167 focused tests, server typechecking, scoped lint and formatting. Earlier isolated live checks covered resume, cancellation and branch generation. Installed Opus, Sonnet and Gemini turns passed on the new network. Remote, relay, tunnel and native mobile paths remain unverified.
+
+Installed verification completed account discovery of all six current Claude variants, live Opus and Sonnet turns, a switch back to Gemini, and thread reopening with retained replies and selection. The managed runtime reports 1.3.0. Native denied-tool behavior remains covered by focused tests rather than a live denial probe.

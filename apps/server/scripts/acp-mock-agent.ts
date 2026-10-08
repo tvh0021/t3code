@@ -67,10 +67,11 @@ const permissionRequestCount = Math.max(
   1,
   Number(process.env.T3_ACP_PERMISSION_REQUEST_COUNT ?? "1") || 1,
 );
-const sessionId = "mock-session-1";
+const sessionId = process.env.T3_ACP_SESSION_ID ?? "mock-session-1";
 
 let currentModeId = antigravityProfile ? "default" : "ask";
 let currentModelId = antigravityProfile ? "gemini-test-low" : "default";
+let antigravityZedClient = false;
 let parameterizedModelPicker = false;
 let currentReasoning = "medium";
 let currentContext = "272k";
@@ -117,6 +118,9 @@ process.once("exit", (code) => {
 
 function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
   if (antigravityProfile) {
+    const models = antigravityZedClient
+      ? [...antigravityModels, ...antigravityThirdPartyModels]
+      : antigravityModels;
     return [
       {
         id: "model",
@@ -124,7 +128,7 @@ function configOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
         category: "model",
         type: "select",
         currentValue: currentModelId,
-        options: antigravityModels.map((model) => ({ value: model.modelId, name: model.name })),
+        options: models.map((model) => ({ value: model.modelId, name: model.name })),
       },
       {
         id: "mode",
@@ -299,6 +303,14 @@ const antigravityModels = [
   { modelId: "gemini-test-low", name: "Gemini Test Low" },
   { modelId: "gemini-test-high", name: "Gemini Test High" },
 ] satisfies ReadonlyArray<AcpSchema.ModelInfo>;
+const antigravityThirdPartyModels = [
+  { modelId: "claude-opus-5-5-low", name: "Claude Opus 5.5 (Low)" },
+  { modelId: "claude-opus-5-5-medium", name: "Claude Opus 5.5 (Medium)" },
+  { modelId: "claude-opus-5-5-high", name: "Claude Opus 5.5 (High)" },
+  { modelId: "claude-sonnet-5-5-low", name: "Claude Sonnet 5.5 (Low)" },
+  { modelId: "claude-sonnet-5-5-medium", name: "Claude Sonnet 5.5 (Medium)" },
+  { modelId: "claude-sonnet-5-5-high", name: "Claude Sonnet 5.5 (High)" },
+] satisfies ReadonlyArray<AcpSchema.ModelInfo>;
 
 const availableModes: ReadonlyArray<AcpSchema.SessionMode> = antigravityProfile
   ? [
@@ -353,7 +365,12 @@ const grokAcpModels: ReadonlyArray<AcpSchema.ModelInfo> = [
 
 function modelState(): AcpSchema.SessionModelState {
   if (antigravityProfile) {
-    return { currentModelId, availableModels: antigravityModels };
+    return {
+      currentModelId,
+      availableModels: antigravityZedClient
+        ? [...antigravityModels, ...antigravityThirdPartyModels]
+        : antigravityModels,
+    };
   }
   const modelId = grokAcpModels.some((model) => model.modelId === currentModelId)
     ? currentModelId
@@ -394,6 +411,7 @@ const program = Effect.gen(function* () {
       parameterizedModelPicker =
         request.clientCapabilities?._meta?.parameterizedModelPicker === true;
       if (antigravityProfile) {
+        antigravityZedClient = request.clientInfo?.name.toLowerCase() === "zed";
         return {
           protocolVersion: 1,
           agentInfo: { name: "antigravity-acp", version: "mock" },
@@ -569,6 +587,18 @@ const program = Effect.gen(function* () {
         currentModeId = request.value;
       }
       if (request.configId === "model" && typeof request.value === "string") {
+        if (
+          antigravityProfile &&
+          !modelState().availableModels.some((model) => model.modelId === request.value)
+        ) {
+          return yield* AcpError.AcpRequestError.invalidParams(
+            `Unknown mock model id: ${request.value}`,
+            {
+              method: "session/set_config_option",
+              params: request,
+            },
+          );
+        }
         currentModelId = request.value;
       }
       if (request.configId === "reasoning" && typeof request.value === "string") {

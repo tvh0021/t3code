@@ -3,6 +3,7 @@ import { expect, it } from "@effect/vitest";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   ProviderInstanceId,
+  ThreadId,
   type AntigravitySettings,
 } from "@t3tools/contracts";
 import {
@@ -48,6 +49,18 @@ const decodeRequest = Schema.decodeEffect(
     }),
   ),
 );
+const decodeClientInfo = Schema.decodeUnknownSync(Schema.Struct({ name: Schema.String }));
+const decodeModelConfigSelection = Schema.decodeUnknownSync(
+  Schema.Struct({ configId: Schema.String, value: Schema.String }),
+);
+const claude55ModelIds = [
+  "claude-opus-5-5-low",
+  "claude-opus-5-5-medium",
+  "claude-opus-5-5-high",
+  "claude-sonnet-5-5-low",
+  "claude-sonnet-5-5-medium",
+  "claude-sonnet-5-5-high",
+] as const;
 const blockedCredentialKeys = new Set([
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
@@ -60,7 +73,12 @@ function shellQuote(value: string): string {
 }
 
 const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
-  options: { readonly config?: Partial<AntigravitySettings>; readonly enabled?: boolean } = {},
+  options: {
+    readonly config?: Partial<AntigravitySettings>;
+    readonly enabled?: boolean;
+    readonly promptResponseText?: string;
+    readonly sessionId?: string;
+  } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -204,6 +222,12 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
       { name: "GEMINI_HOME", value: "/must-not-be-used" },
       { name: "ANTIGRAVITY_HARNESS_PATH", value: "/must-not-be-used" },
       { name: "BROWSER", value: "must-not-run" },
+      ...(options.promptResponseText === undefined
+        ? []
+        : [{ name: "T3_ACP_PROMPT_RESPONSE_TEXT", value: options.promptResponseText }]),
+      ...(options.sessionId === undefined
+        ? []
+        : [{ name: "T3_ACP_SESSION_ID", value: options.sessionId }]),
     ].map((variable) => ({ ...variable, sensitive: false })),
   }).pipe(
     Effect.provide(installation),
@@ -218,15 +242,17 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
       decodeRequest(line),
     );
   });
-  const assertClosed = Effect.gen(function* () {
-    for (const launch of launches) {
-      // Cancelled startup can report a signal instead of a numeric exit code.
-      yield* launch.handle.exitCode.pipe(Effect.ignore);
-      expect(yield* launch.handle.isRunning).toBe(false);
-      if (launch.cwd) expect(yield* fs.exists(launch.cwd)).toBe(false);
-      if (launch.tempDirectory) expect(yield* fs.exists(launch.tempDirectory)).toBe(false);
-    }
-  });
+  const assertClosed = (options: { readonly preservedCwd?: string } = {}) =>
+    Effect.gen(function* () {
+      for (const launch of launches) {
+        // Cancelled startup can report a signal instead of a numeric exit code.
+        yield* launch.handle.exitCode.pipe(Effect.ignore);
+        expect(yield* launch.handle.isRunning).toBe(false);
+        if (launch.cwd && launch.cwd !== options.preservedCwd)
+          expect(yield* fs.exists(launch.cwd)).toBe(false);
+        if (launch.tempDirectory) expect(yield* fs.exists(launch.tempDirectory)).toBe(false);
+      }
+    });
   return {
     instance,
     refresh,
@@ -303,7 +329,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
       const snapshot = yield* h.instance.snapshot.getSnapshot;
       expect(snapshot.auth.status).toBe("authenticated");
       expect(snapshot.models.length).toBeGreaterThan(0);
-      yield* h.assertClosed;
+      yield* h.assertClosed();
     }).pipe(Effect.scoped),
   );
 
@@ -319,11 +345,23 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         expect(snapshot.models.map((model) => model.slug)).toEqual([
           "gemini-test-low",
           "gemini-test-high",
+          ...claude55ModelIds,
         ]);
         expect(snapshot.models[0]?.aliases).toContain(ANTIGRAVITY_DEFAULT_MODEL);
-        // The mock catalog is not in the manifest's current list, so it folds
-        // under the legacy section like an old Codex model would.
-        expect(snapshot.models.every((model) => model.isLegacy === true)).toBe(true);
+        // These mock Gemini IDs are absent from the current manifest, so they
+        // remain legacy while the Claude 5.5 rows are classified as current.
+        expect(
+          snapshot.models
+            .filter(
+              (model) => model.slug === "gemini-test-low" || model.slug === "gemini-test-high",
+            )
+            .every((model) => model.isLegacy === true),
+        ).toBe(true);
+        const claudeModels = snapshot.models.filter((model) =>
+          claude55ModelIds.includes(model.slug as (typeof claude55ModelIds)[number]),
+        );
+        expect(claudeModels).toHaveLength(claude55ModelIds.length);
+        expect(claudeModels.every((model) => model.isLegacy !== true)).toBe(true);
         expect(snapshot.slashCommands.map((command) => command.name)).toEqual(["plan", "logout"]);
         expect(snapshot.supportsTextGeneration).toBe(true);
         h.controls.selected = h.second;
@@ -369,7 +407,68 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
             .filter((request) => request.method === "session/new")
             .map((request) => request.params?.mcpServers),
         ).toEqual([[], []]);
-        yield* h.assertClosed;
+        expect(
+          requests
+            .filter((request) => request.method === "initialize")
+            .map((request) => decodeClientInfo(request.params?.clientInfo).name),
+        ).toEqual(["zed", "zed"]);
+        yield* h.assertClosed();
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.skipIf(windowsHost)(
+    "selects Claude 5.5 for chat and branch-name generation through the shared ACP identity",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness({
+          enabled: true,
+          promptResponseText: '{"branch":"claude-feature"}',
+          sessionId: "b75db7e9-cd99-40e5-aa63-ac2ac1f80a15",
+        });
+        yield* h.refresh();
+        const snapshot = yield* h.instance.snapshot.getSnapshot;
+        expect(snapshot.models.map((model) => model.slug)).toEqual([
+          "gemini-test-low",
+          "gemini-test-high",
+          ...claude55ModelIds,
+        ]);
+
+        const cwd = yield* h.fs.makeTempDirectoryScoped({
+          prefix: "t3-antigravity-model-selection-",
+        });
+        const chatModel = "claude-opus-5-5-medium";
+        const session = yield* h.instance.adapter.startSession({
+          threadId: ThreadId.make("antigravity-claude-chat"),
+          cwd,
+          runtimeMode: "full-access",
+          modelSelection: { instanceId: h.instance.instanceId, model: chatModel },
+        });
+        expect(session.model).toBe(chatModel);
+        yield* h.instance.adapter.stopSession(session.threadId);
+
+        const helperModel = "claude-sonnet-5-5-medium";
+        expect(
+          yield* h.instance.textGeneration.generateBranchName({
+            cwd,
+            message: "Add a Claude compatibility test",
+            modelSelection: { instanceId: h.instance.instanceId, model: helperModel },
+          }),
+        ).toEqual({ branch: "claude-feature" });
+
+        const requests = yield* h.readRequests;
+        expect(
+          requests
+            .filter((request) => request.method === "initialize")
+            .map((request) => decodeClientInfo(request.params?.clientInfo).name),
+        ).toEqual(["zed", "zed", "zed"]);
+        expect(
+          requests
+            .filter((request) => request.method === "session/set_config_option")
+            .map((request) => decodeModelConfigSelection(request.params))
+            .filter((request) => request.configId === "model")
+            .map((request) => request.value),
+        ).toEqual([chatModel, helperModel]);
+        yield* h.assertClosed({ preservedCwd: cwd });
       }).pipe(Effect.scoped),
   );
 
@@ -396,7 +495,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
             .filter((request) => request.method === "authenticate")
             .map((request) => request.params?.methodId),
         ).toEqual(["gemini-api-key"]);
-        yield* h.assertClosed;
+        yield* h.assertClosed();
       }).pipe(Effect.scoped),
   );
 
@@ -425,7 +524,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         expect(snapshot.supportsTextGeneration).toBe(false);
         expect(h.acquisitions).toHaveLength(2);
         expect(h.releases).toEqual([h.first.version, h.signedOut.version]);
-        yield* h.assertClosed;
+        yield* h.assertClosed();
       }).pipe(Effect.scoped),
   );
 
@@ -449,7 +548,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         expect(snapshot.models).toEqual([]);
         expect(snapshot.supportsTextGeneration).toBe(false);
         expect(h.releases).toEqual([h.first.version, h.signedOut.version]);
-        yield* h.assertClosed;
+        yield* h.assertClosed();
       }).pipe(Effect.scoped),
   );
 
@@ -466,7 +565,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
       expect(after.auth).toEqual(before.auth);
       expect(h.acquisitions).toHaveLength(2);
       expect(h.releases).toEqual([h.first.version]);
-      yield* h.assertClosed;
+      yield* h.assertClosed();
     }).pipe(Effect.scoped),
   );
 
@@ -486,7 +585,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
           expect(h.path.dirname(directory)).toBe(tempRoot);
         }
         expect(new Set(directories).size).toBe(2);
-        yield* h.assertClosed;
+        yield* h.assertClosed();
       }).pipe(Effect.scoped),
   );
 

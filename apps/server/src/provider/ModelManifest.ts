@@ -4,9 +4,8 @@
  *
  * Provider catalogs and legacy classification live in `model-manifest.json`.
  * The bundled copy ships with every release; at runtime the service refreshes
- * it from the same file on `main`. Preference order is remote, then the last
- * successful on-disk copy, then the bundle. A failed fetch never fails a
- * provider check.
+ * it from the same file on `main`. A refresh cannot replace a newer manifest
+ * with an older one. A failed fetch never fails a provider check.
  *
  * Providers with authoritative discovery can use only the classification
  * overlay. Providers with static catalogs can resolve presentation and
@@ -47,6 +46,18 @@ const MANIFEST_TTL_MS = 60 * 60 * 1000;
 const MANIFEST_RETRY_MS = 5 * 60 * 1000;
 
 const FETCH_TIMEOUT_MS = 10_000;
+
+// This personal fork supports Claude through Antigravity. Upstream's manifest
+// does not track these models; keep their classification across remote refreshes.
+// This only classifies models already discovered by the account's ACP runtime.
+const FORK_ANTIGRAVITY_CURRENT_MODELS = new Set([
+  "claude-opus-5-5-low",
+  "claude-opus-5-5-medium",
+  "claude-opus-5-5-high",
+  "claude-sonnet-5-5-low",
+  "claude-sonnet-5-5-medium",
+  "claude-sonnet-5-5-high",
+]);
 
 const ManifestModelStatus = Schema.Literals(["current", "legacy"]);
 
@@ -213,6 +224,7 @@ function isLegacyModel(
   driverKind: ProviderDriverKind,
   slug: string,
 ): boolean {
+  if (driverKind === "antigravity" && FORK_ANTIGRAVITY_CURRENT_MODELS.has(slug)) return false;
   const family = driverKind === "codex" ? codexModelFamily(slug) : slug;
   const catalog = manifest.providers?.[driverKind]?.models;
   const catalogModel =
@@ -399,8 +411,13 @@ export const make = Effect.gen(function* () {
     );
     if (fetched === null) return manifest;
 
-    manifest = fetched;
+    // A valid but older upstream copy must not erase newer data bundled by a
+    // fork (or a newer copy already seen from upstream). Count the fetch for
+    // the TTL, but leave the accepted manifest and its disk cache untouched.
     fetchedAtMs = now;
+    if (manifestUpdatedAtMs(fetched) < manifestUpdatedAtMs(manifest)) return manifest;
+
+    manifest = fetched;
     yield* encodeManifestCache({ fetchedAtMs: now, manifest: fetched }).pipe(
       Effect.flatMap((serialized) => fileSystem.writeFileString(cachePath, serialized)),
       Effect.catchCause(() => Effect.void),

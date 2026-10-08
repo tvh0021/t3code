@@ -25,7 +25,8 @@ import {
  * Do not add assertions for real model slugs, names, status, aliases, or
  * profiles when editing model-manifest.json. Add tests only when fetch/cache
  * behavior or the provider-neutral resolver semantics change, and use
- * synthetic models for resolver coverage.
+ * synthetic models for resolver coverage. The fork classification override
+ * has separate coverage because it must survive an upstream refresh.
  */
 
 const CODEX = ProviderDriverKind.make("codex");
@@ -38,6 +39,37 @@ const model = (overrides: Partial<ServerProviderModel>): ServerProviderModel => 
 });
 
 describe("classifyModels", () => {
+  it("keeps fork Claude models current while honoring upstream Gemini changes", () => {
+    const manifest: ModelManifestData = {
+      version: 1,
+      updatedAt: "2099-01-01T00:00:00Z",
+      currentModels: { antigravity: ["gemini-next"] },
+    };
+    const models = [
+      model({ slug: "claude-opus-5-5-medium", isLegacy: true }),
+      model({ slug: "claude-sonnet-5-5-high", isLegacy: true }),
+      model({ slug: "gemini-next", isLegacy: true }),
+      model({ slug: "gemini-old" }),
+      model({ slug: "claude-old" }),
+    ];
+    assert.deepStrictEqual(
+      classifyModels(models, manifest, ProviderDriverKind.make("antigravity")).map((entry) => [
+        entry.slug,
+        entry.isLegacy ?? false,
+      ]),
+      [
+        ["claude-opus-5-5-medium", false],
+        ["claude-sonnet-5-5-high", false],
+        ["gemini-next", false],
+        ["gemini-old", true],
+        ["claude-old", true],
+      ],
+    );
+    assert.deepStrictEqual(
+      classifyModels([], manifest, ProviderDriverKind.make("antigravity")),
+      [],
+    );
+  });
   it("classifies qualified Codex families without changing their wire ids", () => {
     const manifest: ModelManifestData = { version: 1, currentModels: { codex: ["gpt-test"] } };
     const models = [
@@ -400,6 +432,58 @@ describe("ModelManifest service", () => {
         serviceLayers({
           prefix: "model-manifest-last-good-test",
           response: () => Response.json(responses[responseIndex]),
+        }),
+      ),
+    );
+  });
+
+  it.effect("keeps a newer bundle over an older fetched manifest", () => {
+    const staleManifests: ReadonlyArray<ModelManifestData> = [
+      { version: 1, currentModels: { codex: ["undated-stale-model"] } },
+      {
+        version: 1,
+        updatedAt: "2000-01-01T00:00:00Z",
+        currentModels: { codex: ["dated-stale-model"] },
+      },
+    ];
+    let fetchCount = 0;
+
+    return Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const config = yield* ServerConfig.ServerConfig;
+      const cachePath = path.join(config.stateDir, "model-manifest.json");
+      const service = yield* make;
+
+      assert.deepStrictEqual(yield* service.refresh, BUNDLED_MODEL_MANIFEST);
+      assert.strictEqual(fetchCount, 1);
+
+      // A valid older response still counts as a successful check for the
+      // in-memory TTL, so a stale upstream copy does not trigger five-minute
+      // retries while the newer bundle remains active.
+      yield* TestClock.adjust("6 minutes");
+      assert.deepStrictEqual(yield* service.refresh, BUNDLED_MODEL_MANIFEST);
+      assert.strictEqual(fetchCount, 1);
+
+      // Once the successful-fetch TTL expires, the next stale form is also
+      // rejected. An undated response is older than a dated bundle.
+      yield* TestClock.adjust("54 minutes");
+      assert.deepStrictEqual(yield* service.refresh, BUNDLED_MODEL_MANIFEST);
+      assert.strictEqual(fetchCount, 2);
+      assert.strictEqual(yield* fs.exists(cachePath), false);
+
+      const rebooted = yield* make;
+      assert.deepStrictEqual(yield* rebooted.current, BUNDLED_MODEL_MANIFEST);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        serviceLayers({
+          prefix: "model-manifest-stale-fetch-test",
+          response: () => {
+            const stale = staleManifests[Math.min(fetchCount, staleManifests.length - 1)]!;
+            fetchCount += 1;
+            return Response.json(stale);
+          },
         }),
       ),
     );

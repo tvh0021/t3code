@@ -24,6 +24,8 @@ import {
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import { normalizeAntigravitySessionUpdate } from "./AntigravityProtocol.ts";
 
+const ANTIGRAVITY_MODEL_CATALOG_CLIENT_NAME = "zed";
+
 export interface AntigravityAcpRuntimeInput extends Omit<
   AcpSessionRuntime.AcpSessionRuntimeOptions,
   | "authMethodId"
@@ -61,6 +63,13 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
   const context = yield* Layer.build(
     AcpSessionRuntime.layer({
       ...input,
+      // Antigravity's ACP server only returns account-eligible third-party
+      // models to recognized clients. T3 consumes this standard ACP model
+      // config directly, so use the compatible identity for every launch.
+      clientInfo: {
+        ...input.clientInfo,
+        name: ANTIGRAVITY_MODEL_CATALOG_CLIENT_NAME,
+      },
       authMethodId: input.authMethod ?? "oauth-personal",
       resumeMethod: "resume",
       cancelBehavior: "wait-for-prompt",

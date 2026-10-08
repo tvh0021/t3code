@@ -140,3 +140,10 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
 
 - **Zed thinking effort**: Model controls use native supported effort values and defaults. Selections reach the ACP bridge before prompts and survive thread reloads. Model switches retain only compatible values. Requires companion Zed bridge commit `11708bd472` or later.
 - **Verification**: Two hosted Luna turns completed through the browser at Low and High effort, including a replacement provider session. Focused T3 and native bridge tests, scoped typechecks, and targeted lint passed. Native mobile and remote/relay runtime verification remain pending.
+
+### 2026-10-08: Personal 0.3.0
+
+- Added account-discovered Claude Opus 5.5 and Sonnet 5.5 low, medium and high variants alongside Gemini in Antigravity. The shared ACP boundary uses the recognized Zed client identity and managed ACP 1.3.0. Availability depends on the Google account and Google's undocumented client allowlist.
+- Kept the six Claude variants current after upstream catalog refreshes without adding models absent from account discovery.
+- The isolated release snapshot passed 167 focused tests, server typechecking, scoped lint and formatting. The shared checkout previously passed 168 tests including a pre-existing test outside this release. Earlier live checks covered Claude turns, resume, cancellation and Sonnet branch generation. An October 8 full-adapter Gemini turn passed on the new network.
+- Installed Personal 0.3.0 and updated its managed runtime through Settings. About, retained projects and threads, provider refresh and model selection passed. One thread completed exact-response turns with Opus Medium, Sonnet Medium and Gemini High, then reopened with all replies and the Gemini selection retained. Deep signature verification passed with the existing Personal certificate in a temporary keychain. Remote, tunnel and native mobile paths remain untested.

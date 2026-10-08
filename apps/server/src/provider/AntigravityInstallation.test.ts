@@ -327,10 +327,14 @@ it.layer(NodeServices.layer)("Antigravity installation", (it) => {
           Schema.Struct({
             id: Schema.Union([Schema.String, Schema.Number]),
             method: Schema.String,
+            params: Schema.Struct({
+              clientInfo: Schema.Struct({ name: Schema.String }),
+            }),
           }),
         ),
       );
       const methods: string[] = [];
+      const clientNames: string[] = [];
       const profiles = new Set<string>();
       let closedRuntimes = 0;
       const spawner = ChildProcessSpawner.make(
@@ -371,6 +375,7 @@ it.layer(NodeServices.layer)("Antigravity installation", (it) => {
                   Effect.orDie,
                 );
                 methods.push(request.method);
+                clientNames.push(request.params.clientInfo.name);
                 yield* Queue.offer(
                   output,
                   encoder.encode(
@@ -425,6 +430,7 @@ it.layer(NodeServices.layer)("Antigravity installation", (it) => {
       );
       yield* Deferred.await(stagingReleased);
       expect(methods).toEqual(["initialize"]);
+      expect(clientNames).toEqual(["zed"]);
       expect(closedRuntimes).toBe(1);
       expect(profiles.size).toBe(1);
       for (const profile of profiles) {
