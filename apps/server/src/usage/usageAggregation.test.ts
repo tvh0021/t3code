@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import { UsageAggregator } from "./usageAggregation.ts";
-import type { RateTable } from "./usagePricing.ts";
+import { createOverrideRateTable, type RateTable } from "./usagePricing.ts";
 import { reconcileCodexCreditUsage, type UsageRecord } from "./usageTranscripts.ts";
 
 const rates: RateTable = new Map([
@@ -223,6 +223,51 @@ describe("UsageAggregator", () => {
     ]);
 
     expect(result.buckets).toHaveLength(3);
+  });
+
+  it("combines Claude efforts with priced costs and complete token totals", () => {
+    const result = aggregate([
+      record({ model: "claude-sonnet-5-5" }),
+      record({ model: "claude-sonnet-5-5-medium" }),
+      record({ model: "claude-sonnet-5-5-low" }),
+      record({ model: "claude-opus-5-5-medium" }),
+    ]);
+    const sonnet = result.buckets.find((bucket) => bucket.model === "claude-sonnet-5-5");
+    expect(result.buckets).toHaveLength(2);
+    expect(sonnet?.records).toBe(3);
+    expect(sonnet?.totals.outputTokens).toBe(150);
+    expect(sonnet?.costUsd).toBeCloseTo(3 * 0.000825, 9);
+    expect(sonnet?.unpricedRecords).toBe(0);
+  });
+
+  it("prices effort-specific overrides before combining model rows", () => {
+    const aggregator = new UsageAggregator({
+      timeZone: "UTC",
+      sinceDay: "2026-08-01",
+      untilDay: "2026-08-31",
+      rates,
+      priceOverrides: createOverrideRateTable({
+        "claude-sonnet-5-5-high": {
+          inputCostPerMillionTokens: 2,
+          outputCostPerMillionTokens: 4,
+          cacheReadCostPerMillionTokens: 1,
+        },
+      }),
+    });
+    aggregator.add(record({ model: "claude-sonnet-5-5-high" }));
+    aggregator.add(record({ model: "claude-sonnet-5-5-low" }));
+    const [bucket] = aggregator.finish().buckets;
+    expect(bucket?.model).toBe("claude-sonnet-5-5");
+    expect(bucket?.costUsd).toBeCloseTo(0.00142 + 0.000825, 9);
+    expect(bucket?.cacheSavingsUsd).toBeCloseTo(0.001 + 0.0019, 9);
+  });
+
+  it("accounts for Codex auto-review at zero without inventing an API rate", () => {
+    const [bucket] = aggregate([record({ provider: "codex", model: "codex-auto-review" })]).buckets;
+    expect(bucket?.costUsd).toBe(0);
+    expect(bucket?.cacheSavingsUsd).toBe(0);
+    expect(bucket?.unpricedRecords).toBe(0);
+    expect(bucket?.totals.outputTokens).toBe(50);
   });
 
   it("merges gemini-3.8-flash tiers (high, medium, low, tiered) into unified gemini-3.8-flash accounting", () => {

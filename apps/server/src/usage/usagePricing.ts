@@ -1,9 +1,8 @@
 /**
  * Model rate lookup and cost arithmetic.
  *
- * Rates come from LiteLLM's `model_prices_and_context_window.json`, the same
- * table `ccusage` prices against. Everything here is pure: fetching and caching
- * the table lives in `UsageService`.
+ * Verified official rates take precedence over LiteLLM's rate table.
+ * Everything here is pure: fetching and caching lives in `UsageService`.
  *
  * @module usagePricing
  */
@@ -31,21 +30,59 @@ export interface ModelRate {
 
 export type RateTable = ReadonlyMap<string, ModelRate>;
 
+function ratePerMillion(
+  input: number,
+  output: number,
+  cacheRead: number,
+  cacheWrite = input,
+): ModelRate {
+  return {
+    inputCostPerToken: input / 1_000_000,
+    outputCostPerToken: output / 1_000_000,
+    cacheReadCostPerToken: cacheRead / 1_000_000,
+    cacheCreationCostPerToken: cacheWrite / 1_000_000,
+  };
+}
+
+/**
+ * Standard API rates verified 2026-10-11. Use the base context tier and
+ * Anthropic's 5-minute cache writes because transcripts omit those modifiers.
+ *
+ * OpenAI: https://developers.openai.com/api/docs/pricing
+ * Older models: https://developers.openai.com/api/docs/models/gpt-6-sol
+ * https://developers.openai.com/api/docs/models/gpt-5.6-sol
+ * https://developers.openai.com/api/docs/models/gpt-5.6-terra
+ * https://developers.openai.com/api/docs/models/gpt-5.6-luna
+ * Claude: https://platform.claude.com/docs/en/about-claude/pricing
+ * Gemini: https://ai.google.dev/gemini-api/docs/pricing
+ */
+export const OFFICIAL_MODEL_RATES: RateTable = new Map([
+  ["gpt-6-astra", ratePerMillion(10, 50, 1, 12.5)],
+  ["gpt-6.1-sol", ratePerMillion(2, 10, 0.1, 2.5)],
+  ["gpt-6-sol", ratePerMillion(2, 10, 0.2, 2.5)],
+  ["gpt-6-luna", ratePerMillion(0.1, 0.5, 0.01, 0.125)],
+  // Promotional rate available at least through 2026-11-21.
+  ["gpt-5.6-sol", ratePerMillion(4, 20, 0.4, 5)],
+  ["gpt-5.6-terra", ratePerMillion(2, 12, 0.2, 2.5)],
+  ["gpt-5.6-luna", ratePerMillion(0.2, 1.2, 0.02, 0.25)],
+  ["claude-opus-5-5", ratePerMillion(4, 20, 0.2, 5)],
+  ["claude-sonnet-5-5", ratePerMillion(2, 10, 0.1, 2.5)],
+  ["claude-opus-4-6", ratePerMillion(5, 25, 0.5, 6.25)],
+  ["claude-opus-4.6", ratePerMillion(5, 25, 0.5, 6.25)],
+  // Introductory rates through 2026-12-31. Gemini publishes cache storage
+  // separately; cache creation uses the input rate and excludes storage fees.
+  ["gemini-3.8-flash", ratePerMillion(0.75, 3.75, 0.075)],
+  ["gemini-3.1-pro", ratePerMillion(2, 12, 0.2)],
+  ["gemini-3.1-pro-preview", ratePerMillion(2, 12, 0.2)],
+]);
+
 /**
  * Fallback rates for models known from online documentation that are not
  * present in or aliased identically by LiteLLM.
  * All rates are USD per token.
  */
 export const STATIC_FALLBACK_RATES: ReadonlyMap<string, ModelRate> = new Map([
-  [
-    "gemini-3.8-flash",
-    {
-      inputCostPerToken: 0.75 / 1_000_000,
-      outputCostPerToken: 3.75 / 1_000_000,
-      cacheReadCostPerToken: 0.075 / 1_000_000,
-      cacheCreationCostPerToken: 0.75 / 1_000_000,
-    },
-  ],
+  ...OFFICIAL_MODEL_RATES,
   [
     "gemini-2.5-pro",
     {
@@ -91,33 +128,6 @@ export const STATIC_FALLBACK_RATES: ReadonlyMap<string, ModelRate> = new Map([
       cacheCreationCostPerToken: 0.3 / 1_000_000,
     },
   ],
-  [
-    "claude-opus-4-6",
-    {
-      inputCostPerToken: 5.0 / 1_000_000,
-      outputCostPerToken: 25.0 / 1_000_000,
-      cacheReadCostPerToken: 0.5 / 1_000_000,
-      cacheCreationCostPerToken: 6.25 / 1_000_000,
-    },
-  ],
-  [
-    "claude-opus-4.6",
-    {
-      inputCostPerToken: 5.0 / 1_000_000,
-      outputCostPerToken: 25.0 / 1_000_000,
-      cacheReadCostPerToken: 0.5 / 1_000_000,
-      cacheCreationCostPerToken: 6.25 / 1_000_000,
-    },
-  ],
-  [
-    "codex-auto-review",
-    {
-      inputCostPerToken: 1.0 / 1_000_000,
-      outputCostPerToken: 4.0 / 1_000_000,
-      cacheReadCostPerToken: 0.25 / 1_000_000,
-      cacheCreationCostPerToken: 1.0 / 1_000_000,
-    },
-  ],
 ]);
 
 /** Custom IDs keep their case, provider prefix, and variant suffix. */
@@ -135,10 +145,6 @@ export function createOverrideRateTable(
         (prices.cacheWriteCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
     };
     table.set(model.trim(), rate);
-    const normalized = normalizeUsageModel(model.trim());
-    if (!table.has(normalized)) {
-      table.set(normalized, rate);
-    }
   }
   return table;
 }
@@ -255,10 +261,9 @@ const UNPRICEABLE_MODELS = new Set([
 function candidateRateKeys(key: string): readonly string[] {
   const candidates: string[] = [key];
 
-  // Strip reasoning effort or tier suffix: gemini-3.8-flash-(high|medium|low|tiered) -> gemini-3.8-flash
-  const strippedGemini = normalizeUsageModel(key);
-  if (strippedGemini !== key) {
-    candidates.push(strippedGemini);
+  const normalized = normalizeUsageModel(key);
+  if (normalized !== key) {
+    candidates.push(normalized);
   }
 
   // Strip thinking suffix: claude-opus-4-6-thinking -> claude-opus-4-6, claude-opus-4.6
@@ -268,11 +273,6 @@ function candidateRateKeys(key: string): readonly string[] {
     if (strippedThinking.includes("-")) {
       candidates.push(strippedThinking.replace(/(\d+)-(\d+)/g, "$1.$2"));
     }
-  }
-
-  // Gemini aliases
-  if (key === "gemini-pro-agent") {
-    candidates.push("gemini-2.5-pro", "gemini-pro");
   }
 
   // Provider aliases
@@ -298,13 +298,19 @@ export function lookupRate(table: RateTable, model: string): ModelRate | null {
   const key = stripVariantSuffix(normalizeRateKey(model));
   const bareName = bareModelName(key);
   if (bareName.length === 0 || UNPRICEABLE_MODELS.has(bareName)) return null;
+  const candidates = candidateRateKeys(key);
 
-  for (const candidate of candidateRateKeys(key)) {
+  for (const candidate of candidates) {
+    const official = OFFICIAL_MODEL_RATES.get(candidate);
+    if (official !== undefined) return official;
+  }
+
+  for (const candidate of candidates) {
     const fromTable = table.get(candidate);
     if (fromTable !== undefined) return fromTable;
   }
 
-  for (const candidate of candidateRateKeys(key)) {
+  for (const candidate of candidates) {
     const fromFallback = STATIC_FALLBACK_RATES.get(candidate);
     if (fromFallback !== undefined) return fromFallback;
   }
@@ -330,7 +336,7 @@ export function priceUsage(
   reportedCostUsd: number | null,
   overrides?: RateTable,
 ): PricedUsage {
-  const override = overrides?.get(model.trim());
+  const override = overrides?.get(model.trim()) ?? overrides?.get(normalizeUsageModel(model));
   if (override === undefined && reportedCostUsd !== null && Number.isFinite(reportedCostUsd)) {
     return { costUsd: reportedCostUsd, costSource: "providerReported" };
   }
@@ -357,7 +363,10 @@ export function cacheSavingsUsd(
   totals: UsageTokenTotals,
   overrides?: RateTable,
 ): number {
-  const rate = overrides?.get(model.trim()) ?? lookupRate(table, model);
+  const rate =
+    overrides?.get(model.trim()) ??
+    overrides?.get(normalizeUsageModel(model)) ??
+    lookupRate(table, model);
   if (rate === null) return 0;
   return totals.cachedInputTokens * (rate.inputCostPerToken - rate.cacheReadCostPerToken);
 }

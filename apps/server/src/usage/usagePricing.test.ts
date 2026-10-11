@@ -23,6 +23,44 @@ describe("usage pricing", () => {
     reasoningTokens: 500_000,
   };
 
+  it.each([
+    ["gpt-6-astra", 73.5],
+    ["gpt-6.1-sol", 14.6],
+    ["gpt-6-sol", 14.7],
+    ["gpt-6-luna", 0.735],
+    ["gpt-5.6-sol", 29.4],
+    ["gpt-5.6-terra", 16.7],
+    ["gpt-5.6-luna", 1.67],
+    ["claude-opus-5-5", 29.2],
+    ["claude-sonnet-5-5", 14.6],
+    ["claude-opus-4.6", 36.75],
+    ["gemini-3.8-flash", 5.325],
+    ["gemini-pro-agent", 16.2],
+    ["gemini-3.1-pro-preview", 16.2],
+  ])("prices %s offline at official standard rates", (model, expected) => {
+    const priced = priceUsage(new Map(), model, totals, null);
+    expect(priced.costSource).toBe("modelPriced");
+    expect(priced.costUsd).toBeCloseTo(expected, 9);
+  });
+
+  it("uses verified rates ahead of stale public rates while honoring custom and reported costs", () => {
+    const table = parseRateTable({ "claude-sonnet-5-5": rate(1) });
+    expect(priceUsage(table, "claude-sonnet-5-5-medium", totals, null).costUsd).toBeCloseTo(14.6);
+    expect(priceUsage(table, "claude-sonnet-5-5-low", totals, 7).costUsd).toBe(7);
+    const overrides = createOverrideRateTable({
+      "claude-sonnet-5-5": { inputCostPerMillionTokens: 1, outputCostPerMillionTokens: 2 },
+      "claude-sonnet-5-5-high": { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 4 },
+    });
+    expect(priceUsage(table, "claude-sonnet-5-5-low", totals, 7, overrides).costUsd).toBe(5);
+    expect(priceUsage(table, "claude-sonnet-5-5-high", totals, 7, overrides).costUsd).toBe(10);
+    const variantOnly = createOverrideRateTable({
+      "claude-sonnet-5-5-high": { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 4 },
+    });
+    expect(
+      priceUsage(table, "claude-sonnet-5-5-low", totals, null, variantOnly).costUsd,
+    ).toBeCloseTo(14.6);
+  });
+
   it("uses custom token rates ahead of public and provider-reported costs", () => {
     const table = parseRateTable({ "example-model": rate(1) });
     const overrides = createOverrideRateTable({
@@ -169,11 +207,10 @@ describe("usage pricing", () => {
     // claude-opus-4-6-thinking maps to claude-opus-4-6
     expect(lookupRate(table, "claude-opus-4-6-thinking")?.inputCostPerToken).toBe(5.0 / 1_000_000);
 
-    // codex-auto-review resolves via static fallback
-    expect(lookupRate(table, "codex-auto-review")?.inputCostPerToken).toBe(1.0 / 1_000_000);
+    // Auto-review has no public API token rate; aggregation accounts for it at zero.
+    expect(lookupRate(table, "codex-auto-review")).toBeNull();
 
-    // gemini-pro-agent resolves to gemini-2.5-pro
-    expect(lookupRate(table, "gemini-pro-agent")?.inputCostPerToken).toBe(1.25 / 1_000_000);
+    expect(lookupRate(table, "gemini-pro-agent")?.inputCostPerToken).toBe(2 / 1_000_000);
 
     // zai-org resolves to zai/glm-5.3-flash
     expect(lookupRate(table, "zai-org/GLM-5.3-Flash")?.inputCostPerToken).toBe(0.15 / 1_000_000);

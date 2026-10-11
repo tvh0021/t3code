@@ -64,11 +64,24 @@ export function usdToCodexCredits(usd: number): number {
 /**
  * Normalizes model names for usage accounting.
  *
- * For example, Gemini 3.8 Flash tiers (high, medium, low, tiered) share the same pricing
- * and capabilities, so their accounting in the usage window is unified under `gemini-3.8-flash`.
+ * Effort and thinking variants share one model row. Provider prefixes and
+ * other model variants remain distinct.
  */
 export function normalizeUsageModel(model: string): string {
-  const trimmed = model.trim();
+  // Codex Max is a model, unlike a trailing reasoning-effort setting.
+  if (/(?:^|\/)gpt-\d+(?:\.\d+)?-codex-max(?:\[[^\]]*\])?$/i.test(model.trim())) {
+    return model.trim();
+  }
+  const trimmed = model
+    .trim()
+    .replace(
+      /((?:^|\/)(?:gpt-\d[^/[\]]*|claude-(?:opus|sonnet|haiku|fable)-\d[^/[\]]*|gemini-[^/[\]]*))-(none|minimal|low|medium|high|xhigh|max|ultra|ultrathink|thinking|tiered)(?=\[|$)/i,
+      "$1",
+    );
+  // Antigravity's ACP model list labels this ID "Gemini 3.1 Pro (High)".
+  if (/^gemini-pro-agent$/i.test(trimmed)) {
+    return "gemini-3.1-pro";
+  }
   if (/^claude-opus-4-6(-thinking)?$/i.test(trimmed)) {
     return "claude-opus-4.6";
   }
@@ -78,7 +91,7 @@ export function normalizeUsageModel(model: string): string {
   if (/^(zai-org\/|zai\/)?glm-5\.3-flash$/i.test(trimmed)) {
     return "glm-5.3-flash";
   }
-  return trimmed.replace(/(gemini-[^-/]+-flash)-(high|medium|low|tiered)\b/i, "$1");
+  return trimmed;
 }
 
 /**
@@ -101,7 +114,7 @@ export type UsageResolution = typeof UsageResolution.Type;
  * Why a bucket's cost is what it is.
  *
  * - `providerReported` - the transcript carried an explicit cost figure.
- * - `modelPriced` - we used a custom price override or the LiteLLM rate table.
+ * - `modelPriced` - we used a custom price override or a public model rate.
  * - `unpriced` - tokens are known, rates are not. Counted in totals, excluded
  *   from cost.
  */

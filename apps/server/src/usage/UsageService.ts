@@ -55,6 +55,7 @@ import {
 } from "./antigravityConversations.ts";
 import {
   createOverrideRateTable,
+  OFFICIAL_MODEL_RATES,
   parseRateTable,
   STATIC_FALLBACK_RATES,
   type RateTable,
@@ -807,6 +808,7 @@ export const make = Effect.gen(function* () {
       [
         ...STATIC_FALLBACK_RATES,
         ...rates,
+        ...OFFICIAL_MODEL_RATES,
         ...createOverrideRateTable(settings.usagePriceOverrides),
       ].map(([model, rate]) => [model, rate.outputCostPerToken * 1_000_000]),
     );

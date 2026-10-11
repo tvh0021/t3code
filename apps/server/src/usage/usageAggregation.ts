@@ -177,12 +177,14 @@ export class UsageAggregator {
 
     const pricedByModel = priceUsage(
       this.#options.rates,
-      model,
+      record.model,
       record.totals,
       record.reportedCostUsd,
       this.#options.priceOverrides,
     );
-    const priced = isCodexAutoReview ? { ...pricedByModel, costUsd: 0 } : pricedByModel;
+    const priced = isCodexAutoReview
+      ? { costUsd: 0, costSource: "modelPriced" as const }
+      : pricedByModel;
 
     bucket.totals = addTotals(bucket.totals, record.totals);
     bucket.costUsd += priced.costUsd;
@@ -194,7 +196,12 @@ export class UsageAggregator {
     }
     bucket.cacheSavingsUsd += isCodexAutoReview
       ? 0
-      : cacheSavingsUsd(this.#options.rates, model, record.totals, this.#options.priceOverrides);
+      : cacheSavingsUsd(
+          this.#options.rates,
+          record.model,
+          record.totals,
+          this.#options.priceOverrides,
+        );
     bucket.records += 1;
     if (priced.costSource === "unpriced") bucket.unpricedRecords += 1;
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;

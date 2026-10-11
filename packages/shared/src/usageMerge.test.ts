@@ -492,6 +492,45 @@ describe("mergeUsage", () => {
     expect(antigravityModels[0]?.totalTokens).toBe(1500);
   });
 
+  it.each([
+    ["claude-sonnet-5-5", "claude-sonnet-5-5-low", "claude-sonnet-5-5-medium"],
+    ["claude-opus-5-5", "claude-opus-5-5-medium", "claude-opus-5-5-high"],
+    ["gpt-6.1-sol", "gpt-6.1-sol-high", "gpt-6.1-sol-ultra"],
+    ["gemini-3.1-pro", "gemini-pro-agent", "gemini-3.1-pro-low"],
+  ])("combines %s efforts from different environments", (base, first, second) => {
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              bucket({ provider: "antigravity", model: first, costUsd: 2 }),
+              bucket({ provider: "antigravity", model: base, costUsd: 3 }),
+            ],
+            [{ provider: "antigravity", hostId: "mac-a", homePath: "/a" }],
+          ),
+        ),
+        environment(
+          "env-b",
+          summary(
+            [bucket({ provider: "antigravity", model: second, costUsd: 5 })],
+            [{ provider: "antigravity", hostId: "mac-b", homePath: "/b" }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    expect(merged.models).toHaveLength(1);
+    expect(merged.models[0]).toMatchObject({
+      model: base,
+      costUsd: 10,
+      costShare: 1,
+      records: 15,
+      totalTokens: 3480,
+    });
+    expect(merged.subscriptionCostUsd).toBe(10);
+  });
+
   it("normalizes displayed model names for opus-thinking, deepseek-v4.1, and glm-5.3", () => {
     const abacusSource = { provider: "abacus" as const, hostId: "mac", homePath: "/a" };
     const antigravitySource = { provider: "antigravity" as const, hostId: "mac", homePath: "/b" };

@@ -6,7 +6,8 @@
 environments. It shows token use, cache savings, model breakdowns, and estimated API-equivalent
 cost. These estimates are not your subscription bill.
 
-The model breakdown lists models by estimated cost, highest first, even when you view tokens.
+The model breakdown combines effort levels of the same model and lists models by estimated
+cost, highest first, even when you view tokens.
 
 Totals depend on the history available on each server. Grok turns without a saved completed-turn
 record are missing from the totals.
@@ -31,6 +32,9 @@ edit, or reset a model's estimated price. **Apply to** starts with your current 
 choose all environments or select individual destinations. Enter the exact model ID and USD
 rates per million input and output tokens. You can enter any model ID, including models
 without public pricing.
+
+A base model's price applies to all its effort levels unless an exact effort variant has its
+own custom price.
 
 Cache read and cache write rates are optional and use the input rate when blank. Enter `0` for
 tokens that are free. Saved prices replace automatic pricing for all of that environment's

@@ -1,6 +1,6 @@
 # Issue tracker
 
-Updated October 6, 2026.
+Updated October 11, 2026.
 
 ## Accepted mobile limitation
 
@@ -20,6 +20,23 @@ Antigravity and ChatLLM usage cannot appear in this app version's Usage view
 without a mobile update. Their Limits view remains independent of this Usage
 response. No provider is relabeled to make those totals appear under another
 name.
+
+## Resolved usage issues
+
+### USAGE-001: Effort variants split model rows and miss pricing
+
+Status: Fixed and verified in Personal 0.3.2 on October 11, 2026.
+
+Claude Sonnet 5.5 Low and Medium and Opus 5.5 Medium appeared as separate,
+unpriced rows. Shared normalization now combines effort variants on every
+client. The server uses verified official API rates for the affected models.
+Antigravity's `gemini-pro-agent` maps to Gemini 3.1 Pro instead of Gemini 2.5 Pro.
+Exact effort overrides are priced before aggregation, and custom base prices
+apply to other effort levels. The 85 focused regressions and scoped checks pass.
+The installed candidate shows one priced Sonnet row with 193K tokens, one Opus
+row with 3.96M tokens, and Gemini 3.1 Pro in place of the old alias. Usage refresh
+and Model/Day switching pass. Native mobile and remote runtime verification
+remain untested.
 
 ## Open issues
 
