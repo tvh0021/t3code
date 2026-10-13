@@ -1,6 +1,6 @@
 import * as NodeCrypto from "node:crypto";
 
-import type { ZedSettings } from "@t3tools/contracts";
+import type { ZedSettings, ProviderApprovalDecision } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -114,3 +114,30 @@ export const makeZedAcpRuntime = (
       Effect.provide(acpContext),
     );
   });
+
+export function selectAcpPermissionOptionId(
+  request: EffectAcpSchema.RequestPermissionRequest,
+  decision: ProviderApprovalDecision,
+): string | undefined {
+  const preferredKinds: ReadonlyArray<EffectAcpSchema.PermissionOption["kind"]> = (() => {
+    switch (decision) {
+      case "accept":
+        return ["allow_once", "allow_always"];
+      case "acceptForSession":
+      case "acceptAlways":
+        return ["allow_always", "allow_once"];
+      case "decline":
+        return ["reject_once", "reject_always"];
+      case "cancel":
+        return [];
+    }
+  })();
+
+  for (const kind of preferredKinds) {
+    const option = request.options.find(
+      (candidate) => candidate.kind === kind && candidate.optionId.trim().length > 0,
+    );
+    if (option) return option.optionId;
+  }
+  return undefined;
+}

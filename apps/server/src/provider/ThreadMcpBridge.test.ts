@@ -1,6 +1,7 @@
+import { ThreadsToolkit } from "../mcp/toolkits/threads/tools.ts";
 import { expect, it } from "vite-plus/test";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { makeThreadMcpBridge } from "./ThreadMcpBridge.ts";
+import { makeThreadMcpBridge, threadTools } from "./ThreadMcpBridge.ts";
 
 it("initializes a scoped MCP session, filters tools, and forwards calls with the session header", async () => {
   const methods: string[] = [];
@@ -76,4 +77,8 @@ it("initializes a scoped MCP session, filters tools, and forwards calls with the
     "Unknown T3 thread tool",
   );
   expect(methods).toEqual(["initialize", "notifications/initialized", "tools/list", "tools/call"]);
+});
+
+it("keeps the bridge thread-tool set equal to the toolkit names", () => {
+  expect([...threadTools].sort()).toEqual(Object.keys(ThreadsToolkit.tools).sort());
 });

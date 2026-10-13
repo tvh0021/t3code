@@ -1,12 +1,14 @@
 import { coordinationReviewDir } from "../../../orchestration/coordinationIds.ts";
-import { coordinationProviderIssue } from "../../../provider/coordinationWorkerPolicy.ts";
+import {
+  coordinationProviderIssue,
+  resolveChildRuntimeMode,
+} from "../../../provider/coordinationWorkerPolicy.ts";
 import { CoordinationPolicy } from "../../../orchestration/CoordinationPolicy.ts";
 import {
   CommandId,
   coordinationRole,
   MessageId,
   ThreadId,
-  resolveChildRuntimeMode,
   type ModelSelection,
   type OrchestrationThreadShell,
   type ServerProvider,

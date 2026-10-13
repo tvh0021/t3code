@@ -1,3 +1,4 @@
+import { COORDINATION_CHILD_TOOL_NAMES } from "../coordinationWorkerPolicy.ts";
 import {
   ApprovalRequestId,
   EventId,
@@ -500,9 +501,8 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
       "server" in mcp &&
       mcp.server === "t3-code" &&
       "tool" in mcp &&
-      (mcp.tool === "report_to_parent" ||
-        mcp.tool === "read_orchestration_layer" ||
-        mcp.tool === "read_thread")
+      typeof mcp.tool === "string" &&
+      COORDINATION_CHILD_TOOL_NAMES.has(mcp.tool)
     ) {
       const optionId = selectAntigravityPermissionOptionId(request, "accept");
       if (optionId) return { outcome: { outcome: "selected", optionId } };

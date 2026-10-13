@@ -43,7 +43,7 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
 } from "../Errors.ts";
-import { mapAcpToAdapterError, selectAcpPermissionOptionId } from "../acp/AcpAdapterSupport.ts";
+import { mapAcpToAdapterError } from "../acp/AcpAdapterSupport.ts";
 import type * as AcpSessionRuntime from "../acp/AcpSessionRuntime.ts";
 import {
   makeAcpAssistantItemEvent,
@@ -54,7 +54,7 @@ import {
   makeAcpToolCallEvent,
 } from "../acp/AcpCoreRuntimeEvents.ts";
 import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
-import { makeZedAcpRuntime } from "../acp/ZedAcpSupport.ts";
+import { makeZedAcpRuntime, selectAcpPermissionOptionId } from "../acp/ZedAcpSupport.ts";
 import { type ZedAdapterShape } from "../Services/ZedAdapter.ts";
 
 const PROVIDER = ProviderDriverKind.make("zed");

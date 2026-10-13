@@ -1,4 +1,5 @@
 import type { McpProviderSessionConfig } from "../mcp/McpProviderSession.ts";
+import { COORDINATION_CHILD_TOOL_NAMES } from "./coordinationWorkerPolicy.ts";
 import * as Schema from "effect/Schema";
 
 const ToolList = Schema.Struct({
@@ -17,7 +18,7 @@ const RpcResponse = Schema.Struct({
 });
 const decodeToolList = Schema.decodeUnknownSync(ToolList);
 const decodeRpcResponse = Schema.decodeUnknownSync(RpcResponse);
-const threadTools = new Set([
+export const threadTools: ReadonlySet<string> = new Set([
   "start_orchestration_layer",
   "spawn_child",
   "assign_child",
@@ -40,9 +41,7 @@ export function makeThreadMcpBridge(
   role?: "parent" | "review" | "edit",
 ) {
   const allowed =
-    role === "review" || role === "edit"
-      ? new Set(["report_to_parent", "read_orchestration_layer", "read_thread"])
-      : threadTools;
+    role === "review" || role === "edit" ? COORDINATION_CHILD_TOOL_NAMES : threadTools;
   let nextId = 0;
   let sessionId: string | undefined;
   const request = async (
