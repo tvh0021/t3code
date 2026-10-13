@@ -4,6 +4,42 @@ Last changelog audit: October 11, 2026. Last complete cross-client,
 cross-provider runtime test: **not established by the retained evidence**.
 Do not treat this audit date as a full-app PASS.
 
+## Personal 0.3.3 release verification, October 13, 2026
+
+The signed macOS arm64 candidate reports 0.3.3 and source `10a17c581b5c`
+in native About. It preserves `com.t3tools.t3code.personal`, the Personal
+product name, existing signing identity and `~/.t3-personal` data location.
+Deep signature verification and the DMG checksum passed. Signature verification
+requires macOS signing-service access outside the Codex filesystem sandbox.
+
+Installed-app computer use confirmed retained projects and threads, Settings,
+Codex Luna model selection, two ordinary agent turns and thread reopen after
+Usage navigation. The disposable project is `/private/tmp/t3-personal-0.3.3-probe`.
+The responses contained `PERSONAL_033_TURN_ONE_OK` and
+`PERSONAL_033_TURN_TWO_OK`. Inline powers and display fractions and square roots
+rendered correctly. Usage Limits loaded Codex credits and Antigravity quotas;
+refresh and the Tokens model breakdown worked. Recent server trace entries
+showed successful requests during the smoke check.
+
+The prior session's retained log reports 1,117 passing tests across 57 focused
+files. Affected package typechecks passed. The `coordinationIds.test.ts` lint
+fix uses `it.effect`; its two tests passed again in this session. Scoped lint
+has two pre-existing errors in `antigravityUsageLimits.ts`, for `process.platform`
+and `JSON.parse`. Composer styling warnings remain warnings. The desktop build
+script tests passed in this release pass; the earlier cleanup failure below
+remains a historical result.
+
+Mobile runtime verification is outside this fork's scope. Hosted web,
+remote/relay/tunnel, full coordination parent/child and quota-handoff workflows,
+and fresh Antigravity inference were not exercised. Existing audit findings,
+including COORD-001 and CODEX-CREDIT-001, remain open. This maintenance release
+has no intended behavior change and does not establish a full-app PASS.
+
+The previous 0.3.2 bundle is recoverable under
+`/private/tmp/t3-personal-0.3.3-release/backup/`. The candidate and final artifact
+staging live under `/private/tmp/t3-personal-0.3.3-release/`. Computer-use evidence
+is retained in the release conversation. Temporary files are not shipped.
+
 ## Desktop recovery and isolation correction, October 12, 2026
 
 The working desktop displayed `Timed out waiting for authenticated session after
@@ -391,374 +427,467 @@ FAIL (quality defect), BLOCKED (insufficient evidence), or Historical / not appl
 Inventory: 51 PASS, 11 FAIL, 2 BLOCKED, 29 Historical / not applicable.
 
 **001** (2026-09-18): Sidebar Header
+
 - Verdict: **PASS**
 - Desktop screenshot shows two lines and unclipped personal descenders. D1.
 
 **002** (2026-09-18): Typography
+
 - Verdict: **PASS**
 - Isolated desktop default controls and prompt/code/diff/terminal previews show 20/18/18/17 px. October 12 typography evidence.
 
 **003** (2026-09-18): ChatLLM Agentic Driver
+
 - Verdict: **PASS**
 - Real driver completes an autonomous file-read and command loop; forbidden command is rejected and its error reaches the next model request. Controlled HTTP responses, no live ChatLLM charge. Account/provider continuation.
 
 **004** (2026-09-18): ChatLLM Branding
+
 - Verdict: **PASS**
 - First-party Abacus mark matches the shipped icon. The developer accepted mark matching on October 12 and excluded exact official SVG provenance from acceptance. Web model picker shows ChatLLM. Mobile excluded.
 
 **005** (2026-09-18): LaTeX Math Rendering
+
 - Verdict: **PASS**
 - Retained answer renders inline and display vectors through the actual desktop chat renderer. D3.
 
 **006** (2026-09-18): KaTeX Styling
+
 - Verdict: **PASS**
 - Desktop inline/display fractions, roots and vectors render correctly, including styled wrappers. Rendering continuation screenshots; desktop scope.
 
 **007** (2026-09-18): Provider Badges
+
 - Verdict: **PASS**
 - Single-instance Codex and Zed logos show without initials badges in desktop Limits. D1. Mobile not included.
 
 **008** (2026-09-18): ChatLLM Usage Limits
+
 - Verdict: **PASS**
 - Controlled account responses through the real source driver expose monthly credits and subscription reset. Failed billing uses next-month fallback; failed points report unavailable. Native-provider continuation; no live rollover induced.
 
 **009** (2026-09-18): Antigravity Usage Limits
+
 - Verdict: **PASS**
 - Authenticated managed runtime exposes changing five-hour and weekly quota percentages with reset timestamps through server config. No actual rollover or countdown UI exercised. Account/provider continuation.
 
 **010** (2026-09-18): Antigravity Quota Windows
+
 - Verdict: **FAIL**
 - The old exclusion still drops usable Claude quota buckets. Source and converter diagnostic confirm the gap; live account effect remains unverified. AG-QUOTA-001, Q1.
 
 **011** (2026-09-18): Antigravity Model Catalog
+
 - Verdict: **PASS**
 - Installed managed runtime seeds Gemini models with outbound requests rejected and no account credentials; authenticated discovery separately returns 18 account models. Account/provider continuation.
 
 **012** (2026-09-18): Upstream Sync
+
 - Verdict: **Historical / not applicable**
 - Historical source-control merge, no independent runtime behavior. Preserve dated history.
 
 **013** (2026-09-18): Token & Cost Tracking
+
 - Verdict: **FAIL**
 - Native Gemini and Sonnet generations produce stable priced usage buckets. ChatLLM first-turn accounting undercounts a controlled 40-credit charge as 3.36; combined accounting claim fails. CHATLLM-USAGE-001.
 
 **014** (2026-09-18): Real-Time Turn Usage
+
 - Verdict: **FAIL**
 - Completed native Gemini and Sonnet turns have nonzero database counters but no T3 Antigravity per-turn JSONL log. ChatLLM logging passes; native database fallback recovers totals. AG-TURN-001. Logging/history/effort continuation.
 
 **015** (2026-09-18): Historical Usage Ingestion
+
 - Verdict: **PASS**
 - Read-only snapshots of 14 original native databases yield 272 September 1–18 generations. Public usage totals match raw generation counters by day; repeat, duplicate-session and corrupt-database cases preserve totals. Logging/history/effort continuation.
 
 **016** (2026-09-18): Pricing Catalog
+
 - Verdict: **PASS**
 - Real pricing refresh/usage endpoints retain cached rates after network failure, handle no cache and unusable responses, and leave unknown models unpriced. Pricing-fallback continuation.
 
 **017** (2026-09-18): ChatLLM Point Pricing
+
 - Verdict: **PASS**
 - Real ChatLLM driver writes per-turn disk records; measured second-turn 40-credit delta is $0.02 through the usage endpoint. First-turn attribution is separately FAIL in 022. Controlled API continuation.
 
 **018** (2026-09-18): Table & Inline Math
+
 - Verdict: **PASS**
 - Desktop math table, inline fractions/vectors/roots, expansion/collapse and adjacent literal code passed. Rendering continuation.
 
 **019** (2026-09-18): Unified Gemini 3.8 Flash Accounting
+
 - Verdict: **PASS**
 - Public contracts export normalized original variants and nearby intrinsic/custom names correctly. L1.
 
 **020** (2026-09-18): Antigravity Usage Label
+
 - Verdict: **PASS**
 - Desktop visibly says Antigravity. Mobile presentation excluded by the developer October 12; no mobile PASS claimed. D1.
 
 **021** (2026-09-19): Usage Model Names
+
 - Verdict: **PASS**
 - Public contracts export normalized original variants and nearby intrinsic/custom names correctly. L1.
 
 **022** (2026-09-19): ChatLLM Usage Accounting
+
 - Verdict: **FAIL**
 - Controlled account counter rises 40 credits per turn, but first turn logs 3.36 and second 40. Summary is 43.36 instead of 80 credits. CHATLLM-USAGE-001; real driver and disk/summary path.
 
 **023** (2026-09-19): Usage Breakdowns
+
 - Verdict: **FAIL**
 - Day provider cells include credit costs while Total excludes them. Repeat refresh reproduces it. USAGE-002, D4/Q1.
 
 **024** (2026-09-19): Codex Credit Accounting
+
 - Verdict: **PASS**
 - Desktop balance and credit rows load; 25 credits converts to $1 through public export. No real spillover charge was induced. D1/D4/L1.
 
 **025** (2026-09-19): Codex History Backfill
+
 - Verdict: **PASS**
 - Current ingestion scope accepted by the user October 12; exact old 1,334-credit total excluded. Public rescans of 354 usage-only rollouts are stable, duplicates do not inflate totals, and auto-review stays zero. Logging/history/effort continuation.
 
 **026** (2026-09-19): Zed ACP Provider
+
 - Verdict: **PASS**
 - Current authenticated native Luna and Sonnet 5.5 turns complete through the source server, including read/terminal tools and a native child. Retired model names are not re-tested. Native-provider continuation.
 
 **027** (2026-09-19): Zed Permission & Usage Fixes
+
 - Verdict: **FAIL**
 - Full access and supervised native approvals pass, but nonzero native session usage produces no ACP usage_update or T3 token update. Usage portion fails. ZED-CONTEXT-001.
 
 **028** (2026-09-20): Zed Live-Test Gating
+
 - Verdict: **Historical / not applicable**
 - Test gating/runner maintenance has no product runtime behavior. Current opt-in hosted smoke remains skipped. T2.
 
 **029** (2026-09-21): Zed Streaming Repair
+
 - Verdict: **PASS**
 - Real native file/terminal turn returns one intact assistant answer. Sonnet child search/read turn yields four T3 tool completions despite 60 native tool snapshots. Native-provider continuation.
 
 **030** (2026-09-21): Zed Streaming Verification
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **031** (2026-09-21): Zed Approval Flow Verification
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **032** (2026-09-21): Zed Context Meter
+
 - Verdict: **FAIL**
 - Native session DB has nonzero token usage while the actual ACP wire contains zero usage_update messages. T3 receives no context usage. ZED-CONTEXT-001.
 
 **033** (2026-09-21): Zed Account Usage
+
 - Verdict: **PASS**
 - Real desktop Limits shows Check the Zed dashboard with no zeroed or session-derived spend bar. D1. Billing endpoint access not retested.
 
 **034** (2026-09-21): Zed Test Suite Migration
+
 - Verdict: **Historical / not applicable**
 - Test gating/runner maintenance has no product runtime behavior. Current opt-in hosted smoke remains skipped. T2.
 
 **035** (2026-09-22): Performance Guardrail
+
 - Verdict: **PASS**
 - Public shared merge processed 20,000 buckets in 10.59 ms with 20,000 records, below 1,000 ms. Duplicate-environment adjacent probe passed. L1.
 
 **036** (2026-09-22): Markdown Fast Path
+
 - Verdict: **PASS**
 - Real web runtime logs show delimiter-free messages return before preprocessing and invoke no math plugins. Math case invokes remark-math and KaTeX, renders powers/fraction/vector, and preserves currency/code literals. Temporary observation logs removed byte-for-byte. Zero-blocked continuation.
 
 **037** (2026-09-22): Upstream Sync
+
 - Verdict: **Historical / not applicable**
 - Historical source-control merge, no independent runtime behavior. Preserve dated history.
 
 **038** (2026-09-24): Mobile Usage Compatibility
+
 - Verdict: **Historical / not applicable**
 - Outside the current fork verification scope by developer instruction October 12. Mobile uses a third-party service unaffected by local server updates. No native-client runtime verdict.
 
 **039** (2026-09-24): Mobile Usage Scope
+
 - Verdict: **Historical / not applicable**
 - Outside the current fork verification scope by developer instruction October 12. No native-client runtime verdict. Historical claim retained.
 
 **040** (2026-09-27: Personal 0.0.42.2): Added thread MCP tools for cross-model and cross-provider handoffs
+
 - Verdict: **PASS**
 - Real MCP create_thread and read_thread complete an Antigravity-to-native-Zed handoff; native Gemini also spawns a Zed review worker and resumes after its report. Account/provider continuation.
 
 **041** (2026-09-27: Personal 0.0.42.2): Added persisted flat workflows with child queues, durable reports, shared model budgets, parent wake and lifecycle controls
+
 - Verdict: **PASS**
 - Real backend queues, durable reports, shared budgets, parent wakes and restart passed earlier. Current web starts two workflows through controlled ACP/MCP; Pause -> paused, Resume -> active, Complete -> completed and Cancel -> cancelled. Completed five-child reports render delivered. Mobile excluded October 12. Separate defects remain in their own rows.
 
 **042** (2026-09-27: Personal 0.0.42.2): Added named limits, price-band defaults, monthly model/pricing maintenance, and per-model overrides
+
 - Verdict: **PASS**
 - Previous-month policy refresh, named defaults, all price bands, overrides, active captured budgets and two-turn exhaustion/pause/resume/cancel passed through real MCP/WebSocket. Policy and budget continuations.
 
 **043** (2026-09-27: Personal 0.0.42.2): Added provider worker restrictions and a companion Zed `--worker-mode` implementation
+
 - Verdict: **PASS**
 - Native Codex review starts read-only; native Claude omits write tools and rejects an injected Write; actual ChatLLM review rejects write_file. Review/edit MCP bridges reject five forbidden coordination tools each before HTTP forwarding. Earlier Antigravity guards and native Zed worker path also pass. Row 044 remains a separate edit-worker filesystem FAIL. Final-five continuation.
 
 **044** (2026-09-27: Personal 0.0.42.2): Fixed review approval policy, write-tool enforcement, turn correlation, startup ordering, active-memory and cleanup guards
+
 - Verdict: **FAIL**
 - Actual ChatLLM edit worker rejects a direct outside path but write_file and edit_file follow a workspace symlink and modify an outside disposable fixture. CHATLLM-WRITE-001. Other lifecycle guards remain partly unverified.
 
 **045** (2026-09-27: Personal 0.0.42.2): Verified ordinary desktop threads and a four-child Sol workflow with two Luna and two Gemini childre
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **046** (2026-09-27: Personal 0.0.42.2): Corrected completed workflow report labels in web and mobile
+
 - Verdict: **PASS**
 - Current web renders a real completed five-child workflow snapshot with five delivered report labels and zero reports waiting. Mobile excluded October 12. Evidence: workflow-completed.jpg in zero-blocked continuation.
 
 **047** (2026-09-28: Personal 0.1.0): Added opt-in quota handoff for T3 orchestration layers with a 95% default threshold, ordered environ
+
 - Verdict: **FAIL**
 - Two real source-server/ChatLLM-driver runs enter waiting-reset at 96% with no eligible fallback, then the quota action's own interrupt changes it to paused and Canceled by user activity. No manual interrupt was sent. QUOTA-RESET-001; zero-blocked continuation. Ordered switch remains unverified.
 
 **048** (2026-09-28: Personal 0.1.0): Simulated Luna XHigh at 95% and observed a linked Gemini child, source settlement, summary turn, and
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **049** (2026-09-28: Personal 0.1.0): Allowed Antigravity to parent a layer after the managed Gemini 3.8 Flash High runtime called T3's `r
+
 - Verdict: **PASS**
 - Authenticated managed Gemini calls read_thread/start_orchestration_layer with quota handoff enabled; unavailable Zed spend safely pauses that attempt. With handoff disabled, native Zed reports and Gemini resumes. Quota-triggered switching remains row 047.
 
 **050** (2026-09-28: Personal 0.1.1): Prevented a parent from continuing coordination tool calls in the same turn after `wait_for_children
+
 - Verdict: **PASS**
 - Real parent MCP read after wait_for_children is rejected in the same active turn; later report wakes succeed. Workflow continuation.
 
 **051** (2026-09-28: Personal 0.1.1): Allowed Antigravity review and edit children to call the scoped T3 report and read tools without an
+
 - Verdict: **PASS**
 - Fifteen native scoped MCP permissions auto-allowed for review/edit children; five unrelated native tools waited for explicit client decisions. Mixed-workflow continuation.
 
 **052** (2026-09-28: Personal 0.1.1): Updated the Zed ACP worker tool names and permissions
+
 - Verdict: **PASS**
 - Native Zed --worker-mode review reads the detached fixture, calls scoped read_thread/report_to_parent, wakes its parent and emits the finished receipt. Parent completes through MCP. Account/provider continuation.
 
 **053** (2026-09-28: Personal 0.1.1): Verified a live quota handoff from a Codex Luna child at 95% to a Gemini Flash High child
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **054** (2026-09-28: Personal 0.1.1): Set the web, desktop, and server package versions to 0.1.1 so About shows the release version
+
 - Verdict: **Historical / not applicable**
 - Historical 0.1.1 version alignment, superseded by 0.3.2. Current About reports 0.3.2. D2.
 
 **055** (2026-10-05: Personal 0.1.2): Antigravity starts every model with full access on new sessions and resumes
+
 - Verdict: **BLOCKED**
 - Seven controlled variants use Full access on seven new and seven resumed sessions. Web offers only Full access for Antigravity and restores Codex Supervised after switching/reload. Desktop Codex Supervised is observed, but credential-free Antigravity has no selectable models. Desktop switching, running-turn and restart cases remain unproved. Mobile excluded.
 
 **056** (2026-10-05: Personal 0.1.2): Removed model-name permission overrides from coordination policy
+
 - Verdict: **FAIL**
 - Public contracts helper still branches on model name: same Zed review/parent mode yields Full access for GPT and approval-required for Claude. Current guide corrected; historical claim contradicted. permissions-results.json.
 
 **057** (2026-10-05: Personal 0.1.2): Two real Zed and Sonnet 5 probes created files in isolated workspaces with zero approval requests un
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **058** (2026-10-05: Personal 0.1.2): Kept the current Zed bridge after reviewing Delta's official docs
+
 - Verdict: **Historical / not applicable**
 - Historical decision to retain Zed rather than Delta, no runtime change to exercise. External rationale not re-researched.
 
 **059** (2026-10-05: Personal 0.1.2): Focused verification passed 257 tests and scoped contracts, server, and mobile typechecks
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **060** (2026-10-05): Zed discovers its hosted catalog through the companion bridge's `--list-models` command using existi
+
 - Verdict: **PASS**
 - Authenticated --list-models through the real provider refresh selects newest Sonnet 5.5 and GPT-6 Luna with effort choices, preserves custom entries and retains inventory on same-lifetime discovery failure. Restart separately fails in 074.
 
 **061** (2026-10-05): Verified 27 focused tests, with one hosted smoke test skipped, server typechecking, targeted lint, b
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **062** (2026-10-05): Rebuilt Personal 0.1.2 for macOS arm64 in an isolated checkout
+
 - Verdict: **Historical / not applicable**
 - Historical packaging/dependency/scope or issue bookkeeping. No independent runtime behavior; current open work is in ISSUE_TRACKER.
 
 **063** (2026-10-06: Personal 0.1.3): Fixed the companion Zed bridge crash when native tools call `search_web` by initializing the headles
+
 - Verdict: **PASS**
 - Current native Sonnet child executes search_web, returns five real results, and parent finishes without a bridge crash. Native wire and T3 tool completions retained. Account/provider continuation.
 
 **064** (2026-10-06: Personal 0.1.3): Forwarded native subagent tool updates and approvals, including approvals already waiting when a chi
+
 - Verdict: **PASS**
 - Earlier native Sonnet child tools and two approvals reached the client with distinct IDs and preserved parent text. Compiled companion bridge now passes seven focused regressions, including approvals already waiting at child attachment and nested-child attachment, with permission answers delivered to the requesting native thread. These timing cases use controlled GPUI threads, not fresh hosted-model inference.
 
 **065** (2026-10-06: Personal 0.1.3): Kept tool titles, inputs, output, content, and locations current as calls stream
+
 - Verdict: **PASS**
 - Actual native child search, terminal and parent read update partial inputs to final titles/inputs/results; four completions survive 60 snapshots without duplicate completion activity. Parent reply remains intact.
 
 **066** (2026-10-06: Personal 0.1.3): Seven bridge tests passed, including the startup, permission, nested-child, and streamed-tool regres
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **067** (2026-10-06: Personal 0.1.3): Requires companion Zed commit `317b394ae4` on `integration/zed-abacus`
+
 - Verdict: **Historical / not applicable**
 - Historical packaging/dependency/scope or issue bookkeeping. No independent runtime behavior; current open work is in ISSUE_TRACKER.
 
 **068** (2026-10-06: Personal 0.1.3): Published the macOS arm64 DMG and ZIP, reinstalled Personal, and confirmed About reports `0.1.3 (39d
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **069** (2026-10-06: Personal 0.1.4): Fixed repeated macOS Documents permission requests after installing a new Personal build
+
 - Verdict: **PASS**
 - Actual Documents grant survives replacing a disposable native app signed twice by the fork persistent signing helper. TCC records first prompt/allow and replacement allow without a prompt; version-two fixture read succeeds. Installed T3 app untouched. Native grant evidence in /private/tmp/t3-zero-macos-20261012.
 
 **070** (2026-10-06: Personal 0.1.4): Automatic Keychain requests no longer interrupt launch with password dialogs
+
 - Verdict: **PASS**
 - Current normal-launch scope accepted by the developer October 12: launching the app no longer requires a Keychain password. Earlier isolated desktop launches also showed no password dialog. The developer excluded the adverse locked/old-Keychain experiment as unnecessary; no PASS for that condition.
 
 **071** (2026-10-06: Personal 0.1.4): Installed the repaired app and verified two normal launches with existing projects and threads
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **072** (2026-10-06: Personal 0.1.4): This patch excludes pending Antigravity changes
+
 - Verdict: **Historical / not applicable**
 - Historical packaging/dependency/scope or issue bookkeeping. No independent runtime behavior; current open work is in ISSUE_TRACKER.
 
 **073** (2026-10-06: Personal 0.1.5): Antigravity native task results now appear in the work trace without ending the active prompt
+
 - Verdict: **PASS**
 - Controlled native ACP task notification persisted task.completed while ordinary/foreign text continued to final response. ACP continuation; no live Google inference.
 
 **074** (2026-10-06: Personal 0.1.5): Zed catalog refresh removes retired built-in models while preserving custom settings
+
 - Verdict: **FAIL**
 - After authenticated discovery populates disk cache, restart with unchanged settings and failed discovery restores Sonnet 5/GPT-5.6 Luna seeds. Custom entry survives. ZED-CATALOG-001; two runtime reproductions.
 
 **075** (2026-10-06: Personal 0.1.5): ACP provider errors include transport details, including the explanation when an agent ignores cance
+
 - Verdict: **PASS**
 - Controlled native error details and ignored-cancel explanation survive the real server after the working-tree transport fix. Retry passed. ACP continuation.
 
 **076** (2026-10-06: Personal 0.1.5): Verified seven probes through a real isolated server and WebSocket client using controlled ACP execu
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **077** (2026-10-06: Personal 0.1.5): Recorded the separate open issue for orchestration requesting access to unrelated macOS folders
+
 - Verdict: **Historical / not applicable**
 - Historical packaging/dependency/scope or issue bookkeeping. No independent runtime behavior; current open work is in ISSUE_TRACKER.
 
 **078** (2026-10-06: Personal 0.2.0): Zed thinking effort
+
 - Verdict: **PASS**
 - Isolated desktop chooses native effort values. Luna Low reaches native storage and survives reopening. Sonnet retains Low; Sonnet Max to Luna restores Medium and survives reload. Native follow-up confirms Medium. Logging/history/effort continuation.
 
 **079** (2026-10-06: Personal 0.2.0): Verification
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **080** (2026-10-08: Personal 0.3.0): Added account-discovered Claude Opus 5.5 and Sonnet 5.5 low, medium and high variants alongside Gemi
+
 - Verdict: **PASS**
 - Authenticated account discovers all six Claude effort variants alongside Gemini; native Sonnet Low and Gemini High turns return the marker and priced usage. Account/provider continuation.
 
 **081** (2026-10-08: Personal 0.3.0): Kept the six Claude variants current after upstream catalog refreshes without adding models absent f
+
 - Verdict: **PASS**
 - Real account refresh retains all six current Claude variants. Controlled sparse account catalog supplies Opus Low only; absent Sonnet and Opus Medium are not invented. Account/provider continuation.
 
 **082** (2026-10-08: Personal 0.3.0): The isolated release snapshot passed 167 focused tests, server typechecking, scoped lint and formatt
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **083** (2026-10-08: Personal 0.3.0): Installed Personal 0.3.0 and updated its managed runtime through Settings
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **084** (2026-10-08: Personal 0.3.1): HTML file links open in the system browser by default
+
 - Verdict: **BLOCKED**
 - Fresh web primary HTML opens a separate served page and renders the marker. Desktop primary HTML opens Safari Work and renders its owning-server asset. Desktop PDF stays integrated and renders FINAL_FIVE_PDF_OK. Web PDF panel routing passes. Cross-environment client routing remains unverified; focused origin tests alone do not close it. Final-five continuation.
 
 **085** (2026-10-08: Personal 0.3.1): Aligned KaTeX markup and styles at 0.18.7 to fix overlapping vector accents
+
 - Verdict: **PASS**
 - KaTeX 0.18.7 dependency/lockfile alignment confirmed; desktop vectors, hat, roots, fractions and styled wrappers render correctly. Rendering continuation.
 
 **086** (2026-10-08: Personal 0.3.1): Provider commands process up to four threads concurrently while preserving command order within each
+
 - Verdict: **PASS**
 - Five real thread startups reach four concurrent authentication calls; fifth waits for a release. Public worker export preserves 100 ordered commands across five keys and drains. Concurrency continuation.
 
 **087** (2026-10-08: Personal 0.3.1): ACP errors retain the native operation and bounded, sanitized text details
+
 - Verdict: **PASS**
 - Working-tree fix preserves native session/prompt and bounded 4 KiB sanitized details through real WebSocket events. Bearer redaction and oversized detail passed. ACP continuation.
 
 **088** (2026-10-08: Personal 0.3.1): Fixed excessive regex backtracking when Antigravity emits an incomplete task notification followed b
+
 - Verdict: **PASS**
 - Real server completed incomplete native task notification with 16,000 spaces and preserved following final text. Controlled ACP continuation.
 
 **089** (2026-10-08: Personal 0.3.1): All 297 focused tests passed
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 
 **090** (2026-10-11: Personal 0.3.2): The Usage breakdown combines reasoning-effort and thinking variants of each model
+
 - Verdict: **PASS**
 - Public normalization/merge combines Sonnet and Opus efforts and Pro alias; custom/intrinsic names stay distinct. Desktop model view loads. L1/D4.
 
 **091** (2026-10-11: Personal 0.3.2): Updated the API-equivalent pricing reference from official OpenAI, Anthropic and Google sources
+
 - Verdict: **PASS**
 - All 14 official keys match published base rates. Real WebSocket summary prices four token classes ahead of conflicting catalog rates and repeats stably. Existing probes cover overrides/reported costs. Gemini creation at input rate is a documented Cloud policy and Developer API assumption; storage excluded. Zero-blocked continuation evidence.
 
 **092** (2026-10-11: Personal 0.3.2): Effort-specific custom prices apply before rows combine, preserving their individual costs
+
 - Verdict: **PASS**
 - Real WebSocket summary combines exact Low $7 and base High $3 into $10. Editing Low yields $12; deleting overrides yields official $4. Public client merge preserves the priced sum. Pricing continuation.
 
 **093** (2026-10-11: Personal 0.3.2): All 85 focused tests, contracts/shared/server typechecks, scoped lint and formatting passed
+
 - Verdict: **Historical / not applicable**
 - Dated verification/release record, not a new feature claim. Current checks and their limits are recorded separately; old exact runs were not replayed.
 

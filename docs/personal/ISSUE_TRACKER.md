@@ -1,6 +1,6 @@
 # Issue tracker
 
-Updated October 12, 2026.
+Updated October 13, 2026.
 
 Latest audit and per-item verdicts: [VERIFICATION.md](./VERIFICATION.md).
 This tracker owns open defects and verification work; dated release history
@@ -319,6 +319,34 @@ not reproduce the original project auto-pull workload or establish why the
 0.1.3 launch required reopening. Keep this issue open for that investigation.
 The backend-manager and Zed ACP support suites passed all 28 focused tests.
 Local evidence is in the verification report (local evidence: /private/tmp/t3-verify-desktop-zed-20261011/REPORT.md).
+
+### COORD-001: Coordination quota and spawn edge cases found during cleanup
+
+Status: Open. Found by source review while splitting `planCoordination`,
+October 13, 2026. Not reproduced at runtime.
+
+- A parent quota handoff reparents every child of the old parent, including
+  deleted ones, and emits coordination events for them. The `children` list
+  used elsewhere excludes deleted threads.
+- The two `quota-settle` paths disagree. A parent destination resets the quota
+  object to `{ enabled, switchCount, status }`; a child destination returns the
+  parent to `watching` but keeps `affectedThreadId`, `destinationThreadId`,
+  `sourceModel` and related fields.
+- `spawn`'s separate-worktree check counts completed and cancelled children,
+  so a finished child's worktree is never reused by a new editing child. This
+  may be intended.
+
+Acceptance: decide the intended behavior for each case and cover it in
+`ThreadCoordination.test.ts`.
+
+### CODEX-CREDIT-001: A repeated token payload's newer balance is dropped
+
+Status: Open, pre-existing. Found October 13, 2026.
+
+Codex parsing skips a `token_count` payload whose usage matches the previous
+one, even when its credit balance is newer. Reconciliation then attributes that
+interim balance drop to the next record instead of the turn that spent it.
+Totals are unchanged; per-turn and per-day attribution can shift.
 
 ### PERMISSION-001: Orchestration triggers unrelated macOS folder prompts
 

@@ -194,4 +194,14 @@ Verification ran focused tests and typechecks only. Every focused test file
 for the changed code passed, as did the server, contracts, shared,
 client-runtime, web and mobile typechecks. Mobile was typechecked but not run. `build-desktop-artifact`'s Windows
 cross-architecture test fails both before and after the cleanup. No runtime
-check of the app was done.
+check of the app was done at the time; the 0.3.3 entry records the later
+runtime check.
+
+### 2026-10-13: Personal 0.3.3
+
+Maintenance release of the fork code cleanup, with no intended behavior change.
+
+- Includes the cleanup above and five follow-ups. GitManager's PR-lookup failure handling is back in upstream's shape. The never-emitted `coordination` field is gone from thread meta-update payloads. `planCoordination` delegates to one function per action. Antigravity turn usage, the Antigravity model seed and markdown math preprocessing moved into fork-owned modules.
+- Removed the per-file Codex credit delta. Cross-rollout reconciliation already replaced it for every record with a balance, so reported credits and costs are unchanged. Old usage scan caches still load.
+- Recorded edge cases found during the cleanup as COORD-001 and CODEX-CREDIT-001 in the issue tracker. Neither is fixed here.
+- Verification: 1,117 focused tests passed across 57 files, plus affected package typechecks. The release lint fix uses `it.effect` in `coordinationIds.test.ts`; its two tests passed again before installation. Scoped lint retains two pre-existing errors in `antigravityUsageLimits.ts`. Installed macOS arm64 0.3.3 passed About, retained project/thread loading, Settings, model selection, two Codex Luna turns, thread reopen, Usage refresh and inline/display math rendering. Native mobile and remote/relay/tunnel paths were not exercised. Full coordination workflows and fresh Antigravity inference were not replayed.
