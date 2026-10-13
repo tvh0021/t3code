@@ -1,9 +1,29 @@
-# Handoff: Personal workflow release and remaining provider checks
+# Historical handoff: Personal workflow release and provider checks
 
-Updated September 28, 2026. The isolated desktop pass verified an ordinary Sol
+Historical record begun September 28, 2026, with later dated additions.
+Current status and last-test coverage are in [VERIFICATION.md](./VERIFICATION.md)
+and [ISSUE_TRACKER.md](./ISSUE_TRACKER.md). Statements below describe their
+recorded revisions, not the currently installed release.
+
+Current scope, October 12, 2026: mobile verification is excluded by the developer.
+Follow the [mobile verification restriction](../../AGENTS.md#verifying), even
+where this historical handoff lists mobile checks as pending.
+
+Latest continuation, October 12: the developer resumed verification and accepted
+matching the first-party branding mark. VERIFICATION.md now records 51 PASS,
+11 FAIL, 2 BLOCKED and 29 Historical / not applicable. Rows 004, 043 and 064
+closed. Remaining rows are 055 for Antigravity desktop/running-turn/restart cases
+and 084 for cross-environment HTML routing. Local HTML and desktop PDF pass.
+See the [latest evidence and fixture incident report](/Users/tvh0021/.codex/visualizations/2026/10/12/01a12fe1-c2ad-74e3-b4db-4af8277cf571/five-blockers/REPORT.md). Native desktop automation became unreliable and an unintended Claude
+update attempt was interrupted by quitting the disposable app. No completed
+update is recorded. Mobile verification and further adverse-Keychain tests
+remain excluded. The zero-blocked target is unfinished.
+
+September 28 summary. The isolated desktop pass verified an ordinary Sol
 thread and a four-child workflow with two Luna and two Gemini children. All four
 reported findings, and the parent repaired a fixture that then passed 10/10
-tests. A live Gemini parent completed a Codex-to-Gemini quota handoff. A Zed
+tests. A live Codex-to-Gemini child quota handoff completed with a report and parent
+resumption. A complete Gemini-parent cycle was not established by that probe. A Zed
 Luna child reported through T3 after rebuilding the worker binary. Mobile,
 remote, and Zed parent checks remain open.
 
@@ -33,7 +53,7 @@ steering, and respect pending human requests. Any supported model may parent.
 
 [Capabilities](./MODIFICATIONS.md#21-agent-created-threads-and-t3-orchestration-layers),
 [invocation example](../user/composer.md#start-a-t3-orchestration-layer), and
-[open issues](./ISSUE_TRACKER.md#open-issues) carry the current details.
+[open issues](./ISSUE_TRACKER.md#open-issues) carry the current details outside this historical record.
 
 ## Latest work
 

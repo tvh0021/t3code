@@ -376,8 +376,24 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     return Queue.offer(serverQueue, message).pipe(Effect.asVoid);
   };
 
-  const handleExitEncoded = (message: RpcMessage.ResponseExitEncoded) =>
-    Ref.get(extPending).pipe(
+  const handleExitEncoded = (decoded: RpcMessage.ResponseExitEncoded) => {
+    // Effect's JSON-RPC decoder treats native errors as defects. ACP errors
+    // are request failures, so preserve their code and data before RPC decoding.
+    const message: RpcMessage.ResponseExitEncoded =
+      decoded.exit._tag === "Failure"
+        ? {
+            ...decoded,
+            exit: {
+              ...decoded.exit,
+              cause: decoded.exit.cause.map((entry) =>
+                entry._tag === "Die" && isProtocolError(entry.defect)
+                  ? { _tag: "Fail", error: entry.defect }
+                  : entry,
+              ),
+            },
+          }
+        : decoded;
+    return Ref.get(extPending).pipe(
       Effect.flatMap((pending) => {
         const pendingRequest = pending.get(String(message.requestId));
         if (!pendingRequest) {
@@ -407,6 +423,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         );
       }),
     );
+  };
 
   const routeDecodedMessage = (
     message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,

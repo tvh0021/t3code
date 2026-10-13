@@ -15,6 +15,7 @@ it("registers Abacus without replacing the existing built-in drivers", () => {
     "opencode",
     "antigravity",
     "abacus",
+    "zed",
   ]);
 });
 

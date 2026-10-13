@@ -1421,6 +1421,50 @@ it.layer(layer)("AntigravityAdapter", (it) => {
     }),
   );
 
+  it.effect("keeps review files read-only while editing children can write", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      for (const coordinationRole of ["review", "edit"] as const) {
+        const h = yield* makeHarness();
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-agy-worker-fs-" });
+        const file = path.join(cwd, "notes.txt");
+        yield* fs.writeFileString(file, "original");
+        yield* h.adapter.startSession({
+          threadId,
+          cwd,
+          runtimeMode: "full-access",
+          coordinationRole,
+        });
+        const read = h.fileHandlers.read;
+        const write = h.fileHandlers.write;
+        if (!read || !write) return yield* Effect.die("File handlers were not registered.");
+        expect((yield* read({ sessionId: nativeSessionId, path: file })).content).toBe("original");
+        const result = yield* write({
+          sessionId: nativeSessionId,
+          path: file,
+          content: "changed",
+        }).pipe(Effect.exit);
+        if (coordinationRole === "review") {
+          expect(Exit.isFailure(result)).toBe(true);
+          expect(yield* fs.readFileString(file)).toBe("original");
+          const created = path.join(cwd, "created.txt");
+          expect(
+            Exit.isFailure(
+              yield* write({ sessionId: nativeSessionId, path: created, content: "new" }).pipe(
+                Effect.exit,
+              ),
+            ),
+          ).toBe(true);
+          expect(yield* fs.exists(created)).toBe(false);
+        } else {
+          expect(Exit.isSuccess(result)).toBe(true);
+          expect(yield* fs.readFileString(file)).toBe("changed");
+        }
+      }
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("serves client file reads and writes only inside the session roots", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

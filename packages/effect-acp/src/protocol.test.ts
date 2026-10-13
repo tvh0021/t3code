@@ -425,6 +425,75 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
     }),
   );
 
+  it.effect("preserves native JSON-RPC errors for extension requests", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        serverRequestMethods: new Set(),
+      });
+      const response = yield* transport.request("x/private", {}).pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+      yield* Queue.offer(
+        input,
+        encoder.encode(
+          `${encodeUnknownJsonString({
+            jsonrpc: "2.0",
+            id: 1,
+            error: { code: -32603, message: "Internal error", data: { details: "native timeout" } },
+          })}\n`,
+        ),
+      );
+      const error = yield* Fiber.join(response).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => assert.fail("Expected native request to fail"),
+        }),
+      );
+      assert.instanceOf(error, AcpError.AcpRequestError);
+      assert.deepInclude(error, {
+        code: -32603,
+        errorMessage: "Internal error",
+        method: "x/private",
+        data: { details: "native timeout" },
+      });
+    }),
+  );
+
+  it.effect("preserves native JSON-RPC errors for core client requests", () =>
+    Effect.gen(function* () {
+      const { stdio, input } = yield* makeInMemoryStdio();
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        serverRequestMethods: new Set(),
+      });
+      const received = yield* Deferred.make<unknown>();
+      yield* transport.clientProtocol
+        .run(0, (message) => Deferred.succeed(received, message).pipe(Effect.asVoid))
+        .pipe(Effect.forkScoped);
+      const nativeError = {
+        code: -32603,
+        message: "Internal error",
+        data: { details: "native timeout" },
+      };
+      yield* Queue.offer(
+        input,
+        encoder.encode(
+          `${encodeUnknownJsonString({
+            jsonrpc: "2.0",
+            id: 42,
+            error: nativeError,
+          })}\n`,
+        ),
+      );
+      assert.deepEqual(yield* Deferred.await(received), {
+        _tag: "Exit",
+        requestId: 42,
+        exit: { _tag: "Failure", cause: [{ _tag: "Fail", error: nativeError }] },
+      });
+    }),
+  );
+
   it.effect("preserves numeric ids for inbound extension requests", () =>
     Effect.gen(function* () {
       const { stdio, input, output } = yield* makeInMemoryStdio();

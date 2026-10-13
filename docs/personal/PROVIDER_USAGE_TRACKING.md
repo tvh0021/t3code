@@ -1,6 +1,10 @@
 # Provider Subscription Allowance & API Cost Tracking
 
-This document tracks the API-equivalent value delivered by AI subscription plans (**Antigravity / Google AI Pro** vs. **Codex / ChatGPT Plus**) over time. It is updated bi-weekly to monitor whether providers adjust quota ceilings, model availability, or prompt cache economics.
+This is a historical September 18, 2026 allowance benchmark. Its rate cards
+record the assumptions used then, not current pricing or a scheduled monitoring
+process. Current accounting and last-test scope are in
+[MODIFICATIONS.md](./MODIFICATIONS.md#usage-accounting) and
+[VERIFICATION.md](./VERIFICATION.md).
 
 ---
 
@@ -21,7 +25,7 @@ provider quotas. The benchmark below remains a historical September 18
 measurement; it was not remeasured during the workflow implementation.
 
 See [the model-budget policy](./MODIFICATIONS.md#model-budgets-and-maintenance)
-and [pending verification](./SESSION_HANDOFF.md).
+and [pending verification](./ISSUE_TRACKER.md).
 
 ## Tracking Log
 
@@ -63,7 +67,9 @@ Measured across the complete weekly cycle (**2026-09-14 14:03 UTC $\rightarrow$ 
 
 ## Reference Rate Cards Used for Benchmarking
 
-Pricing definitions reflect active rates in `request-auditor` including prompt caching discounts:
+These historical benchmark rates came from `request-auditor`. Current T3
+pricing supersedes them; in particular, `codex-auto-review` now has zero USD
+and credit accounting. The original benchmark has not been recomputed:
 
 - **Codex**:
   - `gpt-5.6-sol`: $4.00 uncached input / $0.40 cached input / $20.00 output (per 1M tokens)

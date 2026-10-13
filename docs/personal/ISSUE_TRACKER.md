@@ -1,6 +1,10 @@
 # Issue tracker
 
-Updated October 11, 2026.
+Updated October 12, 2026.
+
+Latest audit and per-item verdicts: [VERIFICATION.md](./VERIFICATION.md).
+This tracker owns open defects and verification work; dated release history
+lives in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Accepted mobile limitation
 
@@ -40,9 +44,254 @@ remain untested.
 
 ## Open issues
 
+### USAGE-002: Day provider costs do not add to Total
+
+Status: Open. Reproduced October 11, 2026 in an isolated copy of installed
+Personal 0.3.2 and through the public shared usage merge.
+
+Open Usage > Tokens > Day with mixed subscription and credit-backed Codex
+history. October 11 shows Codex `$5.78`, Antigravity `$0.00`, and Total `$5.43`.
+October 7 shows `$11.02` and `$2.15`, with Total `$11.64`. Refreshing retains
+the mismatch. These differences exceed rounding.
+
+`mergeUsage` excludes credit buckets from `day.costUsd` and `hour.costUsd`, but
+adds their API-equivalent cost to `byProvider.costUsd`. The Day UI renders those
+incompatible totals together. A controlled public-interface probe with a $1
+subscription bucket and a 25-credit bucket carrying $3 API-equivalent cost
+returns Codex $4 and Total $1. The credit-model row correctly values 25 credits
+at $1; that is a separate calculation.
+
+Acceptance: provider columns, total, and charts must use the same stated cost
+basis, or separate subscription and credit values explicitly. Cover mixed and
+subscription-only days and hours. Verify web/desktop and shared mobile consumers.
+This is separate from resolved effort normalization in USAGE-001.
+
+Evidence: [Day screenshot](/private/tmp/t3-changelog-audit-20261011/usage-day.png),
+[accessibility output](/private/tmp/t3-changelog-audit-20261011/usage-day.txt), and
+[controlled observations](/private/tmp/t3-changelog-audit-20261011/quality-probes.json).
+
+### AG-QUOTA-001: Usable Claude models still lose their quota windows
+
+Status: Open source-confirmed gap. Controlled converter diagnostic recorded
+October 11, 2026; the current live Claude quota response remains unexamined.
+
+Personal 0.3.0 enabled account-discovered Claude models through Antigravity.
+`antigravityQuotaSummaryToLimits` still discards every group whose name contains
+Claude/GPT and every `3p` bucket. Its comment assumes only Gemini can run.
+The test suite still requires this exclusion.
+
+With Gemini at 10% used and a Claude bucket at 99% used, the converter returns
+only the Gemini window. This proves the supplied Claude reading is lost, not
+that a real Claude turn or quota handoff failed during this pass. The initial isolated
+app had no provisioned Antigravity runtime/profile. The October 12 continuation
+provisioned an isolated managed profile, completed native Gemini and Sonnet turns,
+and observed live Gemini quota updates. It did not establish Claude pool mapping.
+
+Acceptance: inspect the current account response and establish which supported
+models share each quota pool. Represent supported Claude quota without assigning
+unsupported GPT models or Gemini quotas to it. Check Limits and orchestration
+threshold decisions against both pools. Update the obsolete Gemini-only comment
+and regression expectation when that policy is settled.
+
+Evidence: [controlled observations](/private/tmp/t3-changelog-audit-20261011/quality-probes.json),
+`apps/server/src/provider/Layers/antigravityUsageLimits.ts`, and its focused test.
+
+### QUALITY-001: Abacus driver-list regression still omits Zed
+
+Status: Fixed in working tree, October 11, 2026. Both focused driver tests pass.
+
+`AbacusDriver.test.ts` expects seven built-in drivers. The actual registry also
+contains Zed, so `registers Abacus without replacing the existing built-in drivers`
+fails. The configured Abacus text-session test passes. This is a stale quality
+gate, not evidence that ChatLLM cannot execute a turn.
+
+Acceptance: update the registration expectation to reflect the intended registry
+without weakening its check that existing providers remain available. Rerun the
+focused driver test. The continuation added Zed to the exact registry expectation;
+both focused tests passed.
+
+Evidence: [initial provider test log](/private/tmp/t3-changelog-audit-20261011/provider-tests.log)
+and [passing driver tests](/private/tmp/t3-runtime-continuation-20261011/abacus-tests.log).
+
+### ACP-REVIEW-001: Read-only Antigravity reviews could write through client filesystem RPC
+
+Status: Fixed in working tree, October 12, 2026. Not installed or released.
+
+Five controlled review children successfully wrote inside their disposable review
+clones through native `fs/write_text_file`. The adapter now rejects filesystem
+writes when the coordination role is review. Reads still work; editing and
+ordinary sessions retain writes. This closes the reproduced filesystem bypass,
+not every native command/tool restriction across providers.
+
+Verification: the regression failed before the fix; all 42 adapter tests pass.
+The real mixed workflow rejects four review writes, allows one editing write,
+auto-allows 15 scoped MCP permissions and requires explicit client responses for
+five unrelated native tools. Server typecheck and scoped lint pass.
+
+Evidence: [continuation report](/private/tmp/t3-workable-verify-20261011/REPORT.md)
+and [mixed workflow results](/private/tmp/t3-mixed-workflow-20261012/results.json).
+
+### DOC-PERMISSIONS-001: The historical model-name override removal claim is inaccurate
+
+Status: Current guide corrected, October 12, 2026. Historical audit item 056 is FAIL.
+
+The public contracts helper still chooses different review modes for GPT and
+Claude with the same Zed driver and Full access parent. Existing tests explicitly
+require that behavior. `MODIFICATIONS.md` now describes it accurately. No
+permission semantics were changed to satisfy the historical changelog wording.
+
+Evidence: [public-interface observations](/private/tmp/t3-workable-verify-20261011/permissions-results.json).
+
+### ZED-CONTEXT-001: Native Zed token usage never reaches T3
+
+Status: Open. Reproduced October 12, 2026 with authenticated native Luna turns.
+
+Native Zed session storage contains nonzero input and output token counts,
+but the captured ACP stream contains no `usage_update` notifications. The T3
+adapter handles that notification when supplied, but receives none. This fails
+both row 032 and the usage portion of row 027. Native approvals do pass.
+
+Acceptance: emit current context use and capacity from the native bridge, verify
+updates through T3's real subscription and context meter, and preserve intact
+streaming. Check new and resumed sessions.
+
+### ZED-CATALOG-001: Failed discovery after restart restores retired seed models
+
+Status: Open. Reproduced twice October 12, 2026 in isolated source servers.
+
+Authenticated refresh persists Sonnet 5.5 and GPT-6 Luna. Restart with unchanged
+settings and deliberately failed native discovery returns Sonnet 5 and GPT-5.6
+Luna instead. The custom model remains. Same-process refresh failure retains
+the current inventory. A discovery failure reports ready/authenticated, which
+prevents the registry's failed-probe retention branch from applying.
+
+Acceptance: retain the last discovered built-ins during pending and failed
+startup discovery, preserve current custom settings, and replace retired models
+only after successful discovery. Verify an actual restart with disk cache.
+
+### CHATLLM-USAGE-001: First turn logs an estimate instead of its measured charge
+
+Status: Open. Reproduced October 12, 2026 with controlled account responses
+through the real ChatLLM driver and usage endpoints. No live charge induced.
+
+The account counter increases by 40 credits on each of two turns. The first
+turn logs 3.36 estimated credits, the second logs 40. Usage reports 43.36 credits
+and $0.02168 instead of 80 credits and $0.04. The first post-turn account reading
+establishes a baseline after the first charge, so that charge uses a token estimate.
+The second measured delta and $0.0005-per-credit conversion are correct.
+
+Acceptance: establish a valid baseline before the first charged turn or mark
+estimates explicitly. Keep account baselines isolated per instance and avoid
+attributing concurrent external spending to one turn. Verify the initial turn,
+a later turn, unavailable account readings and multiple configured instances.
+
+Evidence for these three defects: [native-provider report](/private/tmp/t3-verification-to30-20261012/REPORT.md)
+and [filtered observations](/private/tmp/t3-verification-to30-20261012/evidence-summary.json).
+
+### AG-TURN-001: Native Antigravity turns do not write T3 per-turn usage logs
+
+Status: Open. Native managed Gemini and Sonnet runs confirmed October 12, 2026.
+
+Two completed native turns have nonzero generation counters in their provider
+conversation databases. The public usage scan recovers one priced generation
+for each, but `usage/antigravity/sessions` does not exist in the isolated T3
+state. The adapter's per-turn writer requires usage in the ACP prompt response;
+the managed runtime's exercised responses do not provide it. The combined
+Antigravity/ChatLLM atomic logging claim fails for the Antigravity path.
+
+Historical database ingestion still recovers totals. This finding concerns the
+T3 turn-correlated log, not a loss of all usage accounting. ChatLLM's two-turn
+JSONL logging is separately verified.
+
+Acceptance: establish a measured native-runtime usage source for each T3 turn
+and persist it once with the T3 turn identity. Cover tool-loop generations,
+resume, cancellation and deduplication against native database ingestion. Do not
+substitute prompt-length estimates for measured token counts.
+
+Evidence: [continuation report](/private/tmp/t3-blocked-continuation-20261012/REPORT.md)
+and [native usage summary](/private/tmp/t3-antigravity-native-20261012/summary.json).
+
+### QUOTA-RESET-001: Automatic quota interrupt cancels reset continuation
+
+Status: Open. Reproduced twice October 12, 2026 through real source servers,
+the ChatLLM driver and controlled account responses. No live quota exhaustion.
+
+An opt-in parent at 96% enters `waiting-reset` when no eligible fallback is
+available. The `quota:wait:<id>:interrupt` command then pauses the parent and
+changes its quota status to `paused`, with `Canceled by user activity.` The
+client sent no user interrupt. The reactor only checks reset continuation for
+`waiting-reset`, so its own interrupt removes the state it needs to resume.
+
+The controlled fallback instances report authentication as unknown, so their
+ineligibility is expected. This finding concerns the no-fallback reset path,
+not ordered switching. Both original probe scripts waited on coordination
+events absent from the thread detail stream and timed out. The persisted
+command/event chain independently establishes the defect; the fixture timeout
+is not the product failure.
+
+Acceptance: distinguish automatic quota interrupts from user interrupts,
+preserve reset-wait state, and verify continuation after a controlled reset.
+Keep manual interruption able to cancel the pending action.
+
+Evidence: [runtime event checker](/private/tmp/t3-zero-quota-20261012/check-defect.py)
+and [two-run command chains](/private/tmp/t3-zero-20261012/quota-defect.json).
+
+### CHATLLM-WRITE-001: Worker file tools follow links outside the workspace
+
+Status: Open. Observed October 12, 2026 through a real source server and
+ChatLLM driver with controlled model responses. All paths were disposable
+fixtures under `/private/tmp`; no external account was charged.
+
+An edit worker's `write_file` rejects a direct path outside its assigned
+worktree. A symlink inside that worktree points to the same outside fixture.
+`write_file` and `edit_file` follow the link, return success and change the
+outside contents to `ESCAPED_EDIT`. The file tools check the lexical resolved
+path rather than the filesystem destination.
+
+Acceptance: keep successful writes inside the assigned worktree, including
+existing file links and linked parent directories. Preserve ordinary in-worktree
+write/edit behavior and the stricter review-worker policy.
+
+Evidence: [captured runtime tool results](/private/tmp/t3-zero-chatllm-worker-v3-20261012/defect.json).
+The fixture waited for a coordination receipt on the wrong stream after the
+worker finished. That timeout is not a product failure. No rerun is needed to
+establish the captured file change.
+
+### VERIFY-001: Complete current runtime coverage before calling the app fully tested
+
+Status: Open. The October 11 changelog audit covers every recorded bullet.
+The latest October 12 continuation leaves 2 BLOCKED claims, with 51 PASS,
+11 FAIL and 29 Historical / not applicable. Rows 004, 043 and 064 closed after
+first-party mark acceptance, native/provider worker restriction checks and
+compiled native child attachment regressions. Row 055 still needs desktop
+Antigravity switching, running-turn and restart evidence. Row 084 still needs a
+cross-environment client click; local HTML and desktop PDF now pass.
+See the [latest evidence and fixture incident report](/Users/tvh0021/.codex/visualizations/2026/10/12/01a12fe1-c2ad-74e3-b4db-4af8277cf571/five-blockers/REPORT.md).
+Mobile verification is excluded by the developer. Follow the
+[repository restriction](../../AGENTS.md#verifying); mobile-only audit rows are
+outside scope, not passing. The iOS runtime download was canceled before any
+client build or launch. CocoaPods installation had already completed.
+
+Use the per-item matrix in [VERIFICATION.md](./VERIFICATION.md) as the acceptance
+list. It identifies the missing providers, UI specimens, signing conditions,
+historical corpora, mobile clients and remote connection modes. Historical
+verification-only records are Historical / not applicable, not new runtime passes. Existing workflow,
+permission, startup and billing issues below retain their own acceptance criteria.
+
+The developer resumed after the earlier usage stop. Remaining blocked IDs are
+055 and 084. Native desktop automation returned inconsistent state and activated
+an unintended Claude update attempt, which the disposable app's shutdown
+interrupted. No completed update is recorded. Normal Keychain-free launch remains
+accepted; the adverse-Keychain experiment is excluded and must not be repeated.
+
+Acceptance: resolve or explicitly accept every remaining runtime gap, run the
+relevant real interfaces and adjacent cases, and record the tested revisions and
+date. Until then, there is no evidenced last full-app test date.
+
 ### DESKTOP-001: Slow backend startup exceeds the window readiness timeout
 
-Status: Open. Observed during Personal 0.1.3 reinstallation, October 6, 2026.
+Status: Open. Current timeout recovery verified October 11, 2026; the original
+Personal 0.1.3 startup failure remains unexplained.
 
 The desktop readiness probe timed out after 60 seconds. Server startup spent
 about 60 seconds in coordination-reactor startup and another 60 seconds in
@@ -53,12 +302,23 @@ reopened the app. The subsequent installed Zed test passed.
 Verify cold launch with retained projects and workflows. A slow background task
 should not leave the app without a usable window after the backend becomes ready.
 
-October 6 source check: `DesktopBackendManager` already retries readiness while
-the backend remains alive. Its regression covers two expired readiness budgets
-before a successful probe. All 26 backend-manager tests pass. Keep this issue
-open until an installed cold launch with retained state establishes why the
-reported launch still required reopening. Project auto-pull still runs before
-server command readiness.
+`DesktopBackendManager` retries readiness while the backend remains alive.
+Its regression covers two expired readiness budgets before a successful probe.
+Project auto-pull still runs before server command readiness.
+
+October 11 runtime check: an isolated copy of installed Personal 0.3.1,
+commit `de86571090cf`, retained a snapshot of 12 projects, 306 threads, and
+workflow history. Normal cold startup became ready in about 4.1 seconds and
+opened its window automatically. Pausing only the newly spawned backend for
+70 seconds triggered the 60-second readiness timeout. After resumption, the
+window opened automatically about 74 seconds after launch, without reopening
+the app. A retained thread's reply and permission mode survived the restart.
+
+Workspace paths were remapped to a disposable repository, so this check did
+not reproduce the original project auto-pull workload or establish why the
+0.1.3 launch required reopening. Keep this issue open for that investigation.
+The backend-manager and Zed ACP support suites passed all 28 focused tests.
+Local evidence is in the [verification report](/private/tmp/t3-verify-desktop-zed-20261011/REPORT.md).
 
 ### PERMISSION-001: Orchestration triggers unrelated macOS folder prompts
 
@@ -97,16 +357,20 @@ used all four and the fixture passed 10/10 tests. A child-start command ID fix
 and completed report-label fix passed 13 focused coordination tests.
 
 Remaining: mobile interactions, command-palette actions,
-remote and multiple-environment flows, and native Zed MCP discovery with a
-separate rebuilt binary. Web typechecking retains 11 unrelated HAST errors.
+remote and multiple-environment flows, and native Zed parent MCP discovery and tool use with a
+compatible companion binary. The historical HAST errors were fixed in Personal
+0.3.1; the October 11 audit reran web typechecking successfully.
 
 The desktop pass used Computer Use against `vp run dev:desktop`. See
-[the handoff](./SESSION_HANDOFF.md) for evidence and remaining checks.
+[the historical handoff](./SESSION_HANDOFF.md) for evidence and
+[the verification matrix](./VERIFICATION.md) for current coverage.
 
 ### WORKFLOW-002: Enable strict Antigravity workflows
 
 Status: Parent startup verified with the managed Antigravity runtime. A full
-Gemini parent and child report cycle remains unverified.
+Gemini parent and child report cycle remains unverified. The September 28
+quota-handoff evidence proves a Gemini child report and parent resumption,
+not a complete Gemini-parent assignment cycle.
 
 The managed Antigravity ACP runtime received T3 MCP tools in an isolated dev
 thread. Gemini 3.8 Flash High called `read_thread` and then
@@ -133,230 +397,120 @@ HTTP protocol are tested. Zed forwards the scoped server and restricts worker
 MCP tools explicitly. Compilation passed; actual native discovery remains in
 WORKFLOW-001. Model-limit entries alone do not make a model available.
 
-### WORKFLOW-003: Gemini authentication fails in standalone and orchestration threads
+### WORKFLOW-003: Gemini onboarding fails on the eduroam IPv6 path
 
-Status: Network-specific failure. Observed October 6, 2026 in installed Personal 0.1.5.
-All six children failed. A standalone Gemini thread failed at the same step.
-The native failure is isolated to IPv6 connectivity during onboarding. The user
-reports Gemini works on hotspot after failing on eduroam Wi-Fi. The experimental
-relay and its integration/tests were removed at the user's request. No network
-workaround remains in the source. An October 8 full-adapter Gemini turn passed on the new network. Orchestration recovery remains unverified.
+Status: Network-specific failure observed October 6 in installed Personal 0.1.5.
+A standalone full-adapter Gemini turn passed October 8 on the working network.
+Current orchestration recovery and concurrency remain unverified.
 
-The user reported that OpenAI-to-Gemini orchestration remains broken and may
-have regressed. In `Streamline Apartment Search Document`, parent thread
-`8627c083-1d92-47ce-bc0e-b363ffd03e83` uses Codex `gpt-6.1-sol` with medium
-reasoning. It assigned six read-only research tasks to Antigravity
-`gemini-3.8-flash-medium`, with four concurrent child slots. All six children
-failed before executing their assignments. No Gemini research result was
-produced.
+#### Observed failure
 
-#### Confirmed evidence
+A Codex Sol parent assigned six Gemini Flash Medium review tasks with four
+child slots. All six children failed during ACP authentication before
+`session/new` or task execution. A standalone Gemini High thread failed at the
+same step, establishing that orchestration is not required for the failure.
+No substantive research result was produced.
 
-The persisted model selections point to Antigravity and the requested Gemini
-model. Native ACP logs show successful `initialize`, followed by failed
-`authenticate` with `errorTag: Die` after roughly 75 seconds. These logs contain
-no `session/new` or task execution for the failed children.
+Parent thread: `8627c083-1d92-47ce-bc0e-b363ffd03e83`,
+`Streamline Apartment Search Document`. Standalone thread:
+`1bb25504-c290-424a-8c79-950f3f64623a`, `Workspace Project Inventory`.
 
-| Child thread                           | Authentication started, EDT | Authentication failed, EDT |
-| -------------------------------------- | --------------------------- | -------------------------- |
-| `e6de8648-babf-4938-85db-e6e292451bcf` | 5:57:19 PM                  | 5:58:34 PM                 |
-| `6b5ce4e8-738e-4d7e-8ff7-8c0d3ab00d30` | 5:58:36 PM                  | 5:59:51 PM                 |
-| `5033ad5e-d0a0-49d0-b4fe-f1e5b1d11e3f` | 5:59:53 PM                  | 6:01:08 PM                 |
-| `0ee0c485-37c0-4634-baa4-ef298f0fbc90` | 6:01:10 PM                  | 6:02:25 PM                 |
-| `eea72a7a-a7c2-400a-bcf1-395d8eff8f01` | 6:02:27 PM                  | 6:03:42 PM                 |
-| `d1d3a5bc-df09-40e9-837c-1b7fe33dffe8` | 6:03:44 PM                  | 6:05:00 PM                 |
+| Child                                  | Authentication started, October 6 EDT | Failed, EDT |
+| -------------------------------------- | ------------------------------------- | ----------- |
+| `e6de8648-babf-4938-85db-e6e292451bcf` | 5:57:19 PM                            | 5:58:34 PM  |
+| `6b5ce4e8-738e-4d7e-8ff7-8c0d3ab00d30` | 5:58:36 PM                            | 5:59:51 PM  |
+| `5033ad5e-d0a0-49d0-b4fe-f1e5b1d11e3f` | 5:59:53 PM                            | 6:01:08 PM  |
+| `0ee0c485-37c0-4634-baa4-ef298f0fbc90` | 6:01:10 PM                            | 6:02:25 PM  |
+| `eea72a7a-a7c2-400a-bcf1-395d8eff8f01` | 6:02:27 PM                            | 6:03:42 PM  |
+| `d1d3a5bc-df09-40e9-837c-1b7fe33dffe8` | 6:03:44 PM                            | 6:05:00 PM  |
 
-The user's new standalone thread, `Workspace Project Inventory`,
-`1bb25504-c290-424a-8c79-950f3f64623a`, selected
-`gemini-3.8-flash-high`. It also initialized successfully, began authentication
-at 6:05:02 PM, and failed at 6:06:17 PM. Its session status became `error`.
-The failure therefore does not require orchestration or a cross-provider branch.
+The standalone attempt ran from 6:05:02 to 6:06:17 PM. Persisted models pointed
+to the requested Antigravity models. The cached `ready/authenticated` snapshot
+was not evidence that new authentication worked.
 
-A direct, credential-redacted Google OAuth check accepted the existing stored
-refresh token with HTTP 200 in 0.12 seconds and returned an access token with
-3,599 seconds of validity. The profile contains a refresh token. Neither the
-credential file nor live T3 state was modified. This rules out a missing token,
-Google rejecting that token during this check, and general inability to reach
-the token endpoint from the diagnostic process. It does not prove the native
-runtime's subsequent authentication calls succeed.
+#### Diagnosis and release boundary
 
-The cached provider snapshot still said `ready` and `authenticated`, with
-`checkedAt: 2026-10-06T21:57:46.968Z`. That snapshot does not establish current
-session authentication health.
+Isolated authentication-only probes of managed `agy_acp_server_1.1.1`, using
+temporary profile copies and no model prompts, reproduced timeouts in
+76.77-77.07 seconds. Native JSON-RPC error `-32603` carried
+`[Errno 60] Operation timed out`. Stderr identified `oauth_manager.py:294`,
+`Failed to run onboarding after obtaining access token`, and the first
+`loadCodeAssist` call to Google's CCPA service.
 
-#### Native authentication finding
+A redacted OAuth refresh check returned HTTP 200 in 0.12 seconds, with 3,599
+seconds of token validity. The native process then remained in `SYN_SENT` on
+IPv6; its bundled `httplib2` timed out before trying the next address. An IPv4
+connectivity comparison returned HTTP 404 in 0.066 seconds while IPv6 timed out.
+The unchanged authentication probe succeeded in 2.50 seconds through a temporary
+provider-scoped IPv4 CONNECT tunnel with end-to-end TLS. This isolates a failing
+IPv6 path and absent native fallback, rather than a missing refresh token.
 
-An isolated probe ran the installed `agy_acp_server_1.1.1` binary against a
-temporary copy of the Google profile. It sent only ACP `initialize` and
-`authenticate`, with browser launch suppressed. It sent no model prompt and
-removed the temporary profile after stopping its own process.
+The user confirmed Gemini works on hotspot and fails on eduroam. No particular
+router/VPN change was established. The experimental relay, integration and tests
+were removed at the user's request; no network workaround remains in source or
+system settings. Temporary tunnel processes and profile copies were removed.
 
-Initialization succeeded. Authentication failed after 76.87 seconds with this
-native JSON-RPC response:
+The 0.1.4-to-0.1.5 launch-path comparison found no change to binary selection,
+profile/auth setup, arguments or child environment. 0.1.5 task parsing runs only
+after content arrives. The macOS Keychain change belongs to Electron; native
+Antigravity uses file storage. October 5 native logs show successful auth and
+`session/new`, including re-authentication at 7:48 PM EDT. Matching sanitized
+configuration/runtime fingerprints narrow the release boundary, but do not
+record the intervening host network state. The later 1.3.0 runtime and working
+network have standalone evidence; that does not close orchestration recovery.
 
-```json
-{
-  "code": -32603,
-  "message": "Internal error",
-  "data": { "details": "[Errno 60] Operation timed out" }
-}
-```
+#### State and scheduling defects found alongside authentication
 
-Native stderr identified `oauth_manager.py:294` and stated:
-`Failed to run onboarding after obtaining access token`.
+Startup attempts were serialized despite four slots. A queued child could show
+coordination `running` before any native session/log existed, then `starting`.
+Failed children became session `error`, coordination `reported`, with synthetic
+`Assignment could not start` reports. Reports reached the active/ready parent;
+that does not establish that it resumed and handled them. Synthetic failure
+reports are expected recovery output, not proof assignments executed.
 
-Further authentication-only probes reproduced the native timeout in 77.07 and
-76.77 seconds with isolated copies of the Personal credential. The traceback
-identifies the first `loadCodeAssist` request to
-`https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`.
-The native process remained in `SYN_SENT` on an IPv6 connection to Google.
-The bundled `httplib2` client raises on socket timeout before trying the next
-address.
+Projection timestamps for the first four failures shared
+`2026-10-06T21:57:17.207Z` despite failures minutes apart. Use native request
+timestamps above for latency. Investigate client labels for pending, starting,
+running and failed work separately.
 
-An unauthenticated IPv4 connectivity check returned HTTP 404 in 0.066 seconds;
-the same IPv6 check timed out. Routing the unchanged native authentication
-probe through a temporary localhost CONNECT tunnel that connects to Google
-over IPv4 produced successful authentication in 2.50 seconds. TLS remained
-end-to-end, and the tunnel allowed only the OAuth and CCPA Google hosts.
-The tunnel and native processes stopped after the probe, and temporary
-credential copies were removed. No live credential or network setting changed.
+#### Repairs included in Personal 0.3.1
 
-The direct authentication diagnostic is
-`python3 /private/tmp/t3-gemini-auth-probe.py`. It requires network access and
-sends no model prompt. The temporary IPv4 tunnel and source relay were removed
-at the user's request; their results above are historical diagnostic evidence.
+ACP errors preserve operation and sanitized native `data.details`. The recorded
+failure now retains provider, `authenticate`, and timeout text in client/child
+failure activity. Focused regressions cover cleanup and subsequent retry.
+Provider commands now run up to four per-thread queues concurrently, preserving
+same-thread ordering and workspace leases. Engine/worker regressions cover held
+authentication, overflow, ordering and drains. These repairs do not fix the
+native eduroam timeout.
 
-This establishes a failing IPv6 path plus missing native fallback as the
-immediate cause. The user reports previously working Gemini; the September 28
-handoff records successful native Gemini work. The pinned runtime remains
-1.1.1, and installed Personal is confirmed as 0.1.5. The time and cause of the
-network change are not established. Matching runtime and sanitized provider
-configuration fingerprints between the September 28 success and current
-Personal install show no relevant boundary change in those artifacts; they do
-not capture the intervening host network state. T3's displayed error also drops
-the useful native `data.details` timeout message.
+A separate parser defect made incomplete whitespace-heavy task notifications
+backtrack quadratically. A closing-tag requirement and greedy capture reduced
+the recorded 16,000-space probe from about 404 ms to 0.06 ms. Valid padded
+messages and incomplete input have regressions. This content parser runs after
+authentication and was not the onboarding cause.
 
-Despite four child slots, these startup attempts occurred sequentially. The
-next child initialized only after the previous authentication failed. At
-6:03 PM, child `d1d3a5bc-df09-40e9-837c-1b7fe33dffe8` had coordination phase
-`running` but no session row or native log yet. At 6:04 PM, its session status
-was `starting`. This mismatch needs investigation before treating the child
-as executing its assignment.
+#### Evidence and acceptance
 
-Each failed child has session status `error`, coordination phase `reported`,
-and a synthetic report beginning `Assignment could not start: Error: Internal
-error`. T3 delivered the first two failure reports to the parent as ordinary
-`Child reports arrived` messages. The parent remained `active`, with session
-status `ready`, `waiting: false`, and no blocked reason. A delivered failure
-report does not establish that the parent resumed and handled it.
+Original evidence came from read-only Personal SQLite and matching
+`logs/provider/events.<thread-id>.log` files. Seven attempts and isolated native
+probes showed the same failure sequence. The original orchestration monitor was
+paused after the failures. Full historical notes before cleanup are retained at
+`/private/tmp/t3-changelog-audit-20261011/ISSUE_TRACKER.before.md`.
+The direct diagnostic was `/private/tmp/t3-gemini-auth-probe.py`; check that it
+still exists before reuse. It sends authentication only. Removed relay scripts
+are historical evidence, not a retained launch recipe.
 
-The projection timestamps for all four startup failures are
-`2026-10-06T21:57:17.207Z`, although the native failures occurred minutes apart.
-Use the native request timestamps above when measuring startup latency.
+Acceptance:
 
-#### Reproduction and investigation scope
-
-Observed trigger: start a T3 layer from the Codex parent, assign six Gemini
-3.8 Flash Medium review tasks, then call `wait_for_children`. Inspect each
-child's provider startup and the reports delivered to the parent.
-
-Evidence comes from read-only queries of
-`~/.t3-personal/userdata/state.sqlite` and the matching
-`~/.t3-personal/userdata/logs/provider/events.<child-thread-id>.log` files.
-Seven existing attempts show the same failure sequence, and the isolated
-authentication-only probe reproduced it. Those attempts predate the source
-workaround. They involved no paid model turn, app restart, browser interaction,
-or live credential change. The orchestration monitor was paused after all six
-original children failed.
-
-The IPv4 comparison identifies the authentication failure independently of
-provider routing, model selection, and orchestration. Gemini works on hotspot;
-the eduroam network failure remains outside the retained source repairs. Child
-reports, parent recovery, and concurrency still need an integrated pass on the
-working network.
-
-#### Source repairs, October 6
-
-ACP request errors now retain the native operation and text `data.details`,
-using the existing bounded credential redaction. The recorded failure becomes
-`Provider adapter request failed (antigravity) for authenticate: Internal error:
-[Errno 60] Operation timed out`. Other response data is omitted. A regression
-covers failed authentication cleanup and a subsequent successful session retry.
-An engine-backed test verifies that session errors and failure activities retain
-the provider, operation, and timeout detail sent to clients and child reports.
-
-The provider command reactor used one queue for every thread, serializing
-authentication attempts. It now processes up to four thread queues concurrently,
-preserving command order within each thread and existing workspace leases.
-An engine-backed regression holds one authentication attempt open while another
-thread starts. Worker tests cover four active threads, queued overflow, same-thread
-ordering, and drain completion. The coordination layer still owns child-slot limits.
-
-The ACP error and concurrency repairs above did not resolve the native onboarding
-timeout. Installed Gemini authentication, substantive child reports, parent
-recovery, and client state labels remain unverified. No live credentials, paid
-model turns, or app restart were used for those source repairs.
-
-Verification: 326 focused tests pass across the provider command reactor,
-coordination, quota policy, keyed worker, and affected ACP adapters. Server and
-shared typechecks pass. Targeted lint passes with existing unused-parameter
-warnings; formatting and `git diff --check` pass. The separate desktop
-backend-manager suite passes 26 tests.
-
-#### Release-boundary audit, October 6
-
-The last two implementation releases are `b67039843` (Personal 0.1.4) and
-`b1061c8e1` (Personal 0.1.5); `HEAD` `7da4d5dbe` only records the 0.1.5
-publication. Comparing the provider launch files from the 0.1.4 parent through
-0.1.5 shows no changes to Antigravity binary selection, profile/auth setup,
-arguments, or child environment. The 0.1.5 Antigravity changes parse task
-notifications after content arrives and retain bounded native error details.
-They do not run before `authenticate`. The 0.1.4 macOS change disables
-automatic keychain prompts in the Electron process; the native child is a
-separate process and uses file-backed profile storage (`GEMINI_HOME` and
-`AGY_ACP_FORCE_FILE_STORAGE=1`). This narrows the demonstrated release boundary
-away from the authentication launch path; it does not prove there were no
-other regressions.
-
-Read-only Personal provider logs show successful native `initialize`,
-`authenticate`, and `session/new` on October 5, including a later re-auth at
-7:48 PM EDT. The user reports that Gemini worked yesterday and that the Wi-Fi
-or VPN changed. The current direct native probe stalls on IPv6 during
-`loadCodeAssist`; the same binary and temporary profile succeed through the
-provider-scoped IPv4 relay. This makes the changed network path the leading
-explanation, but available evidence does not identify a specific router, VPN,
-or network configuration change. The user later confirmed Gemini works on hotspot and identified the failing
-network as eduroam. The experimental provider relay was removed; no installed
-app or system settings were changed.
-
-The release audit also found a separate 0.1.5 performance regression in
-`parseAntigravityTaskNotification`: an incomplete task message followed by
-whitespace made its lazy output capture backtrack quadratically. The capture is
-now greedy and must match the closing tag; summary trimming still removes
-trailing whitespace. A focused regression test covers a valid whitespace-padded
-message and an incomplete whitespace-heavy message. Direct measurements of the
-real function changed from about 404 ms for 16,000 spaces before the fix to
-about 0.06 ms afterward (`/private/tmp/t3-gemini-verification/parser-before.log`
-and `parser-after.log`). This content-parsing issue is separate from startup
-authentication.
-
-Relevant code is `AntigravityAdapter.ts`, where `runtime.start()` precedes model
-application, and `ThreadCoordinationReactor.ts`, which converts a matching
-`provider.turn.start.failed` activity into a child failure report. The synthetic
-report is expected recovery behavior; its existence is not itself the defect.
-
-#### Acceptance criteria
-
-- A real Codex parent can start the requested Gemini children, receive their
-  substantive reports, and resume or complete the layer.
-- Authentication failure identifies the failing provider and operation with an
-  actionable, secret-free explanation instead of only `Internal error`.
-- Child and parent states distinguish failed startup, pending startup, and
-  actual execution. Failure delivery must not imply useful work completed.
-- Verify four simultaneous child assignments and queued overflow. Explain or
-  remove serialized authentication delays without exceeding provider limits.
-- Add focused coverage for ACP authentication failure and parent recovery,
-  then verify the full cycle against the installed runtime.
+- A real Codex parent starts Gemini children, receives substantive reports and
+  resumes/completes on a working network.
+- Failed authentication reports provider, operation and actionable secret-free
+  detail; a subsequent retry succeeds after cleanup.
+- UI states distinguish queued/startup/failure from actual execution.
+- Four assignments and queued overflow exercise concurrent startup without
+  exceeding provider limits or losing failure reports.
+- Rerun the complete cycle against the current installed runtime. Focused tests
+  and a standalone Gemini success do not substitute for that cycle.
 
 ### ZED-001: Read Zed account usage from the billing service
 
@@ -452,143 +606,21 @@ publish a zeroed bar, and ACP session cost is never labeled as account spend.
 - Tests cover account scope, billing-period boundaries, failed reads, and
   repeated cumulative session updates.
 
-### ZED-003: Full access still blocks a read-only command for approval
-
-Status: Open. Observed September 22, 2026 in T3 Code - Personal 0.0.42.
-
-In thread `46981a74-b5c1-4a15-804f-44eb30d8ec00`, select Zed GPT-5.6 Luna
-with Full access and send `Run pwd once. Reply with only the directory name.`
-The thread enters Approval, shows a Command approval card for `pwd`, and
-replaces the composer with `Resolve this approval request to continue`.
-Approving the command succeeds and produces `t3code-dev`. Full access remains
-selected afterward.
-
-At the time of the report, the displayed permission mode did not match the
-effective behavior. October 6 source inspection found that `ZedAdapter.ts`
-now selects a provider-supplied allow option automatically in Full access.
-When no allow option exists, it retains the approval flow. Reproduce the
-installed terminal command before changing this policy again. Approval-required
-behavior still needs a separate installed check.
-
-#### Acceptance criteria
-
-- Map supported permission modes to Zed's actual behavior, or clearly show the
-  provider's limitation instead of presenting an ineffective Full access mode.
-- Verify approval-required behavior separately. Do not bypass permissions
-  merely to hide the mismatch.
-
-### ZED-006: Model thinking effort is unavailable in T3
-
-Status: Fixed, browser and desktop verified October 6, 2026. Released and installed in Personal 0.2.0.
-
-The Zed ACP bridge previously exported model names and IDs without effort
-metadata, and T3 assigned empty model capabilities. The adapter also ignored
-model option selections.
-
-The bridge now exports native effort values and defaults and validates ACP
-configuration changes against the selected model. T3 exposes those values through
-its existing web/desktop and mobile option controls and applies selections before
-prompts, including reapplication from stored thread selections. Mobile keeps
-compatible choices on a model switch and removes options unsupported by the
-destination model. No new wire contract or storage format is needed.
-
-#### Acceptance criteria
-
-- Expose thinking-effort choices for Zed models that support them, using the
-  model's actual supported values and default.
-- Pass the selected effort to Zed and verify it affects the provider request.
-- Preserve the selection across thread reload and session resume. When switching
-  models, retain it only if the destination model supports that value.
-- Cover web, desktop, and mobile model controls. Remote connections preserve
-  the same selection.
-- Models without configurable thinking effort do not show an ineffective control.
-
-#### Verification
-
-- 56 focused T3 tests pass across discovery, ACP dispatch, web/desktop composer
-  dispatch, and mobile option handling. Cases cover defaults, changes during an
-  active session, supported/unsupported model switches, custom hosted models,
-  and reapplication of a serialized selection after restarting the adapter.
-- Seven native bridge tests pass. The new test changes effort through the ACP
-  handler and captures actual native `LanguageModelRequest.thinking_effort`
-  values, without a hosted provider turn. Invalid values are rejected.
-- Scoped server, web, and mobile typechecks and targeted lint pass. The local
-  `zed-acp-server` binary is rebuilt in `zed-dev/target/debug`.
-- Authorized computer-use verification in an isolated browser discovered Sonnet
-  5.5 and GPT-6 Luna. Sonnet Max resets to Luna's native Medium default on a
-  model switch. A real Luna Low turn and a High turn after restarting the server
-  completed successfully; captured ACP configuration requests precede each
-  prompt. High and both replies survive a page reload.
-- Evidence is retained under `/private/tmp/t3-zed-effort-ui/evidence`. Temporary
-  copied Zed credentials were removed and the isolated server was stopped.
-- Installed Electron 0.2.0 shows Sonnet 5.5 and its Low, Medium, High default,
-  Extra High, and Max choices. Selecting Low updates the composer; the draft was
-  restored to High. About confirms `0.2.0 (6a29039bf7f6)`.
-- Personal 0.2.0 is published at
-  https://github.com/tvh0021/t3code/releases/tag/personal-v0.2.0 and installed in
-  `/Applications/T3 Code - Personal.app`. DMG and ZIP integrity, deep signature,
-  matching Personal signing identity, and uploaded artifact digests pass. The
-  previous install is retained at `/private/tmp/t3-personal-before-0.2.0`.
-- Native mobile and remote/relay runtime verification remain pending. Native
-  conversation history resumption was not added; replacement sessions reapply
-  the stored effort. The companion bridge commit is `11708bd472`; the desktop
-  installer does not bundle this separately configured executable.
-
-### MATH-001: KaTeX vector accent renders inside base glyph instead of above it
-
-Status: Fixed and verified in the installed Personal 0.3.1 candidate on October 8, 2026. Included in this release.
-Observed September 23, 2026.
-
-In mathematical expressions containing vector notation such as `\vec{B}` (e.g.
-`(\nabla \cdot \vec{B} = 0),`), the right-pointing arrow accent is rendered
-vertically misaligned: the arrow appears positioned inside the body of the
-letter $B$ along the midline / baseline instead of hovering above the glyph.
-
-![KaTeX vector accent misaligned inside glyph](./assets/math-vector-accent-misalignment.png)
-
-#### Observed behavior
-
-When rendering assistant messages containing LaTeX via `ChatMarkdown.tsx`,
-expressions with accents (such as `\vec{B}`) render with the accent symbol
-overlapping directly with the character glyph. In the reported equation
-`(\nabla \cdot \vec{B} = 0),`, the arrow accent rests inside the center of the
-italicized letter $B$ rather than clearing the top of the letter.
-
-#### Root cause investigation
-
-`rehype-katex` resolved KaTeX 0.16.47, while `ChatMarkdown.tsx` imported the
-stylesheet from the web app's direct KaTeX 0.18.7 dependency. The renderer
-generated `.accent` and `.overlay`; the stylesheet targeted `.katex-accent`
-and `.katex-overlay`. Those rules never matched, leaving the accent body
-statically positioned and its SVG wrapper inline. The real chat renderer
-reproduced the original overlap in an isolated copy of runtime state.
-
-#### Remediation
-
-Added a `rehype-katex>katex` override for 0.18.7 in `pnpm-workspace.yaml` and
-updated the lockfile. Markup and stylesheet now use the same version. No custom
-accent offsets or changes to the existing root and fraction CSS were needed.
-
-#### Verification
-
-Browser verification covered inline and display `\\vec{B}`, `\\vec{v}`,
-`\\vec{E}`, hats, bars, tildes, dots, square roots with superscripts, fractions,
-and scalable delimiters. All seven vector SVG paths cleared their base glyphs
-by about 1.8 CSS pixels, using KaTeX font heights and the rendered vertical-list
-baseline. The 54 existing `ChatMarkdown` tests passed.
-
-This fixes the shared web renderer used by local, hosted, remote, and desktop
-clients. The installed Personal 0.3.1 candidate also rendered inline and display vectors with arrows above their base glyphs. Native mobile uses its own
-markdown renderer and was not changed or verified here.
-
-#### Acceptance criteria
-
-- [x] `\vec{B}`, `\vec{v}`, `\vec{E}`, and related accented math symbols render
-      with the arrow floating cleanly above the character glyph.
-- [x] No visual collision or overlap between the accent arrow and the letter strokes.
-- [x] Existing math adjustments for square roots and fractions remain unaffected.
-
 ## Verification scope
+
+### Desktop and Zed verification, October 11, 2026
+
+ZED-003 is resolved for Personal 0.3.1 with the configured native Zed bridge
+and GPT-6 Luna at Medium effort. In separate scratch threads, Full access ran
+`pwd` without an approval request; Supervised displayed a Command approval
+card and ran it only after approval. Both returned the expected directory,
+`fixture`. The Supervised reply and selection survived the delayed restart.
+Account discovery no longer returned the historical GPT-5.6 Luna model.
+
+The test copy's application code archive matched the installed app. Setup used
+separate T3 and Electron data directories, remapped workspace paths, and a
+temporary Zed credential copy. The test app exited normally, and the credential
+copy was removed. The installed app and live T3 data were unchanged.
 
 ### Desktop verification scope, September 22, 2026
 
@@ -608,74 +640,3 @@ accessibility errors occurred initially and recovered. They are not classified
 as T3 defects. Historical failed threads were not reproduced or filed as new
 issues. Mobile, remote connections, cancellation, and quota exhaustion were not
 tested. No app restart or configuration change was required.
-
-## Resolved issues
-
-### ZED-005: Complex tools crash or stall native subagents
-
-Status: Resolved October 6, 2026 in companion Zed commit `317b394ae4`.
-
-The live thread reported `ACP transport operation read-process-exit-status failed`.
-The crash report showed a missing headless web-search registry. Native child
-sessions also lacked event subscriptions, so child approvals could wait without
-reaching T3. Streamed tool inputs remained stuck at their first fragment.
-
-The bridge initializes web search, subscribes to child and nested-child sessions,
-forwards pending approvals, routes answers to the child, and emits current tool
-details with duplicate suppression. Seven focused Rust tests passed. A real
-Sonnet 5.5 child search and parent file read completed normally; all 31 captured
-ACP messages passed T3's schemas. Website 403 responses are a separate restriction.
-
-### CHAT-002: Show context-window usage in the composer
-
-Status: Resolved September 23, 2026.
-
-The composer now shows a circular context-window meter when a provider reports
-the current context token count. The meter shows the used share of the model's
-context window and exposes the token counts on hover.
-
-The server converts provider usage events into the shared
-`context-window.updated` activity. The Zed bridge forwards real context
-token usage, and the adapter maps the ACP `usage_update` fields `used` and
-`size` to the shared context-window meter. Billing cost and character estimates
-remain separate from context usage.
-
-### ZED-004: Completed Zed turns are absent from the usage summary
-
-Status: Resolved September 23, 2026.
-
-Verified Zed session usage visibility and provider summary reporting in
-Usage > Tokens. Session usage tracking operates independently of account billing
-authentication.
-
-### CHATLLM-001: The running desktop server does not refresh its model list
-
-Status: Resolved September 23, 2026.
-
-The RouteLLM `/v1/models` endpoint returns the dynamic model IDs (including
-`gpt-6-sol` and `gpt-6-luna`) for the configured API key. The driver reads that
-endpoint on manual refresh and checks it weekly while the server runs. Both
-desktop and server bundles have been updated and verified.
-
-### AG-001: Antigravity usage tracker omits historical sessions and severely undercounts token usage
-
-Status: Resolved September 23, 2026.
-
-Resolved by:
-
-1. Extracting actual token metrics from ACP stream responses and SQLite
-   conversation traces (`gen_metadata` / steps) rather than falling back to
-   prompt-character heuristics.
-2. Ingesting historical SQLite conversation sessions via `UsageService.ts` and
-   `antigravityConversations.ts` across both user data and provider state
-   directories.
-
-### AG-CLAUDE-001: Claude 5.5 through Antigravity
-
-Status: Verified in installed Personal 0.3.0 on October 8, 2026.
-
-The managed runtime is ACP 1.3.0 and the shared client identity exposes the account's eligible Claude Opus and Sonnet 5.5 variants alongside Gemini. Native IDs reach chat and text helpers unchanged. Local classification preserves these variants across upstream manifest refreshes. Availability remains account-driven and relies on Google's undocumented recognized-client behavior.
-
-The isolated release snapshot passed 167 focused tests, server typechecking, scoped lint and formatting. Earlier isolated live checks covered resume, cancellation and branch generation. Installed Opus, Sonnet and Gemini turns passed on the new network. Remote, relay, tunnel and native mobile paths remain unverified.
-
-Installed verification completed account discovery of all six current Claude variants, live Opus and Sonnet turns, a switch back to Gemini, and thread reopening with retained replies and selection. The managed runtime reports 1.3.0. Native denied-tool behavior remains covered by focused tests rather than a live denial probe.

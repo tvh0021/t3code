@@ -877,16 +877,20 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                   threadId: input.threadId,
                 }),
               });
-              // Workspace file access requested through the client fs
-              // capability. The agent gates each write behind
-              // `session/request_permission`, so only path containment is
-              // checked here.
+              // Client filesystem requests stay within the session roots.
+              // Review workers can read these roots but cannot write them.
               const allowedRoots = [cwd, serverConfig.attachmentsDir];
               yield* runtime.handleReadTextFile((request) =>
                 readClientTextFile({ fileSystem, path, allowedRoots, request }),
               );
               yield* runtime.handleWriteTextFile((request) =>
-                writeClientTextFile({ fileSystem, path, allowedRoots, request }),
+                input.coordinationRole === "review"
+                  ? Effect.fail(
+                      EffectAcpErrors.AcpRequestError.invalidParams(
+                        "Read-only review workers cannot write files.",
+                      ),
+                    )
+                  : writeClientTextFile({ fileSystem, path, allowedRoots, request }),
               );
               yield* runtime.handleRequestPermission((request) =>
                 context

@@ -1,6 +1,9 @@
 # Changelog: Personal Fork Modifications
 
-A concise, chronological record of custom changes made to this personal fork of T3 Code (oldest to newest).
+A chronological record of custom changes, oldest to newest. Entries describe
+their date and may be superseded by later releases. Current behavior is in
+[MODIFICATIONS.md](./MODIFICATIONS.md); audit verdicts and last-test scope are in
+[VERIFICATION.md](./VERIFICATION.md).
 
 ---
 
@@ -79,7 +82,8 @@ Audit reviews now use GPT 6 Sol at low reasoning, as requested.
 - Simulated Luna XHigh at 95% and observed a linked Gemini child, source settlement, summary turn, and continuation prompt. Simulated an elapsed reset with a fresh 12% Luna reading. Fixed lost XHigh options and stale reset details found by the probe. Real quota exhaustion and provider continuation remain unverified.
 - Allowed Antigravity to parent a layer after the managed Gemini 3.8 Flash High runtime called T3's `read_thread` and `start_orchestration_layer` tools in an isolated dev thread. The server persisted an active Gemini parent with quota handoff enabled. A complete Gemini parent and child report cycle remains unverified.
 
-See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remaining checks.
+See [the historical handoff](./SESSION_HANDOFF.md) for retained evidence and
+[the issue tracker](./ISSUE_TRACKER.md) for current remaining checks.
 
 ### 2026-09-28: Personal 0.1.1
 
@@ -163,3 +167,11 @@ See [the current handoff](./SESSION_HANDOFF.md) for retained evidence and remain
 - Updated the API-equivalent pricing reference from official OpenAI, Anthropic and Google sources, including Claude Opus 5.5 and Sonnet 5.5. Verified rates take precedence over the public catalog; custom prices and provider-reported costs retain their priority. Estimates use standard base-context rates and exclude Gemini cache storage fees.
 - Effort-specific custom prices apply before rows combine, preserving their individual costs. Codex auto-review keeps its existing zero-cost accounting without a guessed API token rate.
 - All 85 focused tests, contracts/shared/server typechecks, scoped lint and formatting passed. The installed 0.3.2 candidate passed About, retained project loading, Settings, Usage refresh and Model/Day switching. Sonnet 5.5 combines 193K tokens in one priced row, Opus 5.5 combines 3.96M tokens, and Gemini 3.1 Pro replaces the old alias. Two Codex Luna turns completed in a disposable project; reloading retained both replies and the model. DMG/ZIP integrity and deep signature checks passed with the existing Personal identity. Diagnostics showed optional-tool/configuration misses and backend startup probes, with no Usage or smoke-turn failure. Native mobile and remote/relay/tunnel runtime paths remain untested.
+
+### 2026-10-11: Changelog quality audit
+
+Reviewed all 93 preceding bullets against current source and available runtime
+interfaces. Recorded per-item verdicts, evidence and coverage gaps in
+[VERIFICATION.md](./VERIFICATION.md), and new quality failures in
+[ISSUE_TRACKER.md](./ISSUE_TRACKER.md). Reconciled the personal notes without
+changing implementation code. This audit does not establish a full-app PASS.

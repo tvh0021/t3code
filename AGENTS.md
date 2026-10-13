@@ -108,9 +108,9 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 - **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck` unless I ask. CI owns the full suite.
 - Backend behavior changes ship with focused tests for that behavior.
 - The server is event-sourced and its async flows emit typed receipts. Wait on receipts and worker drains, never on sleeps or polling. A test that needs a timeout to pass is wrong.
-- Upon request, user-visible frontend changes should get one integrated pass in a real client: `test-t3-app` for web, `test-t3-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers. Ask permission before doing computer use or spinning up browsers.
+- Upon request, user-visible frontend changes should get one integrated pass in a real client with `test-t3-app` for web. The primary agent does this once after integrating. Subagents do not launch their own dev servers. Ask permission before doing computer use or spinning up browsers.
 
-For authorized mobile verification, a missing or outdated native client is a build step, not a blocker. Run `node scripts/mobile-native-client.ts ensure <ios|android> <device-id>` on the simulator host before starting Metro. It checks the local Expo fingerprint and builds/installs when needed. See `test-t3-mobile` for the full workflow.
+**Personal fork scope: do not verify the mobile app.** The mobile app is connected to a third-party service; updating this fork does not deploy its server changes to that service. Keep runtime verification to this fork's web, desktop and isolated server. Do not install or build mobile clients, download simulator runtimes, pair phones or simulators, or run mobile UI checks. Record mobile-only claims as outside this fork's verification scope, never as passing. General multi-surface guidance above does not authorize mobile verification. Revisit this restriction only if the developer explicitly requests mobile work and identifies the service and deployment to test.
 
 ## Pull requests
 
