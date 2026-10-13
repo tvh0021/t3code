@@ -82,71 +82,30 @@ export const OFFICIAL_MODEL_RATES: RateTable = new Map([
  * All rates are USD per token.
  */
 export const STATIC_FALLBACK_RATES: ReadonlyMap<string, ModelRate> = new Map([
-  ...OFFICIAL_MODEL_RATES,
-  [
-    "gemini-2.5-pro",
-    {
-      inputCostPerToken: 1.25 / 1_000_000,
-      outputCostPerToken: 10.0 / 1_000_000,
-      cacheReadCostPerToken: 0.3125 / 1_000_000,
-      cacheCreationCostPerToken: 1.25 / 1_000_000,
-    },
-  ],
-  [
-    "gemini-2.5-flash",
-    {
-      inputCostPerToken: 0.3 / 1_000_000,
-      outputCostPerToken: 2.5 / 1_000_000,
-      cacheReadCostPerToken: 0.075 / 1_000_000,
-      cacheCreationCostPerToken: 0.3 / 1_000_000,
-    },
-  ],
-  [
-    "glm-5.3-flash",
-    {
-      inputCostPerToken: 0.15 / 1_000_000,
-      outputCostPerToken: 0.5 / 1_000_000,
-      cacheReadCostPerToken: 0.03 / 1_000_000,
-      cacheCreationCostPerToken: 0.15 / 1_000_000,
-    },
-  ],
-  [
-    "deepseek-v4.1-flash",
-    {
-      inputCostPerToken: 0.15 / 1_000_000,
-      outputCostPerToken: 0.6 / 1_000_000,
-      cacheReadCostPerToken: 0.003 / 1_000_000,
-      cacheCreationCostPerToken: 0.15 / 1_000_000,
-    },
-  ],
-  [
-    "route-llm",
-    {
-      inputCostPerToken: 0.3 / 1_000_000,
-      outputCostPerToken: 1.2 / 1_000_000,
-      cacheReadCostPerToken: 0.06 / 1_000_000,
-      cacheCreationCostPerToken: 0.3 / 1_000_000,
-    },
-  ],
+  ["gemini-2.5-pro", ratePerMillion(1.25, 10.0, 0.3125)],
+  ["gemini-2.5-flash", ratePerMillion(0.3, 2.5, 0.075)],
+  ["glm-5.3-flash", ratePerMillion(0.15, 0.5, 0.03)],
+  ["deepseek-v4.1-flash", ratePerMillion(0.15, 0.6, 0.003)],
+  ["route-llm", ratePerMillion(0.3, 1.2, 0.06)],
 ]);
 
 /** Custom IDs keep their case, provider prefix, and variant suffix. */
 export function createOverrideRateTable(
   overrides: Readonly<Record<string, UsageModelPriceOverride>>,
 ): RateTable {
-  const table = new Map<string, ModelRate>();
-  for (const [model, prices] of Object.entries(overrides)) {
-    const rate: ModelRate = {
-      inputCostPerToken: prices.inputCostPerMillionTokens / 1_000_000,
-      outputCostPerToken: prices.outputCostPerMillionTokens / 1_000_000,
-      cacheReadCostPerToken:
-        (prices.cacheReadCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
-      cacheCreationCostPerToken:
-        (prices.cacheWriteCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
-    };
-    table.set(model.trim(), rate);
-  }
-  return table;
+  return new Map(
+    Object.entries(overrides).map(([model, prices]) => [
+      model.trim(),
+      {
+        inputCostPerToken: prices.inputCostPerMillionTokens / 1_000_000,
+        outputCostPerToken: prices.outputCostPerMillionTokens / 1_000_000,
+        cacheReadCostPerToken:
+          (prices.cacheReadCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
+        cacheCreationCostPerToken:
+          (prices.cacheWriteCostPerMillionTokens ?? prices.inputCostPerMillionTokens) / 1_000_000,
+      },
+    ]),
+  );
 }
 
 /** Raw shape of one LiteLLM entry, narrowed to the fields we read. */
@@ -318,6 +277,10 @@ export function lookupRate(table: RateTable, model: string): ModelRate | null {
   return null;
 }
 
+function findOverride(overrides: RateTable | undefined, model: string): ModelRate | undefined {
+  return overrides?.get(model.trim()) ?? overrides?.get(normalizeUsageModel(model));
+}
+
 export interface PricedUsage {
   readonly costUsd: number;
   readonly costSource: UsageCostSource;
@@ -336,7 +299,7 @@ export function priceUsage(
   reportedCostUsd: number | null,
   overrides?: RateTable,
 ): PricedUsage {
-  const override = overrides?.get(model.trim()) ?? overrides?.get(normalizeUsageModel(model));
+  const override = findOverride(overrides, model);
   if (override === undefined && reportedCostUsd !== null && Number.isFinite(reportedCostUsd)) {
     return { costUsd: reportedCostUsd, costSource: "providerReported" };
   }
@@ -363,10 +326,7 @@ export function cacheSavingsUsd(
   totals: UsageTokenTotals,
   overrides?: RateTable,
 ): number {
-  const rate =
-    overrides?.get(model.trim()) ??
-    overrides?.get(normalizeUsageModel(model)) ??
-    lookupRate(table, model);
+  const rate = findOverride(overrides, model) ?? lookupRate(table, model);
   if (rate === null) return 0;
   return totals.cachedInputTokens * (rate.inputCostPerToken - rate.cacheReadCostPerToken);
 }

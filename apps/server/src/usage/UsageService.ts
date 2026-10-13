@@ -782,6 +782,7 @@ export const make = Effect.gen(function* () {
     const settings = yield* readSettings;
     return Object.fromEntries(
       [
+        ...OFFICIAL_MODEL_RATES,
         ...STATIC_FALLBACK_RATES,
         ...rates,
         ...OFFICIAL_MODEL_RATES,
