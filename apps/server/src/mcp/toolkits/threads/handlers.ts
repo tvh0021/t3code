@@ -2,6 +2,7 @@ import { coordinationProviderIssue } from "../../../provider/coordinationWorkerP
 import { CoordinationPolicy } from "../../../orchestration/CoordinationPolicy.ts";
 import {
   CommandId,
+  coordinationRole,
   MessageId,
   ThreadId,
   resolveChildRuntimeMode,
@@ -441,11 +442,7 @@ const make = Effect.gen(function* () {
     create_thread: (input) =>
       Effect.gen(function* () {
         const parent = yield* requireThread();
-        if (
-          parent.coordination?.role === "child" ||
-          (parent.coordination?.role === "parent" &&
-            ["active", "paused"].includes(parent.coordination.status))
-        )
+        if (coordinationRole(parent.coordination) !== undefined)
           return yield* new ThreadToolError({
             message:
               "T3 orchestration layer threads must use spawn_child. Child threads cannot create threads.",

@@ -14,6 +14,45 @@ type Command = Extract<
 type Parent = Extract<ThreadCoordination, { role: "parent" }>;
 type Child = Extract<ThreadCoordination, { role: "child" }>;
 
+export function isPendingQuotaAction(quota: Parent["quotaHandoff"]): boolean {
+  return (
+    quota?.status === "waiting-reset" ||
+    quota?.status === "handing-off" ||
+    quota?.status === "summarizing"
+  );
+}
+
+export function pauseParentForUserActivity(
+  state: Parent,
+  activity: "prompt" | "interrupt",
+): Parent | undefined {
+  const quota = state.quotaHandoff;
+  const cancelsPendingQuotaAction = isPendingQuotaAction(quota);
+  if (state.status !== "active" && !(state.status === "paused" && cancelsPendingQuotaAction))
+    return undefined;
+  return {
+    ...state,
+    status: "paused",
+    blockedReason:
+      activity === "prompt"
+        ? cancelsPendingQuotaAction
+          ? "Paused by a user prompt; the pending quota action was canceled."
+          : "Paused by a user prompt."
+        : cancelsPendingQuotaAction
+          ? "Paused by an interrupt; the pending quota action was canceled."
+          : "Paused by an interrupt.",
+    ...(cancelsPendingQuotaAction && quota
+      ? {
+          quotaHandoff: {
+            ...quota,
+            status: "paused" as const,
+            reason: "Canceled by user activity.",
+          },
+        }
+      : {}),
+  };
+}
+
 function handoffContextForThread(
   source: OrchestrationThread,
   threads: ReadonlyArray<OrchestrationThread>,
@@ -138,9 +177,7 @@ export function planCoordination(
       (command.action === "pause" ||
         command.action === "complete" ||
         command.action === "cancel") &&
-      (quota?.status === "waiting-reset" ||
-        quota?.status === "handing-off" ||
-        quota?.status === "summarizing");
+      isPendingQuotaAction(quota);
     const {
       reason: _reason,
       resetAt: _resetAt,

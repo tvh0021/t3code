@@ -23,7 +23,11 @@ import { coordinationProviderIssue } from "../provider/coordinationWorkerPolicy.
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
-import { firstEligibleQuotaFallback, quotaWindowVerdict } from "./CoordinationQuotaPolicy.ts";
+import {
+  firstEligibleQuotaFallback,
+  isProviderReadyForHandoff,
+  quotaWindowVerdict,
+} from "./CoordinationQuotaPolicy.ts";
 
 type Parent = Extract<ThreadCoordination, { role: "parent" }>;
 
@@ -37,24 +41,10 @@ const isRunning = (thread: OrchestrationThreadShell): boolean =>
   thread.session?.status === "starting" ||
   thread.session?.status === "running";
 
-const isSettled = (thread: OrchestrationThreadShell): boolean =>
-  thread.latestTurn?.state !== "running" &&
-  thread.session?.status !== "starting" &&
-  thread.session?.status !== "running";
-
 const hasBudget = (state: Parent, model: string, requiredTurns: number): boolean => {
   const budget = state.budgets.find((entry) => entry.model === coordinationModelKey(model));
   return Boolean(budget && (budget.limit === null || budget.limit - budget.used >= requiredTurns));
 };
-
-const isProviderReadyForHandoff = (provider: ServerProvider | undefined): boolean =>
-  Boolean(
-    provider?.enabled &&
-    provider.installed &&
-    provider.status === "ready" &&
-    provider.availability !== "unavailable" &&
-    provider.auth.status === "authenticated",
-  );
 
 export const make = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
@@ -146,7 +136,8 @@ export const make = Effect.gen(function* () {
       settings: ServerSettingsValue,
       now: string,
     ) {
-      const quota = state.quotaHandoff!;
+      const quota = state.quotaHandoff;
+      if (!quota) return;
       if (quota.resetAt && Date.parse(quota.resetAt) > Date.parse(now)) return;
       const { provider } = yield* freshProvider(source.modelSelection.instanceId, true, now);
       if (!isProviderReadyForHandoff(provider)) {
@@ -236,10 +227,11 @@ export const make = Effect.gen(function* () {
         models,
       ]),
     );
+    const sourceModel = coordinationModelKey(source.modelSelection.model);
+    const mappedModels = fallbackMappings[sourceModel] ?? [];
+    const canSwitchProvider = state.quotaHandoff?.switchCount === 0;
     let fallbackProviders = currentProviders;
-    if (state.quotaHandoff?.switchCount === 0) {
-      const mappedModels =
-        fallbackMappings[coordinationModelKey(source.modelSelection.model)] ?? [];
+    if (canSwitchProvider) {
       const instances = new Set(
         fallbackProviders
           .filter((provider) =>
@@ -253,22 +245,21 @@ export const make = Effect.gen(function* () {
           .pipe(Effect.catchCause(() => Effect.succeed(fallbackProviders)));
       }
     }
-    const fallback =
-      state.quotaHandoff?.switchCount === 0
-        ? firstEligibleQuotaFallback({
-            sourceModel: coordinationModelKey(source.modelSelection.model),
-            fallbackModels: fallbackMappings,
-            providers: fallbackProviders,
-            thresholdPercent: settings.coordinationQuotaHandoffThresholdPercent,
-            now,
-            canRunModel: (model) => hasBudget(state, model, 1),
-            canRunProviderModel: (provider) =>
-              coordinationProviderIssue(
-                provider.driver,
-                source.id === parent.id ? "parent" : "child",
-              ) === undefined,
-          })
-        : undefined;
+    const fallback = canSwitchProvider
+      ? firstEligibleQuotaFallback({
+          sourceModel,
+          fallbackModels: fallbackMappings,
+          providers: fallbackProviders,
+          thresholdPercent: settings.coordinationQuotaHandoffThresholdPercent,
+          now,
+          canRunModel: (model) => hasBudget(state, model, 1),
+          canRunProviderModel: (provider) =>
+            coordinationProviderIssue(
+              provider.driver,
+              source.id === parent.id ? "parent" : "child",
+            ) === undefined,
+        })
+      : undefined;
     if (fallback) {
       yield* dispatchHandoff({
         parent,
@@ -281,10 +272,7 @@ export const make = Effect.gen(function* () {
       return true;
     }
     const needsAdditionalBudget =
-      state.quotaHandoff?.switchCount === 0 &&
-      (fallbackMappings[coordinationModelKey(source.modelSelection.model)] ?? []).some(
-        (model) => !hasBudget(state, model, 1),
-      );
+      canSwitchProvider && mappedModels.some((model) => !hasBudget(state, model, 1));
     const budgetMessage = needsAdditionalBudget
       ? " A mapped fallback needs one remaining orchestration turn for the task continuation."
       : "";
@@ -305,26 +293,19 @@ export const make = Effect.gen(function* () {
   ) {
     for (const parent of threads) {
       const state = parent.coordination;
-      if (
-        state?.role !== "parent" ||
-        state.quotaHandoff?.status !== "handing-off" ||
-        !state.quotaHandoff.affectedThreadId ||
-        !state.quotaHandoff.destinationThreadId
-      )
+      const quota = state?.role === "parent" ? state.quotaHandoff : undefined;
+      if (quota?.status !== "handing-off" || !quota.affectedThreadId || !quota.destinationThreadId)
         continue;
-      const source = threads.find((thread) => thread.id === state.quotaHandoff!.affectedThreadId);
-      if (!source || !isSettled(source)) continue;
-      const targetId =
-        state.quotaHandoff.sourceThreadId === source.id
-          ? state.quotaHandoff.destinationThreadId
-          : parent.id;
+      const source = threads.find((thread) => thread.id === quota.affectedThreadId);
+      if (!source || isRunning(source)) continue;
+      const targetId = quota.sourceThreadId === source.id ? quota.destinationThreadId : parent.id;
       yield* engine.dispatch({
         type: "thread.coordination",
         threadId: targetId,
         commandId: CommandId.make(`quota:settle:${targetId}:${yield* crypto.randomUUIDv4}`),
         action: {
           type: "quota-settle",
-          destinationThreadId: state.quotaHandoff.destinationThreadId,
+          destinationThreadId: quota.destinationThreadId,
         },
         createdAt: DateTime.formatIso(yield* DateTime.now),
       });

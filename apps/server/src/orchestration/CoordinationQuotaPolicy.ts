@@ -29,6 +29,15 @@ export function quotaWindowVerdict(input: {
   return { status: "threshold-reached", ...(resetAt ? { resetAt } : {}) };
 }
 
+export const isProviderReadyForHandoff = (provider: ServerProvider | undefined): boolean =>
+  Boolean(
+    provider?.enabled &&
+    provider.installed &&
+    provider.status === "ready" &&
+    provider.availability !== "unavailable" &&
+    provider.auth.status === "authenticated",
+  );
+
 /** Resolve the first mapped model whose provider is ready and whose quota is known to be usable. */
 export function firstEligibleQuotaFallback(input: {
   readonly sourceModel: string;
@@ -43,11 +52,7 @@ export function firstEligibleQuotaFallback(input: {
     if (input.canRunModel && !input.canRunModel(model)) continue;
     const candidates = input.providers.filter(
       (candidate) =>
-        candidate.enabled &&
-        candidate.installed &&
-        candidate.status === "ready" &&
-        candidate.availability !== "unavailable" &&
-        candidate.auth.status === "authenticated" &&
+        isProviderReadyForHandoff(candidate) &&
         (!input.canRunProviderModel || input.canRunProviderModel(candidate, model)) &&
         candidate.models.some((entry) => entry.slug === model && entry.isLegacy !== true),
     );

@@ -1,7 +1,8 @@
 import type { ThreadId } from "@t3tools/contracts";
-import { planCoordination } from "./coordinationDecider.ts";
+import { pauseParentForUserActivity, planCoordination } from "./coordinationDecider.ts";
 import {
   EventId,
+  coordinationRole,
   MAX_SCRIPT_ID_LENGTH,
   SCRIPT_RUN_COMMAND_PATTERN,
   MessageId,
@@ -982,9 +983,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         threadId: command.threadId,
       });
       if (
-        thread.coordination &&
-        (thread.coordination.role === "child" ||
-          ["active", "paused"].includes(thread.coordination.status)) &&
+        coordinationRole(thread.coordination) !== undefined &&
         (command.modelSelection !== undefined || command.worktreePath !== undefined)
       ) {
         return yield* new OrchestrationCommandInvariantError({
@@ -1484,22 +1483,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail:
             "Only the parent can assign work to a child. Complete the workflow and start a fresh thread for independent work.",
         });
-      const quotaHandoffPending =
-        targetThread.coordination?.role === "parent" &&
-        (targetThread.coordination.quotaHandoff?.status === "waiting-reset" ||
-          targetThread.coordination.quotaHandoff?.status === "handing-off" ||
-          targetThread.coordination.quotaHandoff?.status === "summarizing");
-      if (
-        targetThread.coordination?.role === "parent" &&
-        (targetThread.coordination.status === "active" ||
-          (targetThread.coordination.status === "paused" && quotaHandoffPending)) &&
-        !command.coordinationAutomatic
-      ) {
-        const quota = targetThread.coordination.quotaHandoff;
-        const cancelsPendingQuotaAction =
-          quota?.status === "waiting-reset" ||
-          quota?.status === "handing-off" ||
-          quota?.status === "summarizing";
+      const pausedCoordination =
+        targetThread.coordination?.role === "parent" && !command.coordinationAutomatic
+          ? pauseParentForUserActivity(targetThread.coordination, "prompt")
+          : undefined;
+      if (pausedCoordination) {
         return yield* decideCommandSequence({
           readModel,
           commands: [
@@ -1507,22 +1495,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               type: "thread.coordination.set",
               commandId: command.commandId,
               threadId: targetThread.id,
-              coordination: {
-                ...targetThread.coordination,
-                status: "paused",
-                blockedReason: cancelsPendingQuotaAction
-                  ? "Paused by a user prompt; the pending quota action was canceled."
-                  : "Paused by a user prompt.",
-                ...(cancelsPendingQuotaAction && quota
-                  ? {
-                      quotaHandoff: {
-                        ...quota,
-                        status: "paused" as const,
-                        reason: "Canceled by user activity.",
-                      },
-                    }
-                  : {}),
-              },
+              coordination: pausedCoordination,
               createdAt: command.createdAt,
             },
             command,
@@ -1697,19 +1670,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
 
     case "thread.turn.interrupt": {
       const interrupted = readModel.threads.find((thread) => thread.id === command.threadId);
-      const quota =
+      const pausedCoordination =
         interrupted?.coordination?.role === "parent"
-          ? interrupted.coordination.quotaHandoff
+          ? pauseParentForUserActivity(interrupted.coordination, "interrupt")
           : undefined;
-      const cancelsPendingQuotaAction =
-        quota?.status === "waiting-reset" ||
-        quota?.status === "handing-off" ||
-        quota?.status === "summarizing";
-      if (
-        interrupted?.coordination?.role === "parent" &&
-        (interrupted.coordination.status === "active" ||
-          (interrupted.coordination.status === "paused" && cancelsPendingQuotaAction))
-      )
+      if (pausedCoordination && interrupted)
         return yield* decideCommandSequence({
           readModel,
           commands: [
@@ -1717,22 +1682,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               type: "thread.coordination.set",
               commandId: command.commandId,
               threadId: interrupted.id,
-              coordination: {
-                ...interrupted.coordination,
-                status: "paused",
-                blockedReason: cancelsPendingQuotaAction
-                  ? "Paused by an interrupt; the pending quota action was canceled."
-                  : "Paused by an interrupt.",
-                ...(cancelsPendingQuotaAction && quota
-                  ? {
-                      quotaHandoff: {
-                        ...quota,
-                        status: "paused" as const,
-                        reason: "Canceled by user activity.",
-                      },
-                    }
-                  : {}),
-              },
+              coordination: pausedCoordination,
               createdAt: command.createdAt,
             },
             command,
