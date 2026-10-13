@@ -15,6 +15,7 @@
 import {
   ABACUS_CREDIT_COST_USD,
   normalizeUsageModel,
+  usdToAbacusCredits,
   type UsageBucket,
   type UsageDay,
   type UsageResolution,
@@ -191,7 +192,7 @@ export class UsageAggregator {
     if (record.credits !== undefined && record.credits !== null && record.credits > 0) {
       bucket.credits += record.credits;
     } else if (record.provider === "abacus") {
-      const recordCredits = priced.costUsd > 0 ? priced.costUsd / ABACUS_CREDIT_COST_USD : 0;
+      const recordCredits = priced.costUsd > 0 ? usdToAbacusCredits(priced.costUsd) : 0;
       bucket.credits += recordCredits;
     }
     bucket.cacheSavingsUsd += isCodexAutoReview

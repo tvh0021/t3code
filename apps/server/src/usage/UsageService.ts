@@ -61,6 +61,7 @@ import {
   type RateTable,
 } from "./usagePricing.ts";
 import {
+  isCodexLikeProvider,
   listTranscriptFiles,
   readDirectoryVolumeId,
   readTranscriptRecords,
@@ -667,9 +668,7 @@ export const make = Effect.gen(function* () {
           let usageRecord = record;
           if (
             record.dedupeKey === null &&
-            (record.provider === "codex" ||
-              record.provider === "antigravity" ||
-              record.provider === "abacus") &&
+            isCodexLikeProvider(record.provider) &&
             record.sessionId.length > 0
           ) {
             // Match moved rollout copies without collapsing repeated equal events

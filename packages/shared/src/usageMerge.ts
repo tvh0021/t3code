@@ -12,6 +12,7 @@ import {
   codexCreditsToUsd,
   normalizeUsageModel,
   USAGE_MERGE_COMPATIBLE_SINCE,
+  usdToAbacusCredits,
   type EnvironmentId,
   type UsageBucket,
   type UsageProviderKind,
@@ -365,7 +366,7 @@ export function mergeUsage(
         bucket.credits ??
         (bucket.provider === "abacus"
           ? bucket.costUsd > 0
-            ? bucket.costUsd / ABACUS_CREDIT_COST_USD
+            ? usdToAbacusCredits(bucket.costUsd)
             : 0
           : 0);
       const bucketCredits = isCodexAutoReview ? 0 : rawBucketCredits;

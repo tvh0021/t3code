@@ -8,6 +8,7 @@
  */
 import {
   ABACUS_CREDIT_COST_USD,
+  abacusCreditsToUsd,
   codexCreditsToUsd,
   type UsageProviderKind,
   type UsageTokenTotals,
@@ -67,7 +68,13 @@ export function totalTokens(totals: UsageTokenTotals): number {
   );
 }
 
-/** Cheap substring gate applied before `JSON.parse`. */
+/**
+ * Cheap substring gate applied before `JSON.parse`.
+ *
+ * Transcripts are mostly tool output; only a minority of lines carry usage. On
+ * a 30-day window this skips roughly half the lines outright and is worth about
+ * an order of magnitude.
+ */
 export function mightCarryUsage(line: string, provider: UsageProviderKind): boolean {
   if (provider === "claude") return line.includes('"usage"');
   if (provider === "grok") return line.includes('"turn_completed"');
@@ -86,8 +93,12 @@ function grokCostTicksToUsd(ticks: unknown): number | null {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Parses one line of a Claude Code transcript, returning a usage record if the
- * line was an assistant message carrying token usage.
+ * Parses one line of a Claude Code transcript.
+ *
+ * T3 Code writes one record per assistant *content block*, and every one of
+ * those records repeats the same complete `usage` object for the parent
+ * message. Summing them overcounts by roughly 2.4x on a real workload, so the
+ * caller must drop repeats by `dedupeKey` and keep the first.
  */
 export function parseClaudeLine(line: string): UsageRecord | null {
   let parsed: unknown;
@@ -136,69 +147,6 @@ export function parseClaudeLine(line: string): UsageRecord | null {
     },
     reportedCostUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : null,
     dedupeKey,
-  };
-}
-
-/* -------------------------------------------------------------------------- */
-/* Antigravity                                                                */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Parses one line of an Antigravity transcript, returning a usage record if the
- * line was a turn usage event.
- */
-export function parseAntigravityLine(line: string): UsageRecord | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null) return null;
-
-  const record = parsed as Record<string, unknown>;
-  if (record["provider"] !== "antigravity") return null;
-
-  const timestampMs = parseTimestampMs(record["timestamp"]);
-  if (timestampMs === null) return null;
-
-  const model = typeof record["model"] === "string" ? record["model"] : "";
-  if (model.length === 0) return null;
-
-  const rawSessionId = record["sessionId"];
-  const sessionId = typeof rawSessionId === "string" ? rawSessionId : "";
-
-  const totals: UsageTokenTotals = {
-    uncachedInputTokens: int(record["inputTokens"]),
-    cachedInputTokens: int(record["cachedInputTokens"]),
-    cacheCreationTokens: int(record["cacheCreationTokens"]),
-    outputTokens: int(record["outputTokens"]),
-    reasoningTokens: int(record["reasoningTokens"]),
-  };
-
-  const rawCredits = record["credits"];
-  const credits =
-    typeof rawCredits === "number" && Number.isFinite(rawCredits) && rawCredits >= 0
-      ? rawCredits
-      : null;
-
-  if (totalTokens(totals) === 0 && (credits === null || credits === 0)) return null;
-
-  const rawReportedCost = record["reportedCostUsd"];
-  const reportedCostUsd =
-    typeof rawReportedCost === "number" && Number.isFinite(rawReportedCost) && rawReportedCost >= 0
-      ? rawReportedCost
-      : null;
-
-  return {
-    provider: "antigravity",
-    timestampMs,
-    model,
-    sessionId,
-    totals,
-    reportedCostUsd,
-    credits,
-    dedupeKey: null,
   };
 }
 
@@ -408,7 +356,7 @@ export function parseCodexLine(
     credits = Math.round((previousCreditBalance - creditBalance) * 1_000_000) / 1_000_000;
     reportedCostUsd = codexCreditsToUsd(credits);
   } else if (provider === "abacus" && credits !== null) {
-    reportedCostUsd = credits * ABACUS_CREDIT_COST_USD;
+    reportedCostUsd = abacusCreditsToUsd(credits);
   }
   if (provider === "codex" && state.model === "codex-auto-review") {
     credits = 0;
@@ -528,15 +476,6 @@ export function reconcileCodexCreditUsage(
   }));
 }
 
-export function reconcileCodexRecords(records: readonly UsageRecord[]): readonly UsageRecord[] {
-  const result = reconcileCodexCreditUsage([{ path: "memory", records }]);
-  return result[0]?.records ?? [];
-}
-
-/* -------------------------------------------------------------------------- */
-/* Grok Build                                                                 */
-/* -------------------------------------------------------------------------- */
-
 interface GrokUsageTotals {
   readonly inputTokens: number;
   readonly outputTokens: number;
@@ -546,161 +485,7 @@ interface GrokUsageTotals {
   readonly costUsdTicks: number | null;
 }
 
-function parseGrokTotals(value: unknown): GrokUsageTotals | null {
-  if (typeof value !== "object" || value === null) return null;
-  const record = value as Record<string, unknown>;
-
-  const rawTicks = record["cost_usd_ticks"];
-  const costUsdTicks =
-    typeof rawTicks === "number" && Number.isFinite(rawTicks) ? Math.trunc(rawTicks) : null;
-
-  return {
-    inputTokens: int(record["input_tokens"]),
-    outputTokens: int(record["output_tokens"]),
-    cachedReadTokens: int(record["cached_read_tokens"]),
-    cacheCreationTokens: int(record["cache_creation_tokens"]),
-    reasoningTokens: int(record["reasoning_tokens"]),
-    costUsdTicks,
-  };
-}
-
-/**
- * Subtracts prior cumulative totals from the current event, floored at zero.
- *
- * Grok emits cumulative lifetime totals on its task events rather than
- * per-turn deltas. If a turn reports fewer tokens than the prior turn (which
- * happens when Grok restarts a conversation worker), the delta clamps to
- * zero rather than yielding negative usage.
- */
-function subtractGrokTotals(current: GrokUsageTotals, prior: GrokUsageTotals): GrokUsageTotals {
-  return {
-    inputTokens: Math.max(0, current.inputTokens - prior.inputTokens),
-    outputTokens: Math.max(0, current.outputTokens - prior.outputTokens),
-    cachedReadTokens: Math.max(0, current.cachedReadTokens - prior.cachedReadTokens),
-    cacheCreationTokens: Math.max(0, current.cacheCreationTokens - prior.cacheCreationTokens),
-    reasoningTokens: Math.max(0, current.reasoningTokens - prior.reasoningTokens),
-    costUsdTicks:
-      current.costUsdTicks === null || prior.costUsdTicks === null
-        ? current.costUsdTicks
-        : Math.max(0, current.costUsdTicks - prior.costUsdTicks),
-  };
-}
-
-/**
- * Mutable state threaded across consecutive lines of one Grok `updates.jsonl`.
- *
- * Grok emits `task_started` events whose `message` holds the model name, then
- * zero or more `task_progress` events whose `data.usage` holds cumulative
- * token counts, and finally a `task_completed` event with the same structure.
- */
-export interface GrokScanState {
-  model: string;
-  sessionId: string;
-  cumulativeTotals: GrokUsageTotals;
-}
-
-export function initialGrokScanState(): GrokScanState {
-  return {
-    model: "",
-    sessionId: "",
-    cumulativeTotals: {
-      inputTokens: 0,
-      outputTokens: 0,
-      cachedReadTokens: 0,
-      cacheCreationTokens: 0,
-      reasoningTokens: 0,
-      costUsdTicks: null,
-    },
-  };
-}
-
-/** Converts integer ticks (microdollars) into fractional USD. */
-function ticksToUsd(ticks: number | null): number | null {
-  if (ticks === null) return null;
-  return Math.round((ticks / 1_000_000) * 1_000_000) / 1_000_000;
-}
-
-/**
- * Feeds one line of a Grok `updates.jsonl` into `state`, returning a record
- * when the line was an event carrying newly consumed tokens.
- */
-export function parseGrokEventLine(line: string, state: GrokScanState): UsageRecord | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null) return null;
-
-  const record = parsed as Record<string, unknown>;
-  const event = record["event"];
-  if (typeof event !== "object" || event === null) return null;
-  const eventRecord = event as Record<string, unknown>;
-
-  const eventType = eventRecord["type"];
-
-  // Task start declares the model for subsequent progress and completion events.
-  if (eventType === "task_started") {
-    const rawModel = eventRecord["message"];
-    if (typeof rawModel === "string" && rawModel.length > 0) {
-      state.model = rawModel;
-    }
-    return null;
-  }
-
-  if (eventType !== "task_progress" && eventType !== "task_completed") {
-    return null;
-  }
-
-  const data = eventRecord["data"];
-  if (typeof data !== "object" || data === null) return null;
-  const dataRecord = data as Record<string, unknown>;
-
-  const current = parseGrokTotals(dataRecord["usage"]);
-  if (current === null) return null;
-
-  const timestampMs = parseTimestampMs(record["timestamp"]);
-  if (timestampMs === null) return null;
-
-  // Derive per-step delta by subtracting the prior cumulative state.
-  const delta = subtractGrokTotals(current, state.cumulativeTotals);
-  state.cumulativeTotals = current;
-
-  const totals: UsageTokenTotals = {
-    // Grok's `input_tokens` is already uncached.
-    uncachedInputTokens: delta.inputTokens,
-    cachedInputTokens: delta.cachedReadTokens,
-    cacheCreationTokens: delta.cacheCreationTokens,
-    outputTokens: delta.outputTokens,
-    reasoningTokens: delta.reasoningTokens,
-  };
-
-  if (totalTokens(totals) === 0) return null;
-
-  const model = state.model.length > 0 ? state.model : "<synthetic>";
-
-  return {
-    provider: "grok",
-    timestampMs,
-    model,
-    sessionId: state.sessionId,
-    totals,
-    reportedCostUsd: ticksToUsd(delta.costUsdTicks),
-    dedupeKey: null,
-  };
-}
-
-interface LegacyGrokUsageTotals {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly cachedReadTokens: number;
-  readonly cacheCreationTokens: number;
-  readonly reasoningTokens: number;
-  readonly costUsdTicks: number | null;
-}
-
-function readLegacyGrokUsageTotals(value: unknown): LegacyGrokUsageTotals | null {
+function readGrokUsageTotals(value: unknown): GrokUsageTotals | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
   return {
@@ -716,20 +501,33 @@ function readLegacyGrokUsageTotals(value: unknown): LegacyGrokUsageTotals | null
   };
 }
 
-function legacyGrokTotalsToUsage(totals: LegacyGrokUsageTotals): UsageTokenTotals {
+function grokTotalsToUsage(totals: GrokUsageTotals): UsageTokenTotals {
+  const cachedInputTokens = totals.cachedReadTokens;
+  const cacheCreationTokens = totals.cacheCreationTokens;
+  // Grok reports `inputTokens` inclusive of the cached portion, matching Codex.
+  const uncachedInputTokens = Math.max(
+    0,
+    totals.inputTokens - cachedInputTokens - cacheCreationTokens,
+  );
+  const outputTokens = totals.outputTokens;
   return {
-    uncachedInputTokens: Math.max(
-      0,
-      totals.inputTokens - totals.cachedReadTokens - totals.cacheCreationTokens,
-    ),
-    cachedInputTokens: totals.cachedReadTokens,
-    cacheCreationTokens: totals.cacheCreationTokens,
-    outputTokens: totals.outputTokens,
-    reasoningTokens: Math.min(totals.outputTokens, totals.reasoningTokens),
+    uncachedInputTokens,
+    cachedInputTokens,
+    cacheCreationTokens,
+    outputTokens,
+    reasoningTokens: Math.min(outputTokens, totals.reasoningTokens),
   };
 }
 
-/** Parses a Grok Build `updates.jsonl` turn-completed event. */
+/**
+ * Parses one line of a Grok Build `updates.jsonl` session log.
+ *
+ * Usage lands on `turn_completed` session updates. Per-model breakdowns live
+ * under `usage.modelUsage`; when present each model becomes its own record.
+ *
+ * Returns every record for the line (0 or more). Callers stream line-by-line
+ * and flatten.
+ */
 export function parseGrokLine(line: string): readonly UsageRecord[] {
   let parsed: unknown;
   try {
@@ -769,19 +567,19 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
   }
   if (timestampMs === null) return [];
 
-  const topLevel = readLegacyGrokUsageTotals(usageRecord);
+  const topLevel = readGrokUsageTotals(usageRecord);
   if (topLevel === null) return [];
 
-  const modelEntries: Array<{ model: string; totals: LegacyGrokUsageTotals }> = [];
+  const modelEntries: Array<{ model: string; totals: GrokUsageTotals }> = [];
   const modelUsage = usageRecord["modelUsage"];
   if (typeof modelUsage === "object" && modelUsage !== null) {
     for (const [model, raw] of Object.entries(modelUsage as Record<string, unknown>)) {
-      const totals = readLegacyGrokUsageTotals(raw);
+      const totals = readGrokUsageTotals(raw);
       if (model.length > 0 && totals !== null) modelEntries.push({ model, totals });
     }
   }
   if (modelEntries.length === 0) {
-    const totals = legacyGrokTotalsToUsage(topLevel);
+    const totals = grokTotalsToUsage(topLevel);
     if (totalTokens(totals) === 0) return [];
     return [
       {
@@ -796,11 +594,19 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
     ];
   }
 
+  // Cost allocation:
+  // 1. Emitted models with their own costUsdTicks keep those values.
+  // 2. Remaining aggregate cost (top-level minus those per-model ticks,
+  //    clamped at 0) is pro-rated across emitted models that lack ticks,
+  //    by token share among the unticked models only.
+  // 3. When no model has per-model ticks, remaining equals the full
+  //    aggregate and every emitted model gets a token-share slice.
+  // Zero-token rows are never emitted and never count toward used ticks.
   const topLevelCostUsd = grokCostTicksToUsd(topLevel.costUsdTicks);
   let usedTickedCostUsd = 0;
   let untickedTokenDenominator = 0;
   for (const entry of modelEntries) {
-    const tokens = totalTokens(legacyGrokTotalsToUsage(entry.totals));
+    const tokens = totalTokens(grokTotalsToUsage(entry.totals));
     if (tokens === 0) continue;
     if (entry.totals.costUsdTicks !== null) {
       usedTickedCostUsd += grokCostTicksToUsd(entry.totals.costUsdTicks) ?? 0;
@@ -813,7 +619,7 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
 
   const results: UsageRecord[] = [];
   for (const entry of modelEntries) {
-    const totals = legacyGrokTotalsToUsage(entry.totals);
+    const totals = grokTotalsToUsage(entry.totals);
     if (totalTokens(totals) === 0) continue;
     let reportedCostUsd = grokCostTicksToUsd(entry.totals.costUsdTicks);
     if (reportedCostUsd === null && remainingCostUsd !== null && untickedTokenDenominator > 0) {

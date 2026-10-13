@@ -86,7 +86,7 @@ function fnv1a(buffer: Buffer): number {
   return hash >>> 0;
 }
 
-const isCodexLikeProvider = (provider: UsageProviderKind): boolean =>
+export const isCodexLikeProvider = (provider: UsageProviderKind): boolean =>
   provider === "codex" || provider === "antigravity" || provider === "abacus";
 
 /**
