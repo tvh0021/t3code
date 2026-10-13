@@ -150,7 +150,7 @@ describe("parseCodexLine", () => {
     expect(parseCodexLine(tokenCount(100, 0, 10, 0), state)).not.toBeNull();
   });
 
-  it("calculates credit consumption and reported cost when rate limits carry decreasing credit balance", () => {
+  it("carries the credit balance through to reconciliation, which prices the drop", () => {
     const state = initialCodexScanState();
     parseCodexLine(sessionMeta, state);
     parseCodexLine(turnContext, state);
@@ -179,18 +179,21 @@ describe("parseCodexLine", () => {
         },
       });
 
-    // First turn sets baseline balance
     const first = parseCodexLine(tokenCountWithCredits(100, 10, "1175.3435"), state);
-    expect(first?.credits).toBeNull();
-    expect(first?.reportedCostUsd).toBeNull();
-
-    // Second turn spills over and consumes 0.0352 credits
     const second = parseCodexLine(tokenCountWithCredits(200, 20, "1175.3083"), state);
-    expect(second?.credits).toBe(0.0352);
-    expect(second?.reportedCostUsd).toBeCloseTo(0.0352 * 0.04);
+    expect(first?.creditBalance).toBe(1175.3435);
+    expect(second?.creditBalance).toBe(1175.3083);
+
+    // The first balance is the baseline; the second turn consumed 0.0352 credits.
+    const [file] = reconcileCodexCreditUsage([
+      { path: "rollout.jsonl", records: [first!, second!] },
+    ]);
+    expect(file?.records.map((record) => record.credits)).toEqual([0, 0.0352]);
+    expect(file?.records[0]?.reportedCostUsd).toBeNull();
+    expect(file?.records[1]?.reportedCostUsd).toBeCloseTo(0.0352 * 0.04);
   });
 
-  it("keeps a newer balance from a duplicate token payload", () => {
+  it("skips a repeated token payload even when its balance changed", () => {
     const state = initialCodexScanState();
     parseCodexLine(turnContext, state);
     const tokenCountWithCredits = (inputTokens: number, balance: string) =>
@@ -212,9 +215,9 @@ describe("parseCodexLine", () => {
         },
       });
 
-    parseCodexLine(tokenCountWithCredits(100, "100"), state);
+    expect(parseCodexLine(tokenCountWithCredits(100, "100"), state)).not.toBeNull();
     expect(parseCodexLine(tokenCountWithCredits(100, "90"), state)).toBeNull();
-    expect(parseCodexLine(tokenCountWithCredits(200, "80"), state)?.credits).toBe(10);
+    expect(parseCodexLine(tokenCountWithCredits(200, "80"), state)?.creditBalance).toBe(80);
   });
 
   it("reconciles one account balance across concurrent rollouts and excludes auto-review", () => {

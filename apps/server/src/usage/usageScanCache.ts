@@ -297,10 +297,7 @@ function decodeCodexState(value: unknown): CodexScanState | null | undefined {
     typeof state.sawSessionMeta !== "boolean" ||
     typeof state.suppressingForkCopies !== "boolean" ||
     typeof state.forkCopyAnchorMs !== "number" ||
-    !Number.isFinite(state.forkCopyAnchorMs) ||
-    (state.lastCreditBalance !== undefined &&
-      state.lastCreditBalance !== null &&
-      (typeof state.lastCreditBalance !== "number" || !Number.isFinite(state.lastCreditBalance)))
+    !Number.isFinite(state.forkCopyAnchorMs)
   ) {
     return undefined;
   }
@@ -311,7 +308,6 @@ function decodeCodexState(value: unknown): CodexScanState | null | undefined {
     sawSessionMeta: state.sawSessionMeta,
     suppressingForkCopies: state.suppressingForkCopies,
     forkCopyAnchorMs: state.forkCopyAnchorMs,
-    lastCreditBalance: typeof state.lastCreditBalance === "number" ? state.lastCreditBalance : null,
   };
 }
 

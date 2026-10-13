@@ -93,7 +93,6 @@ describe("scan cache round trip", () => {
           sawSessionMeta: true,
           suppressingForkCopies: false,
           forkCopyAnchorMs: 0,
-          lastCreditBalance: null,
         },
       }),
     });

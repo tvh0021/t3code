@@ -169,7 +169,6 @@ export interface CodexScanState {
   /** While true, leading usage events are re-stamped copies of parent history. */
   suppressingForkCopies: boolean;
   forkCopyAnchorMs: number;
-  lastCreditBalance: number | null;
 }
 
 export function initialCodexScanState(): CodexScanState {
@@ -180,7 +179,6 @@ export function initialCodexScanState(): CodexScanState {
     sawSessionMeta: false,
     suppressingForkCopies: false,
     forkCopyAnchorMs: 0,
-    lastCreditBalance: null,
   };
 }
 
@@ -278,20 +276,7 @@ export function parseCodexLine(
   // Codex re-emits an unchanged token_count on some stream boundaries. Summing
   // those would double count, so identical consecutive payloads are skipped.
   const signature = JSON.stringify(lastRecord);
-  if (signature === state.lastUsageSignature) {
-    // A repeated token payload can carry a newer account-wide balance. It is
-    // still not a second usage record, but dropping its snapshot would make
-    // the next real turn absorb an earlier concurrent spend.
-    const rawRateLimits = payloadRecord["rate_limits"];
-    if (typeof rawRateLimits === "object" && rawRateLimits !== null) {
-      const credits = (rawRateLimits as Record<string, unknown>)["credits"];
-      if (typeof credits === "object" && credits !== null) {
-        const balance = Number((credits as Record<string, unknown>)["balance"]);
-        if (Number.isFinite(balance) && balance > 0) state.lastCreditBalance = balance;
-      }
-    }
-    return null;
-  }
+  if (signature === state.lastUsageSignature) return null;
   state.lastUsageSignature = signature;
 
   // In a forked rollout the copied parent history was already counted from the
@@ -320,8 +305,9 @@ export function parseCodexLine(
     reasoningTokens: Math.min(outputTokens, int(lastRecord["reasoning_output_tokens"])),
   };
 
+  // Codex credit spend is the account-wide balance drop, which
+  // `reconcileCodexCreditUsage` attributes across all rollouts at once.
   const rawRateLimits = payloadRecord["rate_limits"];
-  const previousCreditBalance = state.lastCreditBalance;
   let creditBalance: number | null = null;
   if (typeof rawRateLimits === "object" && rawRateLimits !== null) {
     const rateLimits = rawRateLimits as Record<string, unknown>;
@@ -330,10 +316,7 @@ export function parseCodexLine(
       const balStr = (credsObj as Record<string, unknown>)["balance"];
       if (typeof balStr === "string") {
         const bal = parseFloat(balStr);
-        if (Number.isFinite(bal) && bal > 0) {
-          creditBalance = bal;
-          state.lastCreditBalance = bal;
-        }
+        if (Number.isFinite(bal) && bal > 0) creditBalance = bal;
       }
     }
   }
@@ -347,15 +330,7 @@ export function parseCodexLine(
   if (totalTokens(totals) === 0 && (credits === null || credits === 0)) return null;
 
   let reportedCostUsd: number | null = null;
-  if (
-    provider === "codex" &&
-    creditBalance !== null &&
-    previousCreditBalance !== null &&
-    creditBalance < previousCreditBalance
-  ) {
-    credits = Math.round((previousCreditBalance - creditBalance) * 1_000_000) / 1_000_000;
-    reportedCostUsd = codexCreditsToUsd(credits);
-  } else if (provider === "abacus" && credits !== null) {
+  if (provider === "abacus" && credits !== null) {
     reportedCostUsd = abacusCreditsToUsd(credits);
   }
   if (provider === "codex" && state.model === "codex-auto-review") {
