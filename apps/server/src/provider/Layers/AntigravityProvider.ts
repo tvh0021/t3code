@@ -117,7 +117,7 @@ interface AntigravityProviderState {
   readonly authRevision: number;
 }
 
-export interface AntigravityProviderOptions {
+interface AntigravityProviderOptions {
   readonly stampIdentity: (snapshot: ServerProviderDraft) => Effect.Effect<ServerProvider>;
   readonly probe: Effect.Effect<
     EffectAcpSchema.InitializeResponse,

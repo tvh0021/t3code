@@ -154,18 +154,24 @@ export function decodeScanCache(document: unknown): ScanCache {
   if (!isRecordArray(root.models) || !isRecordArray(root.sessions)) return cache;
   if (typeof root.files !== "object" || root.files === null) return cache;
 
+  // The intern tables must be all strings: a numeric entry would pass the
+  // undefined guard below, land in a record's model, and crash the aggregate
+  // at lookupRate. A corrupt table rejects the whole cache.
   if (!root.models.every((value) => typeof value === "string")) return cache;
   if (!root.sessions.every((value) => typeof value === "string")) return cache;
   const models = root.models as readonly string[];
   const sessions = root.sessions as readonly string[];
 
+  // Any corrupt row disqualifies the whole entry. Keeping the survivors
+  // under the original (size, mtime) would read as a valid warm hit and the
+  // file would never be re-parsed, silently losing the dropped rows' usage.
   const decodeRecords = (
     rows: readonly unknown[],
     provider: UsageProviderKind,
   ): UsageRecord[] | null => {
     const records: UsageRecord[] = [];
     for (const row of rows) {
-      if (!Array.isArray(row) || row.length < 10) return null;
+      if (!isRecordArray(row) || row.length < 10) return null;
       const [
         timestampMs,
         modelIndex,
@@ -179,7 +185,7 @@ export function decodeScanCache(document: unknown): ScanCache {
         reportedCostUsd,
         credits,
         creditBalance,
-      ] = row as unknown as SerializedRecord;
+      ] = row as SerializedRecord;
 
       const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
       if (
@@ -276,10 +282,9 @@ export function decodeScanCache(document: unknown): ScanCache {
 }
 
 /**
- * Validates a decoded `cs` object against `CodexScanState`.
- *
- * Missing fields or un-finite numbers return `undefined` to signal a malformed
- * entry; a valid state returns a defensively copied instance.
+ * Validates a persisted Codex reducer state. Returns `undefined` for a corrupt
+ * value, which disqualifies the entry: resuming with a bad state would attach
+ * appended usage to the wrong model or replay fork-copied history.
  */
 function decodeCodexState(value: unknown): CodexScanState | null | undefined {
   if (value === null) return null;

@@ -422,50 +422,47 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
               ) : null}
 
               {props.page === "maintenance" ? (
-                <>
-                  <SettingsSection title="Updates">
+                <SettingsSection title="Updates">
+                  <FanoutSwitchRow
+                    icon="arrow.clockwise"
+                    label="Check provider updates"
+                    subtitle={
+                      projectSelected
+                        ? "Environment-wide setting. Select All projects to change it."
+                        : "Check installed provider CLIs for newer versions."
+                    }
+                    value={uniform("enableProviderUpdateChecks")}
+                    disabled={disabledFor("enableProviderUpdateChecks")}
+                    onValueChange={(value) => write({ enableProviderUpdateChecks: value })}
+                  />
+                  <View className="border-t border-border-subtle">
                     <FanoutSwitchRow
-                      icon="arrow.clockwise"
-                      label="Check provider updates"
+                      icon="arrow.uturn.forward"
+                      label="Continue after restart"
                       subtitle={
-                        projectSelected
-                          ? "Environment-wide setting. Select All projects to change it."
-                          : "Check installed provider CLIs for newer versions."
+                        supportsContinuation
+                          ? "Resume interrupted threads after an update or restart."
+                          : "Update older servers to control restart continuation."
                       }
-                      value={uniform("enableProviderUpdateChecks")}
-                      disabled={disabledFor("enableProviderUpdateChecks")}
-                      onValueChange={(value) => write({ enableProviderUpdateChecks: value })}
+                      value={uniform("continueThreadsAfterServerUpdate")}
+                      disabled={
+                        disabledFor("continueThreadsAfterServerUpdate") || !supportsContinuation
+                      }
+                      onValueChange={(value) => write({ continueThreadsAfterServerUpdate: value })}
                     />
-                    <View className="border-t border-border-subtle">
-                      <FanoutSwitchRow
-                        icon="arrow.uturn.forward"
-                        label="Continue after restart"
-                        subtitle={
-                          supportsContinuation
-                            ? "Resume interrupted threads after an update or restart."
-                            : "Update older servers to control restart continuation."
-                        }
-                        value={uniform("continueThreadsAfterServerUpdate")}
-                        disabled={
-                          disabledFor("continueThreadsAfterServerUpdate") || !supportsContinuation
-                        }
-                        onValueChange={(value) =>
-                          write({ continueThreadsAfterServerUpdate: value })
-                        }
-                      />
-                    </View>
-                  </SettingsSection>
-                  {!projectSelected &&
-                    targets.map((target) => (
-                      <CoordinationPolicySettings
-                        key={target.environment.environmentId}
-                        environmentId={target.environment.environmentId}
-                        settings={target.settings}
-                        environmentLabel={target.environment.label}
-                      />
-                    ))}
-                </>
+                  </View>
+                </SettingsSection>
               ) : null}
+              {props.page === "maintenance" && !projectSelected
+                ? targets.map((target) => (
+                    <CoordinationPolicySettings
+                      key={target.environment.environmentId}
+                      environmentId={target.environment.environmentId}
+                      settings={target.settings}
+                      environmentLabel={target.environment.label}
+                    />
+                  ))
+                : null}
             </>
           )}
         </ScrollView>

@@ -218,7 +218,7 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
   [OPENCODE_DRIVER_KIND]: {},
 };
 
-// ── Provider display names ──────────────────────────────────────────────────
+// ── Provider display names ────────────────────────────────────────
 
 export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>> = {
   [ProviderDriverKind.make("antigravity")]: "Antigravity",
