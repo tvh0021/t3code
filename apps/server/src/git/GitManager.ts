@@ -166,6 +166,31 @@ export function isSourceControlProviderAuthenticationError(error: unknown): bool
   return isSourceControlProviderError(error) && isSourceControlAuthenticationCause(error.cause);
 }
 
+/** Logs a failed PR lookup; unauthenticated providers are expected and stay at debug level. */
+function logPrLookupFailure(error: unknown, branch: string) {
+  if (isSourceControlProviderAuthenticationError(error)) {
+    return Effect.logDebug("PR lookup skipped; source-control provider is unauthenticated.");
+  }
+  return Effect.logWarning("PR lookup failed; keeping last known PR state.").pipe(
+    Effect.annotateLogs({
+      operation: "lookupStatusPr",
+      branch,
+      errorTag:
+        typeof error === "object" && error !== null && "_tag" in error
+          ? String(error._tag)
+          : typeof error,
+      ...(isSourceControlProviderError(error)
+        ? {
+            provider: error.provider,
+            providerOperation: error.operation,
+            providerCommand: error.command ?? "unknown",
+            errorDetail: error.detail,
+          }
+        : {}),
+    }),
+  );
+}
+
 /**
  * How long a failed PR lookup is cached, given the number of consecutive
  * failures for that branch.
@@ -1230,29 +1255,8 @@ export const make = Effect.gen(function* () {
         ),
       ),
       Effect.map(({ pr }) => pr),
-      Effect.catch((error) => {
-        const annotations = {
-          operation: "lookupStatusPr",
-          branch: details.branch,
-          errorTag:
-            typeof error === "object" && error !== null && "_tag" in error
-              ? String(error._tag)
-              : typeof error,
-          ...(isSourceControlProviderError(error)
-            ? {
-                provider: error.provider,
-                providerOperation: error.operation,
-                providerCommand: error.command ?? "unknown",
-                errorDetail: error.detail,
-              }
-            : {}),
-        };
-        const report = isSourceControlProviderAuthenticationError(error)
-          ? Effect.logDebug("PR lookup skipped; source-control provider is unauthenticated.")
-          : Effect.logWarning("PR lookup failed; keeping last known PR state.").pipe(
-              Effect.annotateLogs(annotations),
-            );
-        return report.pipe(
+      Effect.catch((error) =>
+        logPrLookupFailure(error, details.branch).pipe(
           Effect.andThen(resolveLookupHeadContext(cwd, details)),
           Effect.map(({ headContext }) =>
             resolveLastKnownPr(branchKey, {
@@ -1262,8 +1266,8 @@ export const make = Effect.gen(function* () {
               headRemoteUrlKey: headContext.headRemoteUrlKey,
             }),
           ),
-        );
-      }),
+        ),
+      ),
     );
   });
   const readRemoteStatus = Effect.fn("readRemoteStatus")(function* (
