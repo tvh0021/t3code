@@ -3,7 +3,6 @@ import type { ServerProviderUsageLimits, ServerProviderUsageWindow } from "@t3to
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 
 import {
   clampPercent,
@@ -11,45 +10,57 @@ import {
   makeUsageLimits,
 } from "../providerUsageLimits.ts";
 
-export const AbacusComputePointsResponse = Schema.Struct({
-  success: Schema.optional(Schema.Boolean),
-  error: Schema.optional(Schema.String),
-  result: Schema.optional(
-    Schema.Struct({
-      totalComputePoints: Schema.optional(Schema.Number),
-      computePointsLeft: Schema.optional(Schema.Number),
-      curr_month_avail_points: Schema.optional(Schema.Number),
-      curr_month_usage: Schema.optional(Schema.Number),
-      last_24_hours_usage: Schema.optional(Schema.Number),
-      last_7_days_usage: Schema.optional(Schema.Number),
-      nextBillingDate: Schema.optional(Schema.Union([Schema.String, Schema.Number])),
-      resetAt: Schema.optional(Schema.Union([Schema.String, Schema.Number])),
-    }),
-  ),
-});
+const ABACUS_COMPUTE_POINTS_URL = "https://apps.abacus.ai/api/_getOrganizationComputePoints";
 
-export type AbacusComputePointsResponse = typeof AbacusComputePointsResponse.Type;
+export interface AbacusComputePointsResponse {
+  readonly success?: boolean | undefined;
+  readonly error?: string | undefined;
+  readonly result?:
+    | {
+        readonly totalComputePoints?: number | undefined;
+        readonly computePointsLeft?: number | undefined;
+        readonly curr_month_avail_points?: number | undefined;
+        readonly curr_month_usage?: number | undefined;
+        readonly last_24_hours_usage?: number | undefined;
+        readonly last_7_days_usage?: number | undefined;
+        readonly nextBillingDate?: string | number | undefined;
+        readonly resetAt?: string | number | undefined;
+      }
+    | undefined;
+}
 
-export const AbacusBillingInfoResponse = Schema.Struct({
-  success: Schema.optional(Schema.Boolean),
-  error: Schema.optional(Schema.String),
-  result: Schema.optional(
-    Schema.Struct({
-      subscriptionStartTime: Schema.optional(Schema.Union([Schema.String, Schema.Number])),
-      nextBillingDate: Schema.optional(Schema.Union([Schema.String, Schema.Number])),
-      monthlyPrice: Schema.optional(Schema.Number),
-      currentTier: Schema.optional(Schema.String),
-      nextTier: Schema.optional(Schema.String),
-    }),
-  ),
-});
+export interface AbacusBillingInfoResponse {
+  readonly success?: boolean | undefined;
+  readonly error?: string | undefined;
+  readonly result?:
+    | {
+        readonly subscriptionStartTime?: string | number | undefined;
+        readonly nextBillingDate?: string | number | undefined;
+        readonly monthlyPrice?: number | undefined;
+        readonly currentTier?: string | undefined;
+        readonly nextTier?: string | undefined;
+      }
+    | undefined;
+}
 
-export type AbacusBillingInfoResponse = typeof AbacusBillingInfoResponse.Type;
+function buildAbacusAuthHeaders(apiKey?: string, sessionCookie?: string): Record<string, string> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (sessionCookie) {
+    headers.Cookie = sessionCookie.startsWith("session=")
+      ? sessionCookie
+      : `session=${sessionCookie}`;
+  }
+  if (apiKey) {
+    headers.apiKey = apiKey;
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+  return headers;
+}
 
 export function abacusUsageResponseToLimits(
-  response: typeof AbacusComputePointsResponse.Type,
+  response: AbacusComputePointsResponse,
   checkedAt: string,
-  billingInfo?: typeof AbacusBillingInfoResponse.Type | undefined,
+  billingInfo?: AbacusBillingInfoResponse | undefined,
 ): ServerProviderUsageLimits {
   if (response.error) {
     return makeUnavailableUsageLimits({
@@ -174,19 +185,7 @@ export const readAbacusUsageLimits = Effect.fn("readAbacusUsageLimits")(function
     });
   }
 
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-  };
-
-  if (sessionCookie) {
-    headers.Cookie = sessionCookie.startsWith("session=")
-      ? sessionCookie
-      : `session=${sessionCookie}`;
-  }
-  if (apiKey) {
-    headers.apiKey = apiKey;
-    headers.Authorization = `Bearer ${apiKey}`;
-  }
+  const headers = buildAbacusAuthHeaders(apiKey, sessionCookie);
 
   return yield* Effect.tryPromise({
     try: async () => {
@@ -194,7 +193,7 @@ export const readAbacusUsageLimits = Effect.fn("readAbacusUsageLimits")(function
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
         const [pointsResResult, billingResResult] = await Promise.allSettled([
-          fetchFn("https://apps.abacus.ai/api/_getOrganizationComputePoints", {
+          fetchFn(ABACUS_COMPUTE_POINTS_URL, {
             method: "GET",
             headers,
             signal: controller.signal,
@@ -262,18 +261,9 @@ export async function fetchAbacusComputePoints(
   timeoutMs = 5000,
 ): Promise<AbacusComputePointsSnapshot | null> {
   if (!apiKey && !sessionCookie) return null;
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (sessionCookie) {
-    headers.Cookie = sessionCookie.startsWith("session=")
-      ? sessionCookie
-      : `session=${sessionCookie}`;
-  }
-  if (apiKey) {
-    headers.apiKey = apiKey;
-    headers.Authorization = `Bearer ${apiKey}`;
-  }
+  const headers = buildAbacusAuthHeaders(apiKey, sessionCookie);
   try {
-    const res = await fetchFn("https://apps.abacus.ai/api/_getOrganizationComputePoints", {
+    const res = await fetchFn(ABACUS_COMPUTE_POINTS_URL, {
       method: "GET",
       headers,
       signal: AbortSignal.timeout(timeoutMs),

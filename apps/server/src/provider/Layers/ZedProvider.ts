@@ -158,6 +158,27 @@ function zedModelsFromSettings(
   return providerModelsFromSettings(builtInModels, customModels, EMPTY_CAPABILITIES);
 }
 
+function buildDisabledZedProviderSnapshot(
+  checkedAt: string,
+  models: ReadonlyArray<ServerProviderModel>,
+): ServerProviderDraft {
+  return buildServerProvider({
+    presentation: ZED_PRESENTATION,
+    enabled: false,
+    checkedAt,
+    models,
+    slashCommands: ZED_SLASH_COMMANDS,
+    probe: {
+      installed: false,
+      version: null,
+      status: "warning",
+      auth: { status: "unknown" },
+      message: "Zed is disabled in T3 Code settings.",
+      usageLimits: unavailableZedAccountUsage(checkedAt),
+    },
+  });
+}
+
 export function buildInitialZedProviderSnapshot(
   zedSettings: ZedSettings,
 ): Effect.Effect<ServerProviderDraft> {
@@ -166,21 +187,7 @@ export function buildInitialZedProviderSnapshot(
     const models = zedModelsFromSettings(zedSettings.customModels);
 
     if (!zedSettings.enabled) {
-      return buildServerProvider({
-        presentation: ZED_PRESENTATION,
-        enabled: false,
-        checkedAt,
-        models,
-        slashCommands: ZED_SLASH_COMMANDS,
-        probe: {
-          installed: false,
-          version: null,
-          status: "warning",
-          auth: { status: "unknown" },
-          message: "Zed is disabled in T3 Code settings.",
-          usageLimits: unavailableZedAccountUsage(checkedAt),
-        },
-      });
+      return buildDisabledZedProviderSnapshot(checkedAt, models);
     }
 
     return buildServerProvider({
@@ -211,21 +218,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
   let models = zedModelsFromSettings(zedSettings.customModels, previousModels);
 
   if (!zedSettings.enabled) {
-    return buildServerProvider({
-      presentation: ZED_PRESENTATION,
-      enabled: false,
-      checkedAt,
-      models,
-      slashCommands: ZED_SLASH_COMMANDS,
-      probe: {
-        installed: false,
-        version: null,
-        status: "warning",
-        auth: { status: "unknown" },
-        message: "Zed is disabled in T3 Code settings.",
-        usageLimits: unavailableZedAccountUsage(checkedAt),
-      },
-    });
+    return buildDisabledZedProviderSnapshot(checkedAt, models);
   }
 
   const spawnInput = buildZedAcpSpawnInput(zedSettings, cwd ?? process.cwd(), environment);

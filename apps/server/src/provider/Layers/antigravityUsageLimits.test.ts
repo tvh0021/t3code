@@ -12,6 +12,55 @@ import {
 
 describe("antigravityUsageLimits", () => {
   describe("antigravityQuotaSummaryToLimits", () => {
+    it.each([
+      { bucketId: "quota", window: "5H", kind: "session", label: "Session", duration: 300 },
+      { bucketId: "quota", window: "SESSION", kind: "session", label: "Session", duration: 300 },
+      { bucketId: "quota", window: "weekly", kind: "weekly", label: "Weekly", duration: 10080 },
+      { bucketId: "quota", window: "MONTHLY", kind: "monthly", label: "Monthly", duration: 43200 },
+      {
+        bucketId: "quota",
+        window: "month-week-session",
+        kind: "session",
+        label: "Session",
+        duration: 300,
+      },
+      { bucketId: "quota", window: "month-week", kind: "weekly", label: "Weekly", duration: 10080 },
+      { bucketId: "weekly", window: "", kind: "weekly", label: "Weekly", duration: 10080 },
+      { bucketId: "monthly", kind: "monthly", label: "Monthly", duration: 43200 },
+      {
+        bucketId: "weekly",
+        window: "daily",
+        kind: "other",
+        label: "Custom",
+        displayName: "Custom",
+      },
+      { bucketId: "daily", kind: "other", label: "daily" },
+      { bucketId: "", displayName: "", kind: "other", label: "Limit" },
+    ])("preserves quota classification for $bucketId / $window", (sample) => {
+      const limits = antigravityQuotaSummaryToLimits(
+        {
+          buckets: [
+            {
+              bucketId: sample.bucketId,
+              window: sample.window,
+              displayName: sample.displayName,
+              remainingFraction: 0.5,
+            },
+          ],
+        },
+        "2026-09-18T05:00:00.000Z",
+      );
+      expect(limits.windows).toEqual([
+        {
+          id: sample.bucketId,
+          kind: sample.kind,
+          label: sample.label,
+          usedPercent: 50,
+          ...(sample.duration !== undefined ? { windowDurationMins: sample.duration } : {}),
+        },
+      ]);
+    });
+
     it("transforms valid quota response into Gemini usage windows and filters out third-party Claude/GPT models", () => {
       const checkedAt = "2026-09-18T05:00:00.000Z";
       const sampleResponse: AntigravityRetrieveUserQuotaSummaryResponse = {

@@ -84,29 +84,11 @@ type AntigravityTokenFile = typeof AntigravityTokenFile.Type;
 
 const decodeTokenFile = Schema.decodeUnknownEffect(Schema.fromJsonString(AntigravityTokenFile));
 
-function resolveBucketKind(bucket: AntigravityQuotaBucket): ServerProviderUsageWindow["kind"] {
-  const windowStr = (bucket.window || bucket.bucketId).toLowerCase();
-  if (windowStr.includes("5h") || windowStr.includes("session")) return "session";
-  if (windowStr.includes("week")) return "weekly";
-  if (windowStr.includes("month")) return "monthly";
-  return "other";
-}
-
-function resolveBucketLabel(bucket: AntigravityQuotaBucket): string {
-  const kind = resolveBucketKind(bucket);
-  if (kind === "session") return "Session";
-  if (kind === "weekly") return "Weekly";
-  if (kind === "monthly") return "Monthly";
-  return bucket.displayName || bucket.bucketId || "Limit";
-}
-
-function resolveBucketDurationMins(bucket: AntigravityQuotaBucket): number | undefined {
-  const windowStr = (bucket.window || bucket.bucketId).toLowerCase();
-  if (windowStr.includes("5h") || windowStr.includes("session")) return 300; // 5 hours in minutes
-  if (windowStr.includes("week")) return 10080; // 7 days in minutes
-  if (windowStr.includes("month")) return 43200; // 30 days in minutes
-  return undefined;
-}
+const QUOTA_BUCKET_POLICIES = [
+  { matches: ["5h", "session"], kind: "session", label: "Session", durationMins: 300 },
+  { matches: ["week"], kind: "weekly", label: "Weekly", durationMins: 10080 },
+  { matches: ["month"], kind: "monthly", label: "Monthly", durationMins: 43200 },
+] as const;
 
 /**
  * Transforms Antigravity quota summary response into standardized `ServerProviderUsageLimits`.
@@ -146,12 +128,16 @@ export function antigravityQuotaSummaryToLimits(
       }
     }
 
-    const durationMins = resolveBucketDurationMins(bucket);
+    const windowStr = (bucket.window || bucket.bucketId).toLowerCase();
+    const policy = QUOTA_BUCKET_POLICIES.find((entry) =>
+      entry.matches.some((match) => windowStr.includes(match)),
+    );
+    const durationMins = policy?.durationMins;
 
     windows.push({
       id: bucket.bucketId,
-      kind: resolveBucketKind(bucket),
-      label: resolveBucketLabel(bucket),
+      kind: policy?.kind ?? "other",
+      label: policy?.label ?? (bucket.displayName || bucket.bucketId || "Limit"),
       usedPercent,
       ...(resetsAt ? { resetsAt } : {}),
       ...(durationMins !== undefined ? { windowDurationMins: durationMins } : {}),

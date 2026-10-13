@@ -36,6 +36,8 @@ import { STATIC_FALLBACK_RATES } from "../../usage/usagePricing.ts";
 const PROVIDER = ProviderDriverKind.make("abacus");
 const MAX_BUFFER = 1024 * 1024;
 const MAX_TURN_STEPS = 20;
+const READ_ONLY_TOOL_NAMES: ReadonlyArray<string> = ["read_file", "list_directory"];
+const makeToolCallId = () => `call_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 let lastKnownComputePoints: AbacusComputePointsSnapshot | null = null;
 const MAX_TOOL_OUTPUT_BYTES = 30 * 1024;
 const MAX_HEAD_LINES = 200;
@@ -665,7 +667,7 @@ export const makeAbacusAdapter = (
                 tools: [
                   ...(context.reviewOnly
                     ? ABACUS_AGENT_TOOLS.filter((tool) =>
-                        ["read_file", "list_directory"].includes(tool.function.name),
+                        READ_ONLY_TOOL_NAMES.includes(tool.function.name),
                       )
                     : ABACUS_AGENT_TOOLS),
                   ...(context.mcp
@@ -758,7 +760,7 @@ export const makeAbacusAdapter = (
                     let acc = toolCallAccumulators.get(idx);
                     if (!acc) {
                       acc = {
-                        id: tc.id ?? `call_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
+                        id: tc.id ?? makeToolCallId(),
                         type: "function",
                         function: {
                           name: tc.function?.name ?? "",
@@ -813,7 +815,7 @@ export const makeAbacusAdapter = (
         const toolCalls: ToolCall[] = Array.from(toolCallAccumulators.entries())
           .sort(([a], [b]) => a - b)
           .map(([_, acc]) => ({
-            id: acc.id || `call_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
+            id: acc.id || makeToolCallId(),
             type: "function" as const,
             function: {
               name: acc.function.name,
@@ -945,7 +947,7 @@ export const makeAbacusAdapter = (
           try {
             if (
               context.reviewOnly &&
-              ["read_file", "list_directory"].includes(tc.function.name) &&
+              READ_ONLY_TOOL_NAMES.includes(tc.function.name) &&
               !isInsideWorkspace(
                 NodeFS.realpathSync(resolvePath(String(toolArgs.path ?? "."), cwd)),
                 NodeFS.realpathSync(cwd),
@@ -956,10 +958,7 @@ export const makeAbacusAdapter = (
               rawOutput = yield* Effect.promise(() =>
                 context.mcp!.call(tc.function.name, toolArgs, controller.signal),
               );
-            } else if (
-              context.reviewOnly &&
-              !["read_file", "list_directory"].includes(tc.function.name)
-            ) {
+            } else if (context.reviewOnly && !READ_ONLY_TOOL_NAMES.includes(tc.function.name)) {
               rawOutput = `Error: Read-only reviewers cannot use ${tc.function.name}.`;
             } else
               switch (tc.function.name) {

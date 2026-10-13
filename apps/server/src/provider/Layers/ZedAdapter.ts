@@ -701,31 +701,17 @@ export function makeZedAdapter(
 
           let promptResult: EffectAcpSchema.PromptResponse;
 
-          if (compactMatch) {
-            const prompt = compactMatch[1] ?? "";
+          const skillInvocation = compactMatch
+            ? { skillName: "compact", prompt: compactMatch[1] ?? "" }
+            : skillMatch
+              ? { skillName: skillMatch[1], prompt: skillMatch[2] ?? "" }
+              : undefined;
+
+          if (skillInvocation) {
             const response = yield* ctx.acp
               .request("zed/invoke_skill", {
                 sessionId: ctx.nativeSessionId,
-                skillName: "compact",
-                prompt,
-              })
-              .pipe(
-                Effect.mapError((error) =>
-                  mapAcpToAdapterError(PROVIDER, input.threadId, "zed/invoke_skill", error),
-                ),
-              );
-            promptResult =
-              response && typeof response === "object" && "stopReason" in response
-                ? (response as EffectAcpSchema.PromptResponse)
-                : { stopReason: "end_turn" };
-          } else if (skillMatch) {
-            const skillName = skillMatch[1];
-            const prompt = skillMatch[2] ?? "";
-            const response = yield* ctx.acp
-              .request("zed/invoke_skill", {
-                sessionId: ctx.nativeSessionId,
-                skillName,
-                prompt,
+                ...skillInvocation,
               })
               .pipe(
                 Effect.mapError((error) =>
