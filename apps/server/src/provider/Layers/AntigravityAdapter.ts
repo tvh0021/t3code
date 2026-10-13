@@ -37,7 +37,7 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { ServerConfig } from "../../config.ts";
-import { appendProviderTurnUsage } from "../../usage/providerTurnUsageWriter.ts";
+import { recordAntigravityTurnUsage } from "./antigravityTurnUsage.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import type { AntigravityAuth } from "../AntigravityAuth.ts";
@@ -1185,35 +1185,13 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
       if (record) record.items.push(result);
       else context.turns.push({ id: launch.turn.turnId, items: [result] });
 
-      const sessionId = context.nativeSessionId || input.threadId;
-      if (serverConfig?.stateDir) {
-        const usage = result.usage;
-        const inputTokens = usage?.inputTokens ?? 0;
-        const cachedInputTokens = usage?.cachedReadTokens ?? 0;
-        const cacheCreationTokens = usage?.cachedWriteTokens ?? 0;
-        const outputTokens = usage?.outputTokens ?? 0;
-        const reasoningTokens = usage?.thoughtTokens ?? 0;
-
-        if (usage && (inputTokens > 0 || cachedInputTokens > 0 || outputTokens > 0)) {
-          yield* Effect.promise(() =>
-            appendProviderTurnUsage({
-              stateDir: serverConfig.stateDir,
-              provider: "antigravity",
-              sessionId,
-              turnId: launch.turn.turnId,
-              model: context.session.model || "gemini-2.5-pro",
-              tokens: {
-                inputTokens,
-                cachedInputTokens,
-                cacheCreationTokens,
-                outputTokens,
-                reasoningTokens,
-              },
-            }),
-          ).pipe(Effect.catchCause(() => Effect.void));
-        }
-      }
-
+      yield* recordAntigravityTurnUsage({
+        stateDir: serverConfig?.stateDir,
+        sessionId: context.nativeSessionId || input.threadId,
+        turnId: launch.turn.turnId,
+        model: context.session.model,
+        usage: result.usage,
+      });
       yield* context.promptLock.withPermit(
         finishTurn(launch.turn, {
           state: result.stopReason === "cancelled" ? "cancelled" : "completed",
