@@ -242,11 +242,52 @@ const make = Effect.gen(function* () {
               timeout: "10 seconds",
             })
             .pipe(Effect.mapError(failed("resolve review revision")));
-          reviewRef = revision.stdout.trim();
-          if (revision.code !== 0 || !/^[a-f0-9]{40,64}$/.test(reviewRef))
+          const resolvedRef = revision.stdout.trim();
+          reviewRef = resolvedRef;
+          if (revision.code !== 0 || !/^[a-f0-9]{40,64}$/.test(resolvedRef))
             return yield* new ThreadToolError({
               message: "The review revision is not an existing Git commit.",
             });
+          // Each reviewer reads a detached commit, never the parent's changing files.
+          // A local clone keeps its own Git objects without inheriting hooks/config.
+          worktreePath = coordinationReviewDir(config, id, path);
+          yield* fs
+            .makeDirectory(path.dirname(worktreePath), { recursive: true })
+            .pipe(Effect.mapError(failed("prepare review directory")));
+          const snapshotPath = worktreePath;
+          yield* Effect.gen(function* () {
+            const cloned = yield* processes.run({
+              command: "git",
+              args: [
+                "clone",
+                "--local",
+                "--no-hardlinks",
+                "--no-checkout",
+                "--",
+                cwd,
+                snapshotPath,
+              ],
+              cwd,
+              timeout: "30 seconds",
+            });
+            if (cloned.code !== 0)
+              return yield* new ThreadToolError({
+                message: `Could not clone the review revision: ${cloned.stderr.slice(0, 500)}`,
+              });
+            const checkout = yield* processes.run({
+              command: "git",
+              args: ["checkout", "--detach", resolvedRef],
+              cwd: snapshotPath,
+              timeout: "30 seconds",
+            });
+            if (checkout.code !== 0)
+              return yield* new ThreadToolError({
+                message: "Could not check out the review revision.",
+              });
+          }).pipe(
+            Effect.onError(() => fs.remove(snapshotPath, { recursive: true }).pipe(Effect.ignore)),
+            Effect.mapError(failed("prepare fixed review snapshot")),
+          );
         } else {
           if (!input.worktreePath)
             return yield* new ThreadToolError({
@@ -281,48 +322,6 @@ const make = Effect.gen(function* () {
             return yield* new ThreadToolError({
               message: "Use a separate registered worktree of the parent's repository.",
             });
-        }
-        if (input.mode === "review") {
-          // Each reviewer reads a detached commit, never the parent's changing files.
-          // A local clone keeps its own Git objects without inheriting hooks/config.
-          worktreePath = coordinationReviewDir(config, id, path);
-          yield* fs
-            .makeDirectory(path.dirname(worktreePath), { recursive: true })
-            .pipe(Effect.mapError(failed("prepare review directory")));
-          const snapshotPath = worktreePath;
-          yield* Effect.gen(function* () {
-            const cloned = yield* processes.run({
-              command: "git",
-              args: [
-                "clone",
-                "--local",
-                "--no-hardlinks",
-                "--no-checkout",
-                "--",
-                cwd,
-                snapshotPath,
-              ],
-              cwd,
-              timeout: "30 seconds",
-            });
-            if (cloned.code !== 0)
-              return yield* new ThreadToolError({
-                message: `Could not clone the review revision: ${cloned.stderr.slice(0, 500)}`,
-              });
-            const checkout = yield* processes.run({
-              command: "git",
-              args: ["checkout", "--detach", reviewRef!],
-              cwd: snapshotPath,
-              timeout: "30 seconds",
-            });
-            if (checkout.code !== 0)
-              return yield* new ThreadToolError({
-                message: "Could not check out the review revision.",
-              });
-          }).pipe(
-            Effect.onError(() => fs.remove(snapshotPath, { recursive: true }).pipe(Effect.ignore)),
-            Effect.mapError(failed("prepare fixed review snapshot")),
-          );
         }
         const runtimeMode = resolveChildRuntimeMode({
           mode: input.mode,
