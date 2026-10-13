@@ -220,21 +220,18 @@ export function UsageProviderChart({
     const toY = (value: number) =>
       max === 0 ? VIEW_HEIGHT : VIEW_HEIGHT - (value / max) * (VIEW_HEIGHT - PLOT_TOP);
 
-    const built = providers.map((provider) => {
+    const built = providers.map((provider, providerIndex) => {
       const line = curvePath(
         smoothCurve(
           columns.map((column, periodIndex) => ({
             x: periodIndex * step,
-            y: toY(column.bands.find((b) => b.provider === provider)?.value ?? 0),
+            y: toY(column.bands[providerIndex]?.value ?? 0),
           })),
         ),
       );
       return {
         provider,
-        total: columns.reduce(
-          (sum, column) => sum + (column.bands.find((b) => b.provider === provider)?.value ?? 0),
-          0,
-        ),
+        total: columns.reduce((sum, column) => sum + (column.bands[providerIndex]?.value ?? 0), 0),
         area: line === "" ? "" : `${line} L${VIEW_WIDTH},${VIEW_HEIGHT} L0,${VIEW_HEIGHT} Z`,
         line,
       };

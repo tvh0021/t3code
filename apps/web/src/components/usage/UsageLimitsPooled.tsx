@@ -1,3 +1,4 @@
+import { formatCredits } from "@t3tools/shared/usageFormat";
 import {
   collectLimitAccounts,
   collectLimitNotices,
@@ -514,11 +515,7 @@ function PoolWindowCard({
 }
 
 function PoolCreditsCard({ credits }: { readonly credits: NonNullable<LimitPool["credits"]> }) {
-  const balance = credits.balance ?? 0;
-  const formattedBalance = (Math.round(balance * 100) / 100).toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
+  const formattedBalance = formatCredits(credits.balance ?? 0);
 
   return (
     <div className="grid items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
