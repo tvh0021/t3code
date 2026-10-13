@@ -44,7 +44,7 @@ export const ThreadCreatedResult = Schema.Struct({
   threadId: ThreadId,
   modelSelection: ModelSelection,
 });
-export const ThreadModelsResult = Schema.Struct({
+const ThreadModelsResult = Schema.Struct({
   current: ModelSelection,
   providers: Schema.Array(
     Schema.Struct({

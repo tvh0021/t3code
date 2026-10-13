@@ -55,6 +55,8 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.t3tools.t3code";
+// Local DMGs need their own macOS privacy identity. Reusing the signed
+// public app's ID makes TCC reject its saved permissions on each request.
 const LOCAL_MAC_APP_ID = "com.t3tools.t3code.personal";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
@@ -1261,8 +1263,6 @@ export function resolveMacPasskeySigningConfiguration(
   }
 
   return {
-    // Local DMGs need their own macOS privacy identity. Reusing the signed
-    // public app's ID makes TCC reject its saved permissions on each request.
     appId: DESKTOP_APP_ID,
     teamId,
     rpDomains: uniqueRpDomains,

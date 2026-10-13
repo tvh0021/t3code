@@ -751,9 +751,6 @@ importers:
       '@types/culori':
         specifier: ^4.0.1
         version: 4.0.1
-      '@types/katex':
-        specifier: 0.16.8
-        version: 0.16.8
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4

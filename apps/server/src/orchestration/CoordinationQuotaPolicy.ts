@@ -1,6 +1,6 @@
 import type { ServerProvider, ServerProviderUsageLimits } from "@t3tools/contracts";
 
-export type QuotaWindowVerdict =
+type QuotaWindowVerdict =
   | { readonly status: "unknown"; readonly reason: string }
   | { readonly status: "below-threshold" }
   | { readonly status: "threshold-reached"; readonly resetAt?: string };

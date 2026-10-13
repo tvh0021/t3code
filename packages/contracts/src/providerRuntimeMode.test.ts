@@ -5,7 +5,6 @@ it("preserves the preference across provider switches while enforcing Antigravit
   for (const preferredMode of getProviderRuntimeModes("codex")) {
     expect(resolveProviderRuntimeMode("codex", preferredMode)).toBe(preferredMode);
     expect(resolveProviderRuntimeMode("antigravity", preferredMode)).toBe("full-access");
-    expect(resolveProviderRuntimeMode("codex", preferredMode)).toBe(preferredMode);
     for (const driver of ["claudeAgent", "zed", "abacus", "opencode", undefined]) {
       expect(resolveProviderRuntimeMode(driver, preferredMode)).toBe(preferredMode);
     }

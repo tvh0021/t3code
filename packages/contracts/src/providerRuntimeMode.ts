@@ -1,11 +1,6 @@
-import type { RuntimeMode } from "./orchestration.ts";
+import { RuntimeMode } from "./orchestration.ts";
 
-const ALL_RUNTIME_MODES: ReadonlyArray<RuntimeMode> = [
-  "approval-required",
-  "auto-accept-edits",
-  "auto",
-  "full-access",
-];
+const ALL_RUNTIME_MODES = RuntimeMode.literals;
 const ANTIGRAVITY_RUNTIME_MODES: ReadonlyArray<RuntimeMode> = ["full-access"];
 
 /** Keep the thread's permission preference so another provider can restore it. */

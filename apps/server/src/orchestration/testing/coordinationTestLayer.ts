@@ -15,10 +15,7 @@ import {
 import { ServerConfig } from "../../config.ts";
 
 /** @internal Real SQLite, command engine, and persisted projections for workflow tests. */
-export function makeCoordinationTestLayer(
-  databasePath?: string,
-  repositoryIdentityResolver?: RepositoryIdentityResolver.RepositoryIdentityResolver["Service"],
-) {
+export function makeCoordinationTestLayer(databasePath?: string) {
   const persistence = databasePath
     ? makeSqlitePersistenceLive(databasePath)
     : SqlitePersistenceMemory;
@@ -36,14 +33,7 @@ export function makeCoordinationTestLayer(
     Layer.provide(ThreadPlanProgress.layer),
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provideMerge(OrchestrationCommandReceiptRepositoryLive),
-    Layer.provide(
-      repositoryIdentityResolver
-        ? Layer.succeed(
-            RepositoryIdentityResolver.RepositoryIdentityResolver,
-            repositoryIdentityResolver,
-          )
-        : RepositoryIdentityResolver.layer,
-    ),
+    Layer.provide(RepositoryIdentityResolver.layer),
     Layer.provideMerge(persistence),
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(NodeServices.layer),

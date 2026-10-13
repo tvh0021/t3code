@@ -3348,8 +3348,6 @@ function looksLikeMath(content: string): boolean {
   if (/[=^_<>]|\b(?:cos|sin|tan|log|ln|det|lim)\b/.test(content)) return true;
   // Single variable / identifier like x, y, n, or x_1, or dt
   if (/^[a-zA-Z](?:_[a-zA-Z0-9]+)?$/.test(content.trim())) return true;
-  // If it contains multiple English prose words, it is not math
-  if (/\b(?:the|and|or|with|a|an|in|on|at|to|for|is|are|of|by)\b/i.test(content)) return false;
   return false;
 }
 

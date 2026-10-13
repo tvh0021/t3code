@@ -1421,7 +1421,7 @@ const ThreadSessionStopCommand = Schema.Struct({
   onlyIfSettled: Schema.optional(Schema.Boolean),
 });
 
-export const ThreadCoordinationControlCommand = Schema.Struct({
+const ThreadCoordinationControlCommand = Schema.Struct({
   type: Schema.Literal("thread.coordination.control"),
   commandId: CommandId,
   threadId: ThreadId,
