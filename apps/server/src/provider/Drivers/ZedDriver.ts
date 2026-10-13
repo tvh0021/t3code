@@ -63,7 +63,6 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
   defaultConfig: (): ZedSettings => decodeZedSettings({}),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
     Effect.gen(function* () {
-      const crypto = yield* Crypto.Crypto;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const serverSettings = yield* ServerSettingsService;
       const { cwd } = yield* ServerConfig;
@@ -113,7 +112,6 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         );
       const checkProvider = checkZed(cwd).pipe(
         Effect.map(stampIdentity),
-        Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );
 
@@ -144,7 +142,6 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
           ? snapshot.getSnapshot
           : checkZed(workspaceCwd).pipe(
               Effect.map(stampIdentity),
-              Effect.provideService(Crypto.Crypto, crypto),
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
             );
 

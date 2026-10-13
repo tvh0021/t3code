@@ -11,9 +11,9 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 
-export type ZedAcpRuntimeZedSettings = Pick<ZedSettings, "binaryPath" | "dataDir" | "model">;
+type ZedAcpRuntimeZedSettings = Pick<ZedSettings, "binaryPath" | "dataDir" | "model">;
 
-export const ZED_CLIENT_CAPABILITIES: NonNullable<
+const ZED_CLIENT_CAPABILITIES: NonNullable<
   EffectAcpSchema.InitializeRequest["clientCapabilities"]
 > = {
   elicitation: { form: {} },

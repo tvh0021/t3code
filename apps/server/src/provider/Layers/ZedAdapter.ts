@@ -75,7 +75,6 @@ interface TurnRecord {
 
 interface ZedSessionContext {
   readonly threadId: ThreadId;
-  readonly cwd: string;
   readonly nativeSessionId: string;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
   readonly scope: Scope.Closeable;
@@ -90,7 +89,6 @@ interface ZedSessionContext {
 export interface ZedAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly instanceId?: ProviderInstanceId;
-  readonly resolveSettings?: Effect.Effect<ZedSettings>;
 }
 
 function extractQuestionsFromElicitation(
@@ -308,9 +306,7 @@ export function makeZedAdapter(
             yield* stopSessionInternal(existing);
           }
 
-          const currentSettings = options?.resolveSettings
-            ? yield* options.resolveSettings
-            : zedSettings;
+          const currentSettings = zedSettings;
           const cwd = input.cwd ?? process.cwd();
           const selectedModel = input.modelSelection?.model;
           const effectiveModel =
@@ -535,7 +531,6 @@ export function makeZedAdapter(
 
           const ctx: ZedSessionContext = {
             threadId: input.threadId,
-            cwd,
             nativeSessionId: startResult.sessionId,
             acp,
             scope: sessionScope,

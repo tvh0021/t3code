@@ -37,13 +37,13 @@ const PROVIDER = ProviderDriverKind.make("abacus");
 const MAX_BUFFER = 1024 * 1024;
 const MAX_TURN_STEPS = 20;
 let lastKnownComputePoints: AbacusComputePointsSnapshot | null = null;
-export const MAX_TOOL_OUTPUT_BYTES = 30 * 1024;
-export const MAX_HEAD_LINES = 200;
-export const MAX_TAIL_LINES = 300;
+const MAX_TOOL_OUTPUT_BYTES = 30 * 1024;
+const MAX_HEAD_LINES = 200;
+const MAX_TAIL_LINES = 300;
 
 type Fetch = typeof globalThis.fetch;
 
-export interface ToolCall {
+interface ToolCall {
   readonly id: string;
   readonly type: "function";
   readonly function: {
@@ -52,7 +52,7 @@ export interface ToolCall {
   };
 }
 
-export type AbacusMessage =
+type AbacusMessage =
   | { readonly role: "system"; readonly content: string }
   | { readonly role: "user"; readonly content: string }
   | {
@@ -71,7 +71,7 @@ type Active = {
 };
 
 type Context = {
-  session: ProviderSession;
+  session: ProviderSession & { readonly cwd: string };
   readonly messages: AbacusMessage[];
   readonly reviewOnly: boolean;
   readonly mcp?: ReturnType<typeof makeThreadMcpBridge>;
@@ -196,7 +196,7 @@ export const ABACUS_AGENT_TOOLS = [
   },
 ] as const;
 
-export const DANGEROUS_PATTERNS: ReadonlyArray<RegExp> = [
+const DANGEROUS_PATTERNS: ReadonlyArray<RegExp> = [
   /\bsudo\b/i,
   /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+[\/~]/i,
   /\brm\s+-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\s+[\/~]/i,
@@ -217,7 +217,7 @@ export function checkCommandSafety(command: string): string | null {
   return null;
 }
 
-export function resolvePath(filePath: string, cwd: string): string {
+function resolvePath(filePath: string, cwd: string): string {
   if (NodePath.isAbsolute(filePath)) {
     return NodePath.normalize(filePath);
   }
@@ -246,7 +246,7 @@ export function truncateToolOutput(output: string): string {
   return output;
 }
 
-export function buildAbacusSystemPrompt(workspaceDir: string, model: string): string {
+function buildAbacusSystemPrompt(workspaceDir: string, model: string): string {
   return `You are an expert AI software engineering agent working in T3 Code on macOS.
 The active workspace directory is: ${workspaceDir}
 
@@ -349,7 +349,7 @@ export function handleListDirectory(args: { path?: string }, cwd: string): strin
   return formatted || "(empty directory)";
 }
 
-export function handleExecuteCommand(
+function handleExecuteCommand(
   command: string,
   cwd: string,
   signal: AbortSignal,
@@ -512,7 +512,7 @@ export const makeAbacusAdapter = (
       const createdAt = now();
       const model = input.modelSelection?.model ?? options.defaultModel;
       const cwd = input.cwd ?? workingDirectory;
-      const session: ProviderSession = {
+      const session: Context["session"] = {
         provider: PROVIDER,
         providerInstanceId: options.instanceId,
         status: "ready",
@@ -589,7 +589,7 @@ export const makeAbacusAdapter = (
         });
 
       const model = input.modelSelection?.model ?? context.session.model ?? options.defaultModel;
-      const cwd = context.session.cwd ?? process.cwd();
+      const cwd = context.session.cwd;
       const turnId = TurnId.make(crypto.randomUUID());
       const controller = new AbortController();
       const active: Active = { turnId, controller, cancelled: false, settled: false };

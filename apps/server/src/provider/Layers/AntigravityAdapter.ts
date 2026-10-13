@@ -1186,8 +1186,8 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
       else context.turns.push({ id: launch.turn.turnId, items: [result] });
 
       const sessionId = context.nativeSessionId || input.threadId;
-      if (sessionId && serverConfig?.stateDir) {
-        const usage = (result as { usage?: EffectAcpSchema.PromptResponse["usage"] }).usage;
+      if (serverConfig?.stateDir) {
+        const usage = result.usage;
         const inputTokens = usage?.inputTokens ?? 0;
         const cachedInputTokens = usage?.cachedReadTokens ?? 0;
         const cacheCreationTokens = usage?.cachedWriteTokens ?? 0;

@@ -3,15 +3,13 @@
  * Antigravity subscription usage limits.
  *
  * Antigravity connects to Google Cloud Code Private API (CCPA) to retrieve
- * user quota summaries. The official Antigravity ACP binary (`agy_acp_server`)
- * restricts model selection exclusively to Gemini models; third-party models
- * (Claude / GPT-OSS) are not usable through ACP sessions. Therefore, this module
- * filters the quota summary down to available Gemini quota windows.
+ * user quota summaries. The AG-QUOTA-001 policy filters out third-party
+ * Claude / GPT quota buckets. This filter is independent of ACP model support.
  *
  * This module authenticates using stored OAuth credentials from `acp_token.json`,
  * performs token refresh when needed, resolves the Google-managed companion
  * project via `loadCodeAssist`, queries `retrieveUserQuotaSummary`, and maps
- * the Gemini quota buckets into T3 Code's standardized `ServerProviderUsageLimits`
+ * the included quota buckets into T3 Code's standardized `ServerProviderUsageLimits`
  * windows.
  *
  * @module provider/Layers/antigravityUsageLimits
@@ -36,8 +34,8 @@ import {
   makeUsageLimits,
 } from "../providerUsageLimits.ts";
 
-export const ANTIGRAVITY_CLIENT_ID = process.env.ANTIGRAVITY_CLIENT_ID ?? "";
-export const ANTIGRAVITY_CLIENT_SECRET = process.env.ANTIGRAVITY_CLIENT_SECRET ?? "";
+const ANTIGRAVITY_CLIENT_ID = process.env.ANTIGRAVITY_CLIENT_ID ?? "";
+const ANTIGRAVITY_CLIENT_SECRET = process.env.ANTIGRAVITY_CLIENT_SECRET ?? "";
 
 const PROD_CCPA_BASE_URL = "https://cloudcode-pa.googleapis.com";
 const DAILY_CCPA_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
@@ -48,7 +46,7 @@ class AntigravityUsageLimitsError extends Data.TaggedError("AntigravityUsageLimi
   readonly cause?: unknown;
 }> {}
 
-export const AntigravityQuotaBucket = Schema.Struct({
+const AntigravityQuotaBucket = Schema.Struct({
   bucketId: Schema.String,
   displayName: Schema.optional(Schema.String),
   window: Schema.optional(Schema.String),
@@ -56,16 +54,16 @@ export const AntigravityQuotaBucket = Schema.Struct({
   remainingFraction: Schema.optional(Schema.Finite),
   description: Schema.optional(Schema.String),
 });
-export type AntigravityQuotaBucket = typeof AntigravityQuotaBucket.Type;
+type AntigravityQuotaBucket = typeof AntigravityQuotaBucket.Type;
 
-export const AntigravityQuotaGroup = Schema.Struct({
+const AntigravityQuotaGroup = Schema.Struct({
   displayName: Schema.optional(Schema.String),
   description: Schema.optional(Schema.String),
   buckets: Schema.optional(Schema.Array(AntigravityQuotaBucket)),
 });
-export type AntigravityQuotaGroup = typeof AntigravityQuotaGroup.Type;
+type AntigravityQuotaGroup = typeof AntigravityQuotaGroup.Type;
 
-export const AntigravityRetrieveUserQuotaSummaryResponse = Schema.Struct({
+const AntigravityRetrieveUserQuotaSummaryResponse = Schema.Struct({
   groups: Schema.optional(Schema.Array(AntigravityQuotaGroup)),
   buckets: Schema.optional(Schema.Array(AntigravityQuotaBucket)),
   description: Schema.optional(Schema.String),
@@ -73,7 +71,7 @@ export const AntigravityRetrieveUserQuotaSummaryResponse = Schema.Struct({
 export type AntigravityRetrieveUserQuotaSummaryResponse =
   typeof AntigravityRetrieveUserQuotaSummaryResponse.Type;
 
-export const AntigravityTokenFile = Schema.Struct({
+const AntigravityTokenFile = Schema.Struct({
   client_id: Schema.optional(Schema.String),
   client_secret: Schema.optional(Schema.String),
   refresh_token: Schema.optional(Schema.String),
@@ -82,7 +80,7 @@ export const AntigravityTokenFile = Schema.Struct({
   scopes: Schema.optional(Schema.Array(Schema.String)),
   project_id: Schema.optional(Schema.String),
 });
-export type AntigravityTokenFile = typeof AntigravityTokenFile.Type;
+type AntigravityTokenFile = typeof AntigravityTokenFile.Type;
 
 const decodeTokenFile = Schema.decodeUnknownEffect(Schema.fromJsonString(AntigravityTokenFile));
 
@@ -113,8 +111,7 @@ function resolveBucketDurationMins(bucket: AntigravityQuotaBucket): number | und
 /**
  * Transforms Antigravity quota summary response into standardized `ServerProviderUsageLimits`.
  *
- * Excludes third-party models (Claude / GPT-OSS) since the official Antigravity ACP binary
- * explicitly restricts model selection to Gemini models.
+ * Excludes third-party Claude / GPT quota buckets under policy AG-QUOTA-001.
  */
 export function antigravityQuotaSummaryToLimits(
   response: AntigravityRetrieveUserQuotaSummaryResponse,
@@ -130,7 +127,7 @@ export function antigravityQuotaSummaryToLimits(
     const bucketId = bucket.bucketId ?? "";
     const lowerGroup = (groupName ?? "").toLowerCase();
 
-    // Skip third-party (Claude / GPT) models: they are not usable through Antigravity ACP.
+    // Apply AG-QUOTA-001: omit third-party Claude / GPT quota buckets.
     if (lowerGroup.includes("claude") || lowerGroup.includes("gpt") || bucketId.startsWith("3p")) {
       return;
     }
@@ -191,7 +188,7 @@ interface CachedTokenInfo {
 
 const tokenCache = new Map<string, CachedTokenInfo>();
 
-export interface ReadAntigravityUsageLimitsOptions {
+interface ReadAntigravityUsageLimitsOptions {
   readonly tokenPath: string;
   readonly authMethod?: AntigravityAuthMethod | undefined;
   readonly fetch?: typeof globalThis.fetch | undefined;

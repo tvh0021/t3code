@@ -1,5 +1,6 @@
 import {
   AbacusSettings,
+  ABACUS_DEFAULT_API_BASE_URL,
   ProviderDriverKind,
   TextGenerationError,
   type ServerProvider,
@@ -125,7 +126,7 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
       const refreshModels = Effect.fn("AbacusDriver.refreshModels")(function* () {
         if (!apiKey) return;
         const discovered = yield* readAbacusModels({
-          apiBaseUrl: config.apiBaseUrl || "https://routellm.abacus.ai/v1",
+          apiBaseUrl: config.apiBaseUrl || ABACUS_DEFAULT_API_BASE_URL,
           apiKey,
         }).pipe(
           Effect.mapError(
@@ -213,7 +214,7 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
       const stateDir = Option.isSome(serverConfig) ? serverConfig.value.stateDir : undefined;
 
       const adapter = yield* makeAbacusAdapter({
-        apiBaseUrl: config.apiBaseUrl || "https://routellm.abacus.ai/v1",
+        apiBaseUrl: config.apiBaseUrl || ABACUS_DEFAULT_API_BASE_URL,
         apiKey,
         defaultModel: "route-llm",
         instanceId,
