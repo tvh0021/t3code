@@ -57,3 +57,13 @@ source alone does not explain. Most code changes do not need an internal documen
 - [Mobile development lifecycle](./internals/mobile-development.md)
 - [Terminal runtime](./internals/terminal-runtime.md)
 - [Devices](./internals/devices.md)
+- [Voice input](./internals/voice-input.md)
+
+### Runbooks
+
+- [Development and local builds](./operations/development.md)
+- [T3 Connect setup](./operations/connect-setup.md)
+- [Release](./operations/release.md)
+- [Observability](./operations/observability.md)
+- [Relay observability](./operations/relay-observability.md)
+- [Mobile app store screenshots](./operations/mobile-app-store-screenshots.md)

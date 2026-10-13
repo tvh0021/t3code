@@ -1198,7 +1198,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const driverKind = providerEntry?.driverKind ?? null;
   const showInstanceBadge =
     providerEntry !== null &&
-    shouldShowInstanceBadge(providerEntry, [...props.providerEntryByInstanceId.values()]);
+    shouldShowInstanceBadge(providerEntry, props.providerEntryByInstanceId.values());
   const selectedModel = providerEntry?.models.find(
     (model) => model.slug === thread.modelSelection.model,
   );
@@ -2044,7 +2044,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const showInstanceBadge =
     providerEntry !== null &&
-    shouldShowInstanceBadge(providerEntry, [...props.providerEntryByInstanceId.values()]);
+    shouldShowInstanceBadge(providerEntry, props.providerEntryByInstanceId.values());
   const selectedModel = providerEntry?.models.find(
     (model) => model.slug === thread.modelSelection.model,
   );

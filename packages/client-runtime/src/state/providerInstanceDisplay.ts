@@ -1,3 +1,10 @@
+/**
+ * How a configured provider instance presents itself in a client: its label,
+ * its accent color, and whether its icon carries the account badge. Shared by
+ * web and mobile so both clients name and badge the same instance identically.
+ *
+ * @module providerInstanceDisplay
+ */
 import type { ServerProvider } from "@t3tools/contracts";
 import {
   defaultInstanceIdForDriver,
@@ -63,40 +70,18 @@ export function normalizeProviderAccentColor(value: string | undefined): string 
 }
 
 /**
- * Whether to render an initials badge on a provider button or chip.
- *
- * Rules:
- *   - Any instance with a custom accent color gets an indicator badge.
- *   - Any custom instance of a driver always gets a badge so the user can tell
- *     it apart from the default instance or other custom instances.
- *   - The default instance only gets a badge if *at least one other instance*
- *     of the same driver kind is currently configured; otherwise the driver
- *     icon alone is unambiguous and must not be obscured with initials.
+ * Whether an instance's icon carries the account badge: accent color set, or
+ * several instances sharing a driver so the brand glyph alone is ambiguous.
+ * Shared by the composer trigger, the picker rail, and sidebar/thread rows.
  */
 export function shouldShowInstanceBadge(
-  entry: {
-    readonly driverKind?: ProviderDriverKind | undefined;
-    readonly accentColor?: string | undefined;
-    readonly instanceId?: string | undefined;
-    readonly isDefault?: boolean | undefined;
-  },
-  entries: Iterable<{
-    readonly driverKind?: ProviderDriverKind | undefined;
-    readonly instanceId?: string | undefined;
-  }>,
+  entry: { readonly driverKind: ProviderDriverKind; readonly accentColor?: string | undefined },
+  entries: Iterable<{ readonly driverKind: ProviderDriverKind }>,
 ): boolean {
   if (entry.accentColor) return true;
-  if (entry.driverKind !== undefined) {
-    let sharedDriverCount = 0;
-    for (const candidate of entries) {
-      if (candidate.driverKind === entry.driverKind && ++sharedDriverCount > 1) return true;
-    }
-    return false;
-  }
-  if (entry.isDefault === false) return true;
-  let count = 0;
-  for (const _ of entries) {
-    if (++count > 1) return true;
+  let sharedDriverCount = 0;
+  for (const candidate of entries) {
+    if (candidate.driverKind === entry.driverKind && ++sharedDriverCount > 1) return true;
   }
   return false;
 }
