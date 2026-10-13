@@ -190,8 +190,8 @@ change is its own commit and can be reverted alone.
 - Condensed the personal notes. VERIFICATION keeps all 93 audit rows; local evidence paths are marked as not preserved in the repo.
 - Excluded behavior changes found during the audit. They remain open for a separate decision: the Abacus tool description, Codex usage-limit window mapping, provider label casing, web/mobile copy, Antigravity database caching, duplicate startup quota probes, and the hidden ChatLLM column count.
 
-Verification ran focused tests and typechecks only. About 700 focused tests
-passed, and server, contracts, shared, client-runtime, web and mobile typechecks
-passed; mobile was typechecked but not run. `build-desktop-artifact`'s Windows
+Verification ran focused tests and typechecks only. Every focused test file
+for the changed code passed, as did the server, contracts, shared,
+client-runtime, web and mobile typechecks. Mobile was typechecked but not run. `build-desktop-artifact`'s Windows
 cross-architecture test fails both before and after the cleanup. No runtime
 check of the app was done.
