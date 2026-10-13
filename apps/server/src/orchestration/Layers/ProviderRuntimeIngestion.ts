@@ -1,4 +1,9 @@
 import {
+  assistantTextForTurn,
+  coordinationMessageId,
+  workerCompletionCommand,
+} from "../coordinationIds.ts";
+import {
   ApprovalRequestId,
   CommandId,
   MessageId,
@@ -1868,7 +1873,7 @@ const make = Effect.gen(function* () {
         shouldApplyThreadLifecycle &&
         eventTurnId &&
         Option.isSome(pendingTurnStart) &&
-        pendingTurnStart.value.messageId === `coordination:${worker.assignmentId}`
+        pendingTurnStart.value.messageId === coordinationMessageId(worker.assignmentId)
       ) {
         yield* orchestrationEngine.dispatch({
           type: "thread.coordination",
@@ -2652,12 +2657,8 @@ const make = Effect.gen(function* () {
             activeTurnId === worker.turnId))
       ) {
         const messages = yield* projectionThreadMessages.listByThreadId({ threadId: thread.id });
-        const text = messages
-          .filter((message) => message.role === "assistant" && message.turnId === eventTurnId)
-          .map((message) => message.text)
-          .join("\n\n");
         const report =
-          text.trim().slice(0, 8_000) ||
+          assistantTextForTurn(messages, eventTurnId) ||
           `Assignment ended with ${event.type}. Inspect the child thread.`;
         // Some adapters return acceptance after completion. Retain the terminal observation
         // after output is persisted, then let the matching acceptance bind settle it.
@@ -2677,18 +2678,9 @@ const make = Effect.gen(function* () {
           createdAt: now,
         });
         if (worker.turnId !== eventTurnId) return;
-        const isQuotaHandoffSummary = worker.handoffStage === "summarize";
-        yield* orchestrationEngine.dispatch({
-          type: "thread.coordination",
-          threadId: thread.id,
-          commandId: CommandId.make(
-            `coordination:${isQuotaHandoffSummary ? "summary" : "finish"}:${worker.assignmentId}`,
-          ),
-          action: isQuotaHandoffSummary
-            ? { type: "handoff-summary-complete", text: report }
-            : { type: "finish", assignmentId: worker.assignmentId, text: report },
-          createdAt: now,
-        });
+        yield* orchestrationEngine.dispatch(
+          workerCompletionCommand(thread.id, worker, report, now),
+        );
       }
     });
 

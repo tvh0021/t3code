@@ -1,3 +1,4 @@
+import { coordinationMessageId } from "./coordinationIds.ts";
 import {
   CommandId,
   MessageId,
@@ -757,7 +758,7 @@ export function planCoordination(
       commandId: CommandId.make(`${command.commandId}:turn:${thread.id}`),
       threadId: thread.id,
       message: {
-        messageId: MessageId.make(`coordination:${id}`),
+        messageId: coordinationMessageId(id),
         role: "user",
         text: prompt,
         attachments: [],

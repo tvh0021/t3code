@@ -1,3 +1,4 @@
+import { coordinationReviewDir } from "../../../orchestration/coordinationIds.ts";
 import { coordinationProviderIssue } from "../../../provider/coordinationWorkerPolicy.ts";
 import { CoordinationPolicy } from "../../../orchestration/CoordinationPolicy.ts";
 import {
@@ -282,7 +283,7 @@ const make = Effect.gen(function* () {
         if (input.mode === "review") {
           // Each reviewer reads a detached commit, never the parent's changing files.
           // A local clone keeps its own Git objects without inheriting hooks/config.
-          worktreePath = path.join(config.worktreesDir, "coordination-reviews", id);
+          worktreePath = coordinationReviewDir(config, id, path);
           yield* fs
             .makeDirectory(path.dirname(worktreePath), { recursive: true })
             .pipe(Effect.mapError(failed("prepare review directory")));

@@ -1,3 +1,4 @@
+import { coordinationMessageId } from "../coordinationIds.ts";
 import { coordinationRole as workflowRole } from "@t3tools/contracts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import {
@@ -1522,7 +1523,7 @@ const make = Effect.gen(function* () {
           if (
             worker?.role !== "child" ||
             worker.phase !== "running" ||
-            message.id !== `coordination:${worker.assignmentId}`
+            message.id !== coordinationMessageId(worker.assignmentId)
           )
             return;
           yield* orchestrationEngine.dispatch({

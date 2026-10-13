@@ -1,3 +1,8 @@
+import {
+  assistantTextForTurn,
+  coordinationMessageId,
+  workerCompletionCommand,
+} from "./coordinationIds.ts";
 import { CommandId, type OrchestrationEvent, type ThreadId } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
@@ -64,22 +69,14 @@ export const make = Effect.gen(function* () {
         "text" in terminal.payload &&
         typeof terminal.payload.text === "string"
       ) {
-        yield* engine.dispatch({
-          type: "thread.coordination",
-          threadId,
-          commandId: CommandId.make(
-            `coordination:${workerState.handoffStage === "summarize" ? "summary" : "finish"}:${workerState.assignmentId}`,
+        yield* engine.dispatch(
+          workerCompletionCommand(
+            threadId,
+            workerState,
+            terminal.payload.text,
+            DateTime.formatIso(yield* DateTime.now),
           ),
-          action:
-            workerState.handoffStage === "summarize"
-              ? { type: "handoff-summary-complete", text: terminal.payload.text }
-              : {
-                  type: "finish",
-                  assignmentId: workerState.assignmentId,
-                  text: terminal.payload.text,
-                },
-          createdAt: DateTime.formatIso(yield* DateTime.now),
-        });
+        );
       }
     }
   });
@@ -102,12 +99,7 @@ export const make = Effect.gen(function* () {
       const detail = yield* snapshots
         .getThreadDetailById(threadId)
         .pipe(Effect.map(Option.getOrUndefined));
-      const summary = detail?.messages
-        .filter((message) => message.role === "assistant" && message.turnId === latestTurn.turnId)
-        .map((message) => message.text)
-        .join("\n\n")
-        .trim()
-        .slice(0, 8_000);
+      const summary = detail ? assistantTextForTurn(detail.messages, latestTurn.turnId) : undefined;
       yield* engine.dispatch({
         type: "thread.coordination",
         threadId,
@@ -150,19 +142,16 @@ export const make = Effect.gen(function* () {
         typeof payload === "object" &&
         payload !== null &&
         "requestId" in payload &&
-        payload.requestId === `coordination:${state.assignmentId}`
+        payload.requestId === coordinationMessageId(state.assignmentId)
       ) {
-        yield* engine.dispatch({
-          type: "thread.coordination",
-          threadId,
-          commandId: CommandId.make(`coordination:finish:${state.assignmentId}`),
-          action: {
-            type: "finish",
-            assignmentId: state.assignmentId,
-            text: `Assignment could not start: ${"detail" in payload ? String(payload.detail).slice(0, 7_000) : event.payload.activity.summary}`,
-          },
-          createdAt: event.occurredAt,
-        });
+        yield* engine.dispatch(
+          workerCompletionCommand(
+            threadId,
+            { assignmentId: state.assignmentId },
+            `Assignment could not start: ${"detail" in payload ? String(payload.detail).slice(0, 7_000) : event.payload.activity.summary}`,
+            event.occurredAt,
+          ),
+        );
       }
     }
     if (

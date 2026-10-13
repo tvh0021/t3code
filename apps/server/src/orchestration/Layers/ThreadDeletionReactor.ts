@@ -1,3 +1,4 @@
+import { coordinationReviewDir } from "../coordinationIds.ts";
 import type { OrchestrationEvent } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
@@ -72,7 +73,7 @@ const make = Effect.gen(function* () {
     // Only the UUID directory reserved for an MCP-created review belongs to us.
     if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(threadId)) {
       yield* logCleanupCauseUnlessInterrupted({
-        effect: fs.remove(path.join(config.worktreesDir, "coordination-reviews", threadId), {
+        effect: fs.remove(coordinationReviewDir(config, threadId, path), {
           recursive: true,
           force: true,
         }),
