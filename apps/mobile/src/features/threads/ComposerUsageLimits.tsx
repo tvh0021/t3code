@@ -4,21 +4,7 @@ import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { AccountLimits, ResetCredits } from "../usage/UsageLimitsSection";
-
-const DRIVER_LABEL: Record<string, string> = {
-  codex: "Codex",
-  claudeAgent: "Claude",
-  zed: "Zed",
-  antigravity: "Antigravity",
-  abacus: "ChatLLM",
-  chatllm: "ChatLLM",
-};
-
-function getDriverLabel(driver: string): string {
-  const normalized = driver.trim().toLowerCase();
-  if (normalized === "claudeagent") return "Claude";
-  return DRIVER_LABEL[normalized] ?? DRIVER_LABEL[driver] ?? driver;
-}
+import { getDriverLabel } from "../usage/usageProviders";
 
 /**
  * The /usage-limits result, docked above the composer. It is the Usage → Limits

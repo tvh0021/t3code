@@ -21,6 +21,21 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   abacus: "ChatLLM",
 };
 
+export const DRIVER_LABEL: Record<string, string> = {
+  codex: "Codex",
+  claudeAgent: "Claude",
+  zed: "Zed",
+  antigravity: "Antigravity",
+  abacus: "ChatLLM",
+  chatllm: "ChatLLM",
+};
+
+export function getDriverLabel(driver: string): string {
+  const normalized = driver.trim().toLowerCase();
+  if (normalized === "claudeagent") return "Claude";
+  return DRIVER_LABEL[normalized] ?? DRIVER_LABEL[driver] ?? driver;
+}
+
 /**
  * Claude's brand orange holds in both themes; Codex and Grok are neutrals and
  * must flip with the theme or their bars vanish against the matching background.

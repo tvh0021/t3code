@@ -22,23 +22,9 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
-import { useProviderColors } from "./usageProviders";
+import { getDriverLabel as driverLabel, useProviderColors } from "./usageProviders";
 
-const DRIVER_LABEL: Record<string, string> = {
-  codex: "Codex",
-  claudeAgent: "Claude",
-  zed: "Zed",
-  antigravity: "Antigravity",
-  abacus: "ChatLLM",
-  chatllm: "ChatLLM",
-};
 const PACE_LABEL = { ahead: "Ahead of pace", on: "On pace", under: "Under pace" } as const;
-
-function driverLabel(driver: string): string {
-  const normalized = driver.trim().toLowerCase();
-  if (normalized === "claudeagent") return "Claude";
-  return DRIVER_LABEL[normalized] ?? DRIVER_LABEL[driver] ?? driver;
-}
 
 function accountName(account: LimitAccount) {
   if (account.displayName) return account.displayName;
