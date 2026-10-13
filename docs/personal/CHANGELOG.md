@@ -175,3 +175,23 @@ interfaces. Recorded per-item verdicts, evidence and coverage gaps in
 [VERIFICATION.md](./VERIFICATION.md), and new quality failures in
 [ISSUE_TRACKER.md](./ISSUE_TRACKER.md). Reconciled the personal notes without
 changing implementation code. This audit does not establish a full-app PASS.
+
+### 2026-10-13: Fork code cleanup
+
+Cleaned up fork-added code without intending any behavior change. Checkpoint
+before the cleanup: tag `pre-cleanup-2026-10-13` (commit `1bdb2510a`). Each
+change is its own commit and can be reverted alone.
+
+- Deleted dead code, unused exports and stale comments in the provider adapters, usage parsing, web, contracts and build scripts.
+- Reverted cosmetic edits to upstream files, including upstream's provider badge helpers that an earlier sync had silently reverted.
+- Shared duplicated logic: coordination decider pauses and quota checks, coordination ids and completion commands, provider role checks, usage source registration and pricing lookups, web/mobile coordination controls, and mobile usage labels.
+- Moved provider-specific coordination worker rules from contracts to the server's provider boundary.
+- Simplified the web Usage page. Its five existing render fixtures produce byte-identical markup.
+- Condensed the personal notes. VERIFICATION keeps all 93 audit rows; local evidence paths are marked as not preserved in the repo.
+- Excluded behavior changes found during the audit. They remain open for a separate decision: the Abacus tool description, Codex usage-limit window mapping, provider label casing, web/mobile copy, Antigravity database caching, duplicate startup quota probes, and the hidden ChatLLM column count.
+
+Verification ran focused tests and typechecks only. About 700 focused tests
+passed, and server, contracts, shared, client-runtime, web and mobile typechecks
+passed; mobile was typechecked but not run. `build-desktop-artifact`'s Windows
+cross-architecture test fails both before and after the cleanup. No runtime
+check of the app was done.
