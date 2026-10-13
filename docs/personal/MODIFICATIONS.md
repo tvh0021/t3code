@@ -148,7 +148,7 @@ for account billing. Limits explicitly links the dashboard without showing a
 zeroed or invented account bar. ZED-001 owns billing access; earlier approval,
 streaming and effort verification remains dated evidence.
 
-## 21. Agent-created threads and T3 orchestration layers
+## Agent-created threads and T3 orchestration layers
 
 Included in installed releases through Personal 0.3.2. Current verification
 limits are recorded separately, rather than inferred from installation.

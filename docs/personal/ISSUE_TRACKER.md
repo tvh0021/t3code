@@ -66,9 +66,9 @@ basis, or separate subscription and credit values explicitly. Cover mixed and
 subscription-only days and hours. Verify web/desktop and shared mobile consumers.
 This is separate from resolved effort normalization in USAGE-001.
 
-Evidence: [Day screenshot](/private/tmp/t3-changelog-audit-20261011/usage-day.png),
-[accessibility output](/private/tmp/t3-changelog-audit-20261011/usage-day.txt), and
-[controlled observations](/private/tmp/t3-changelog-audit-20261011/quality-probes.json).
+Evidence: Day screenshot (local evidence: /private/tmp/t3-changelog-audit-20261011/usage-day.png),
+accessibility output (local evidence: /private/tmp/t3-changelog-audit-20261011/usage-day.txt), and
+controlled observations (local evidence: /private/tmp/t3-changelog-audit-20261011/quality-probes.json).
 
 ### AG-QUOTA-001: Usable Claude models still lose their quota windows
 
@@ -93,7 +93,7 @@ unsupported GPT models or Gemini quotas to it. Check Limits and orchestration
 threshold decisions against both pools. Update the obsolete Gemini-only comment
 and regression expectation when that policy is settled.
 
-Evidence: [controlled observations](/private/tmp/t3-changelog-audit-20261011/quality-probes.json),
+Evidence: controlled observations (local evidence: /private/tmp/t3-changelog-audit-20261011/quality-probes.json),
 `apps/server/src/provider/Layers/antigravityUsageLimits.ts`, and its focused test.
 
 ### QUALITY-001: Abacus driver-list regression still omits Zed
@@ -110,8 +110,8 @@ without weakening its check that existing providers remain available. Rerun the
 focused driver test. The continuation added Zed to the exact registry expectation;
 both focused tests passed.
 
-Evidence: [initial provider test log](/private/tmp/t3-changelog-audit-20261011/provider-tests.log)
-and [passing driver tests](/private/tmp/t3-runtime-continuation-20261011/abacus-tests.log).
+Evidence: initial provider test log (local evidence: /private/tmp/t3-changelog-audit-20261011/provider-tests.log)
+and passing driver tests (local evidence: /private/tmp/t3-runtime-continuation-20261011/abacus-tests.log).
 
 ### ACP-REVIEW-001: Read-only Antigravity reviews could write through client filesystem RPC
 
@@ -128,8 +128,8 @@ The real mixed workflow rejects four review writes, allows one editing write,
 auto-allows 15 scoped MCP permissions and requires explicit client responses for
 five unrelated native tools. Server typecheck and scoped lint pass.
 
-Evidence: [continuation report](/private/tmp/t3-workable-verify-20261011/REPORT.md)
-and [mixed workflow results](/private/tmp/t3-mixed-workflow-20261012/results.json).
+Evidence: continuation report (local evidence: /private/tmp/t3-workable-verify-20261011/REPORT.md)
+and mixed workflow results (local evidence: /private/tmp/t3-mixed-workflow-20261012/results.json).
 
 ### DOC-PERMISSIONS-001: The historical model-name override removal claim is inaccurate
 
@@ -140,7 +140,7 @@ Claude with the same Zed driver and Full access parent. Existing tests explicitl
 require that behavior. `MODIFICATIONS.md` now describes it accurately. No
 permission semantics were changed to satisfy the historical changelog wording.
 
-Evidence: [public-interface observations](/private/tmp/t3-workable-verify-20261011/permissions-results.json).
+Evidence: public-interface observations (local evidence: /private/tmp/t3-workable-verify-20261011/permissions-results.json).
 
 ### ZED-CONTEXT-001: Native Zed token usage never reaches T3
 
@@ -185,8 +185,8 @@ estimates explicitly. Keep account baselines isolated per instance and avoid
 attributing concurrent external spending to one turn. Verify the initial turn,
 a later turn, unavailable account readings and multiple configured instances.
 
-Evidence for these three defects: [native-provider report](/private/tmp/t3-verification-to30-20261012/REPORT.md)
-and [filtered observations](/private/tmp/t3-verification-to30-20261012/evidence-summary.json).
+Evidence for these three defects: native-provider report (local evidence: /private/tmp/t3-verification-to30-20261012/REPORT.md)
+and filtered observations (local evidence: /private/tmp/t3-verification-to30-20261012/evidence-summary.json).
 
 ### AG-TURN-001: Native Antigravity turns do not write T3 per-turn usage logs
 
@@ -208,8 +208,8 @@ and persist it once with the T3 turn identity. Cover tool-loop generations,
 resume, cancellation and deduplication against native database ingestion. Do not
 substitute prompt-length estimates for measured token counts.
 
-Evidence: [continuation report](/private/tmp/t3-blocked-continuation-20261012/REPORT.md)
-and [native usage summary](/private/tmp/t3-antigravity-native-20261012/summary.json).
+Evidence: continuation report (local evidence: /private/tmp/t3-blocked-continuation-20261012/REPORT.md)
+and native usage summary (local evidence: /private/tmp/t3-antigravity-native-20261012/summary.json).
 
 ### QUOTA-RESET-001: Automatic quota interrupt cancels reset continuation
 
@@ -233,8 +233,8 @@ Acceptance: distinguish automatic quota interrupts from user interrupts,
 preserve reset-wait state, and verify continuation after a controlled reset.
 Keep manual interruption able to cancel the pending action.
 
-Evidence: [runtime event checker](/private/tmp/t3-zero-quota-20261012/check-defect.py)
-and [two-run command chains](/private/tmp/t3-zero-20261012/quota-defect.json).
+Evidence: runtime event checker (local evidence: /private/tmp/t3-zero-quota-20261012/check-defect.py)
+and two-run command chains (local evidence: /private/tmp/t3-zero-20261012/quota-defect.json).
 
 ### CHATLLM-WRITE-001: Worker file tools follow links outside the workspace
 
@@ -252,7 +252,7 @@ Acceptance: keep successful writes inside the assigned worktree, including
 existing file links and linked parent directories. Preserve ordinary in-worktree
 write/edit behavior and the stricter review-worker policy.
 
-Evidence: [captured runtime tool results](/private/tmp/t3-zero-chatllm-worker-v3-20261012/defect.json).
+Evidence: captured runtime tool results (local evidence: /private/tmp/t3-zero-chatllm-worker-v3-20261012/defect.json).
 The fixture waited for a coordination receipt on the wrong stream after the
 worker finished. That timeout is not a product failure. No rerun is needed to
 establish the captured file change.
@@ -266,7 +266,7 @@ first-party mark acceptance, native/provider worker restriction checks and
 compiled native child attachment regressions. Row 055 still needs desktop
 Antigravity switching, running-turn and restart evidence. Row 084 still needs a
 cross-environment client click; local HTML and desktop PDF now pass.
-See the [latest evidence and fixture incident report](/Users/tvh0021/.codex/visualizations/2026/10/12/01a12fe1-c2ad-74e3-b4db-4af8277cf571/five-blockers/REPORT.md).
+See the latest evidence and fixture incident report (local evidence: /Users/tvh0021/.codex/visualizations/2026/10/12/01a12fe1-c2ad-74e3-b4db-4af8277cf571/five-blockers/REPORT.md).
 Mobile verification is excluded by the developer. Follow the
 [repository restriction](../../AGENTS.md#verifying); mobile-only audit rows are
 outside scope, not passing. The iOS runtime download was canceled before any
@@ -318,7 +318,7 @@ Workspace paths were remapped to a disposable repository, so this check did
 not reproduce the original project auto-pull workload or establish why the
 0.1.3 launch required reopening. Keep this issue open for that investigation.
 The backend-manager and Zed ACP support suites passed all 28 focused tests.
-Local evidence is in the [verification report](/private/tmp/t3-verify-desktop-zed-20261011/REPORT.md).
+Local evidence is in the verification report (local evidence: /private/tmp/t3-verify-desktop-zed-20261011/REPORT.md).
 
 ### PERMISSION-001: Orchestration triggers unrelated macOS folder prompts
 
@@ -495,8 +495,8 @@ Original evidence came from read-only Personal SQLite and matching
 `logs/provider/events.<thread-id>.log` files. Seven attempts and isolated native
 probes showed the same failure sequence. The original orchestration monitor was
 paused after the failures. Full historical notes before cleanup are retained at
-`/private/tmp/t3-changelog-audit-20261011/ISSUE_TRACKER.before.md`.
-The direct diagnostic was `/private/tmp/t3-gemini-auth-probe.py`; check that it
+/private/tmp/t3-changelog-audit-20261011/ISSUE_TRACKER.before.md (local evidence, not preserved in repo).
+The direct diagnostic was /private/tmp/t3-gemini-auth-probe.py (local evidence, not preserved in repo); check that it
 still exists before reuse. It sends authentication only. Removed relay scripts
 are historical evidence, not a retained launch recipe.
 
@@ -620,7 +620,8 @@ Account discovery no longer returned the historical GPT-5.6 Luna model.
 The test copy's application code archive matched the installed app. Setup used
 separate T3 and Electron data directories, remapped workspace paths, and a
 temporary Zed credential copy. The test app exited normally, and the credential
-copy was removed. The installed app and live T3 data were unchanged.
+copy was removed. See [VERIFICATION.md Desktop recovery and isolation
+correction](./VERIFICATION.md#desktop-recovery-and-isolation-correction-october-12-2026) for clarifications: blanket isolation claims that desktop verification left the installed app and its state untouched are not reliable.
 
 ### Desktop verification scope, September 22, 2026
 

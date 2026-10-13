@@ -10,11 +10,11 @@ Follow the [mobile verification restriction](../../AGENTS.md#verifying), even
 where this historical handoff lists mobile checks as pending.
 
 Latest continuation, October 12: the developer resumed verification and accepted
-matching the first-party branding mark. VERIFICATION.md now records 51 PASS,
-11 FAIL, 2 BLOCKED and 29 Historical / not applicable. Rows 004, 043 and 064
+matching the first-party branding mark. See the
+[per-item audit](./VERIFICATION.md#per-item-audit) for current verdict counts. Rows 004, 043 and 064
 closed. Remaining rows are 055 for Antigravity desktop/running-turn/restart cases
 and 084 for cross-environment HTML routing. Local HTML and desktop PDF pass.
-See the [latest evidence and fixture incident report](/Users/tvh0021/.codex/visualizations/2026/10/12/01a12fe1-c2ad-74e3-b4db-4af8277cf571/five-blockers/REPORT.md). Native desktop automation became unreliable and an unintended Claude
+See the latest evidence and fixture incident report, `/Users/tvh0021/.codex/visualizations/2026/10/12/01a12fe1-c2ad-74e3-b4db-4af8277cf571/five-blockers/REPORT.md` (local evidence, not preserved in repo). Native desktop automation became unreliable and an unintended Claude
 update attempt was interrupted by quitting the disposable app. No completed
 update is recorded. Mobile verification and further adverse-Keychain tests
 remain excluded. The zero-blocked target is unfinished.
@@ -51,7 +51,7 @@ steering, and respect pending human requests. Any supported model may parent.
 - Reviews use detached checkouts of resolved Git commits. Editing children use
   separate existing registered worktrees; the parent integrates changes.
 
-[Capabilities](./MODIFICATIONS.md#21-agent-created-threads-and-t3-orchestration-layers),
+[Capabilities](./MODIFICATIONS.md#agent-created-threads-and-t3-orchestration-layers),
 [invocation example](../user/composer.md#start-a-t3-orchestration-layer), and
 [open issues](./ISSUE_TRACKER.md#open-issues) carry the current details outside this historical record.
 

@@ -1,8 +1,6 @@
 # Upstream Synchronization Guide
 
-This guide details the procedure for keeping this personal fork updated with upstream improvements from [pingdotgg/t3code](https://github.com/pingdotgg/t3code) while preserving all personal customizations.
-
----
+This guide describes the procedure for keeping this personal fork updated with upstream improvements from [pingdotgg/t3code](https://github.com/pingdotgg/t3code) while preserving all personal customizations.
 
 ## Fork dependencies to preserve
 
@@ -10,103 +8,73 @@ Preserve the personal provider, usage, workflow and desktop changes described in
 [MODIFICATIONS.md](./MODIFICATIONS.md). Zed worker/thread MCP forwarding and effort
 controls depend on the separately configured companion bridge; a desktop update
 does not bundle that executable. Check the current source and
-[verification record](./VERIFICATION.md) after a merge. The session handoff is
-historical evidence, not a current sync checklist.
+[verification record](./VERIFICATION.md) after a merge.
 
-## 1. Remote Setup
+## Merge-based synchronization
 
-Ensure you have both your personal remote and the official upstream remote configured in your git repository:
-
-```bash
-# Check current remotes
-git remote -v
-
-# If upstream is not yet configured:
-git remote add upstream https://github.com/pingdotgg/t3code.git
-
-# Fetch the latest branches and tags from upstream
-git fetch upstream
-```
-
----
-
-## 2. Synchronization Strategy: Rebase vs. Merge
-
-Rebasing onto `upstream/main` is recommended because it keeps personal commits cleanly situated on top of the latest upstream trunk.
-
-### Rebasing Workflow
+This fork uses merges rather than rebase. Merges preserve personal commit history and are more resilient to conflicts across many files.
 
 1. **Ensure Working Directory is Clean**:
-   Commit any active working changes to your branch:
 
    ```bash
    git status
-   git add .
-   git commit -m "feat(personal): update personal modifications"
    ```
 
-2. **Fetch and Rebase**:
+   Commit or stash any uncommitted work before proceeding.
+
+2. **Fetch Upstream**:
 
    ```bash
-   git fetch upstream main
-   git rebase upstream/main
+   git fetch upstream
    ```
 
-3. **Resolving Conflicts (if any)**:
-   The most common files to review during a rebase conflict are:
-   - `packages/contracts/src/settings.ts`: Upstream may add new default client settings. Ensure the personal font sizes (20/18/18/17) are retained.
-   - `apps/server/src/provider/builtInDrivers.ts`: Upstream may register new providers. Keep `makeAbacusDriver` registered in the drivers list.
-   - `apps/web/src/components/sidebar/SidebarChrome.tsx`: Ensure the two-line "personal" header formatting is kept.
+3. **Merge Upstream**:
 
-4. **Continue the Rebase**:
    ```bash
-   git add <resolved-files>
-   git rebase --continue
+   git merge upstream/main
    ```
 
----
+   Resolve any conflicts in your editor.
 
-## 3. Post-Sync Verification Checklist
+4. **Stage Only Changed Files** (do not use `git add .` or `git add -A`):
 
-After any upstream rebase or merge, run the following commands in sequence:
+   ```bash
+   git add <specific-file-path> [<file-path-2> ...]
+   ```
 
-### 1. Install Dependencies
+5. **Complete the Merge**:
+   ```bash
+   git commit -m "chore(personal): merge upstream/main"
+   ```
 
-Ensure any new upstream packages are installed and lockfiles are resolved:
+## Common merge conflicts
 
-```bash
-pnpm install
-```
+The most commonly conflicted files are:
 
-### 2. Run Abacus Unit Tests
+- `packages/contracts/src/settings.ts`: Ensure the personal font sizes (20/18/18/17) are retained.
+- `apps/server/src/provider/builtInDrivers.ts`: Keep `makeAbacusDriver` registered in the drivers list.
+- `apps/web/src/components/sidebar/SidebarChrome.tsx`: Ensure the two-line "personal" header formatting is kept.
 
-Verify that the autonomous agent loop and safety filters pass without regression:
+## Post-merge verification checklist
 
-```bash
-pnpm --filter t3 test src/provider/Layers/AbacusAdapter.test.ts
-```
-
-### 3. Run Settings & Appearance Tests
-
-Verify that default font sizes and branding tests pass:
-
-```bash
-pnpm --filter @t3tools/contracts test src/settings.test.ts
-pnpm --filter @t3tools/web test src/branding.test.ts
-```
-
-### 4. Monorepo Build
-
-Confirm that the entire project compiles cleanly:
+After resolving conflicts, diff each changed upstream file against `upstream/main` to catch work that a merge silently undid:
 
 ```bash
-vp run build
+git diff upstream/main -- <conflicted-file>
 ```
 
-### 5. Launch Desktop App
+**Known cases to watch for:**
 
-Launch the desktop application to visually inspect the sidebar title and test RouteLLM agent execution:
+- `packages/client-runtime/src/state/providerInstanceDisplay.ts`: a sync silently reverted upstream #9899's badge helper signature, module doc and tests.
+- `docs/README.md`: merge 69bbd365f dropped upstream's Runbooks section.
+
+Run focused checks on changed files:
 
 ```bash
-vp run dev:desktop
+vp i                                    # Install dependencies
+vp run --filter t3 typecheck            # Server typecheck
+vp run --filter @t3tools/web typecheck  # Web typecheck
+vp test run <files>                     # Focused tests for changed behavior
 ```
+
+Do not run `vp check`, `vp run build`, or repository-wide test suites. CI owns the full suite.
