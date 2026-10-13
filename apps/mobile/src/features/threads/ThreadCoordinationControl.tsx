@@ -1,6 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
-import { getCoordinationView } from "@t3tools/client-runtime/state/threads";
+import {
+  getCoordinationView,
+  getCoordinationActions,
+  getCoordinationQuotaHandoff,
+  getCoordinationChildReportStatus,
+} from "@t3tools/client-runtime/state/threads";
 import type { CoordinationControl, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useState } from "react";
 import { Alert, Modal, ScrollView, View } from "react-native";
@@ -27,7 +32,15 @@ export function ThreadCoordinationControl({
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   if (!view) return null;
-  const ended = view.state.status === "completed" || view.state.status === "cancelled";
+  const { ended } = view;
+  const actions = view.isParent ? getCoordinationActions(view.state) : null;
+  const {
+    handoff,
+    enabled: handoffEnabled,
+    destinationThreadId,
+    sourceThreadId,
+  } = getCoordinationQuotaHandoff(view.state.quotaHandoff, view.parentId);
+  const handoffFromThreadId = ownState?.role === "child" ? ownState.handoffFromThreadId : undefined;
   const act = async (action: CoordinationControl) => {
     setPending(true);
     try {
@@ -69,26 +82,24 @@ export function ThreadCoordinationControl({
                 onPress={() => visit(view.parentId)}
               />
             )}
-            {ownState?.role === "child" && ownState.handoffFromThreadId && (
+            {handoffFromThreadId && (
               <MaterialButton
                 label="Open source thread for this handoff"
-                onPress={() => visit(ownState.handoffFromThreadId!)}
+                onPress={() => visit(handoffFromThreadId)}
               />
             )}
-            {view.state.quotaHandoff?.destinationThreadId &&
-              view.state.quotaHandoff.destinationThreadId !== view.parentId && (
-                <MaterialButton
-                  label="Open quota handoff thread"
-                  onPress={() => visit(view.state.quotaHandoff!.destinationThreadId!)}
-                />
-              )}
-            {view.state.quotaHandoff?.sourceThreadId &&
-              view.state.quotaHandoff.sourceThreadId !== view.parentId && (
-                <MaterialButton
-                  label="Open source thread for this handoff"
-                  onPress={() => visit(view.state.quotaHandoff!.sourceThreadId!)}
-                />
-              )}
+            {destinationThreadId && (
+              <MaterialButton
+                label="Open quota handoff thread"
+                onPress={() => visit(destinationThreadId)}
+              />
+            )}
+            {sourceThreadId && (
+              <MaterialButton
+                label="Open source thread for this handoff"
+                onPress={() => visit(sourceThreadId)}
+              />
+            )}
             {ownState?.role === "child" && ownState.report && (
               <AppText selectable>{ownState.report.text}</AppText>
             )}
@@ -101,50 +112,38 @@ export function ThreadCoordinationControl({
             {view.state.blockedReason && (
               <AppText accessibilityLiveRegion="polite">{view.state.blockedReason}</AppText>
             )}
-            {view.state.quotaHandoff && (
+            {handoff && (
               <AppText accessibilityLiveRegion="polite">
-                Quota handoff: {view.state.quotaHandoff.status}
-                {view.state.quotaHandoff.destinationModel
-                  ? ` · ${view.state.quotaHandoff.destinationModel}`
+                Quota handoff: {handoff.status}
+                {handoff.destinationModel ? ` · ${handoff.destinationModel}` : ""}
+                {handoff.resetAt
+                  ? ` · resumes after ${new Date(handoff.resetAt).toLocaleString()}`
                   : ""}
-                {view.state.quotaHandoff.resetAt
-                  ? ` · resumes after ${new Date(view.state.quotaHandoff.resetAt).toLocaleString()}`
-                  : ""}
-                {view.state.quotaHandoff.reason ? ` · ${view.state.quotaHandoff.reason}` : ""}
+                {handoff.reason ? ` · ${handoff.reason}` : ""}
               </AppText>
             )}
-            {view.isParent && !ended && (
+            {actions && (
               <View className="flex-row flex-wrap gap-2">
                 <MaterialButton
-                  label={
-                    view.state.quotaHandoff?.enabled
-                      ? "Disable quota handoff"
-                      : "Enable quota handoff"
-                  }
+                  label={handoffEnabled ? "Disable quota handoff" : "Enable quota handoff"}
                   disabled={pending}
-                  onPress={() =>
-                    void act(
-                      view.state.quotaHandoff?.enabled
-                        ? "disable-quota-handoff"
-                        : "enable-quota-handoff",
-                    )
-                  }
+                  onPress={() => void act(actions.quotaHandoff)}
                 />
                 <MaterialButton
-                  label={view.state.status === "paused" ? "Resume" : "Pause"}
+                  label={actions.session[0] === "resume" ? "Resume" : "Pause"}
                   disabled={pending}
-                  onPress={() => void act(view.state.status === "paused" ? "resume" : "pause")}
+                  onPress={() => void act(actions.session[0])}
                 />
                 <MaterialButton
                   label="Complete"
                   disabled={pending}
-                  onPress={() => void act("complete")}
+                  onPress={() => void act(actions.session[1])}
                 />
                 <MaterialButton
                   label="Cancel"
                   tone="danger"
                   disabled={pending}
-                  onPress={() => void act("cancel")}
+                  onPress={() => void act(actions.session[2])}
                 />
               </View>
             )}
@@ -166,7 +165,7 @@ export function ThreadCoordinationControl({
                 <AppText>
                   {child.model} · {child.state.phase}
                   {child.state.report
-                    ? ` · report ${child.state.report.id} ${child.state.adopted ? "delivered" : ended ? "saved" : "waiting"}`
+                    ? ` · report ${child.state.report.id} ${getCoordinationChildReportStatus(child.state, ended)}`
                     : ""}
                 </AppText>
               </View>

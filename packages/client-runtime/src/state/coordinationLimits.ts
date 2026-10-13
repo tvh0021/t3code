@@ -1,4 +1,5 @@
 import { coordinationModelKey } from "@t3tools/contracts";
+import { parseCoordinationQuotaHandoffs } from "./coordinationQuotaHandoffs.ts";
 
 /** Human-editable model=turns lines. A blank editor restores the built-in and price defaults. */
 export function parseCoordinationLimits(text: string): Record<string, number | null> {
@@ -23,4 +24,27 @@ export function formatCoordinationLimits(limits: Readonly<Record<string, number 
   return Object.entries(limits)
     .map(([model, limit]) => `${model}=${limit ?? "unlimited"}`)
     .join("\n");
+}
+
+/** Build the saved policy after validating editors in their display order. */
+export function buildCoordinationPolicyPatch({
+  limitsText,
+  fallbacksText,
+  threshold,
+  thresholdError,
+}: {
+  limitsText: string;
+  fallbacksText: string;
+  threshold: number;
+  thresholdError: string;
+}) {
+  const limits = parseCoordinationLimits(limitsText);
+  const fallbacks = parseCoordinationQuotaHandoffs(fallbacksText);
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100)
+    throw new Error(thresholdError);
+  return {
+    coordinationModelLimits: limits,
+    coordinationQuotaHandoffFallbacks: fallbacks,
+    coordinationQuotaHandoffThresholdPercent: threshold,
+  };
 }

@@ -1,8 +1,7 @@
 import {
   formatCoordinationLimits,
   formatCoordinationQuotaHandoffs,
-  parseCoordinationLimits,
-  parseCoordinationQuotaHandoffs,
+  buildCoordinationPolicyPatch,
 } from "@t3tools/client-runtime/state/threads";
 import { DEFAULT_COORDINATION_LIMITS, type EnvironmentId } from "@t3tools/contracts";
 import { useState } from "react";
@@ -31,23 +30,19 @@ export function CoordinationPolicySettings({
   const text = draft ?? formatCoordinationLimits(settings.coordinationModelLimits ?? {});
   const save = async () => {
     try {
-      const limits = parseCoordinationLimits(text);
-      const fallbacks = parseCoordinationQuotaHandoffs(
-        fallbackDraft ??
+      const patch = buildCoordinationPolicyPatch({
+        limitsText: text,
+        fallbacksText:
+          fallbackDraft ??
           formatCoordinationQuotaHandoffs(settings.coordinationQuotaHandoffFallbacks),
-      );
-      const threshold = thresholdDraft ?? settings.coordinationQuotaHandoffThresholdPercent;
-      if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100)
-        throw new Error("Choose a quota threshold from 1 to 100.");
+        threshold: thresholdDraft ?? settings.coordinationQuotaHandoffThresholdPercent,
+        thresholdError: "Choose a quota threshold from 1 to 100.",
+      });
       setPending(true);
       const result = await persist({
         environmentId,
         input: {
-          patch: {
-            coordinationModelLimits: limits,
-            coordinationQuotaHandoffFallbacks: fallbacks,
-            coordinationQuotaHandoffThresholdPercent: threshold,
-          },
+          patch,
         },
       });
       setMessage(

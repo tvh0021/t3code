@@ -27,6 +27,7 @@ export function getCoordinationView(
     parentId,
     parentTitle: parent.title,
     isParent: parentId === threadId,
+    ended,
     state: parent.coordination,
     children,
     pendingReports: ended

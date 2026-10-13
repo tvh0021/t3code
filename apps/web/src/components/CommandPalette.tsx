@@ -1,5 +1,7 @@
 "use client";
 
+import { getCoordinationActions } from "@t3tools/client-runtime/state/threads";
+
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { threadEnvironment } from "../state/threads";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -1741,14 +1743,9 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (
-    activeThread?.coordination?.role === "parent" &&
-    ["active", "paused"].includes(activeThread.coordination.status)
-  ) {
-    const actions =
-      activeThread.coordination.status === "paused"
-        ? (["resume", "complete", "cancel"] as const)
-        : (["pause", "complete", "cancel"] as const);
+  const coordinationActions = getCoordinationActions(activeThread?.coordination);
+  if (activeThread && coordinationActions) {
+    const actions = coordinationActions.session;
     for (const action of actions)
       actionItems.push({
         kind: "action",
@@ -1763,9 +1760,7 @@ function OpenCommandPaletteDialog(props: {
           });
         },
       });
-    const quotaHandoffAction = activeThread.coordination.quotaHandoff?.enabled
-      ? "disable-quota-handoff"
-      : "enable-quota-handoff";
+    const quotaHandoffAction = coordinationActions.quotaHandoff;
     actionItems.push({
       kind: "action",
       value: `action:workflow-${quotaHandoffAction}`,

@@ -1,6 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
-import { getCoordinationView } from "@t3tools/client-runtime/state/threads";
+import {
+  getCoordinationView,
+  getCoordinationActions,
+  getCoordinationQuotaHandoff,
+  getCoordinationChildReportStatus,
+} from "@t3tools/client-runtime/state/threads";
 import type { CoordinationControl, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useState } from "react";
 import { threadEnvironment, useEnvironmentThread } from "../../state/threads";
@@ -32,7 +37,15 @@ export function ThreadCoordinationControl({
   const control = useAtomCommand(threadEnvironment.controlCoordination);
   const [pending, setPending] = useState(false);
   if (!view) return null;
-  const ended = view.state.status === "completed" || view.state.status === "cancelled";
+  const { ended } = view;
+  const actions = view.isParent ? getCoordinationActions(view.state) : null;
+  const {
+    handoff,
+    enabled: handoffEnabled,
+    destinationThreadId,
+    sourceThreadId,
+  } = getCoordinationQuotaHandoff(view.state.quotaHandoff, view.parentId);
+  const handoffFromThreadId = ownState?.role === "child" ? ownState.handoffFromThreadId : undefined;
   const act = async (action: CoordinationControl) => {
     setPending(true);
     try {
@@ -69,35 +82,33 @@ export function ThreadCoordinationControl({
               Return to {view.parentTitle}
             </Link>
           )}
-          {ownState?.role === "child" && ownState.handoffFromThreadId && (
+          {handoffFromThreadId && (
             <Link
               to="/$environmentId/$threadId"
-              params={{ environmentId, threadId: ownState.handoffFromThreadId }}
+              params={{ environmentId, threadId: handoffFromThreadId }}
             >
               Open source thread for this handoff
             </Link>
           )}
-          {view.state.quotaHandoff?.destinationThreadId &&
-            view.state.quotaHandoff.destinationThreadId !== view.parentId && (
-              <Link
-                to="/$environmentId/$threadId"
-                params={{
-                  environmentId,
-                  threadId: view.state.quotaHandoff.destinationThreadId,
-                }}
-              >
-                Open quota handoff thread
-              </Link>
-            )}
-          {view.state.quotaHandoff?.sourceThreadId &&
-            view.state.quotaHandoff.sourceThreadId !== view.parentId && (
-              <Link
-                to="/$environmentId/$threadId"
-                params={{ environmentId, threadId: view.state.quotaHandoff.sourceThreadId }}
-              >
-                Open source thread for this handoff
-              </Link>
-            )}
+          {destinationThreadId && (
+            <Link
+              to="/$environmentId/$threadId"
+              params={{
+                environmentId,
+                threadId: destinationThreadId,
+              }}
+            >
+              Open quota handoff thread
+            </Link>
+          )}
+          {sourceThreadId && (
+            <Link
+              to="/$environmentId/$threadId"
+              params={{ environmentId, threadId: sourceThreadId }}
+            >
+              Open source thread for this handoff
+            </Link>
+          )}
           {ownState?.role === "child" && ownState.report && (
             <div>
               <p className="text-sm font-medium">Assignment report</p>
@@ -115,35 +126,25 @@ export function ThreadCoordinationControl({
               {view.state.blockedReason}
             </p>
           )}
-          {view.state.quotaHandoff && (
+          {handoff && (
             <div role="status" className="text-sm text-muted-foreground">
-              Quota handoff: {view.state.quotaHandoff.status}
-              {view.state.quotaHandoff.destinationModel
-                ? ` · ${view.state.quotaHandoff.destinationModel}`
+              Quota handoff: {handoff.status}
+              {handoff.destinationModel ? ` · ${handoff.destinationModel}` : ""}
+              {handoff.resetAt
+                ? ` · resumes after ${new Date(handoff.resetAt).toLocaleString()}`
                 : ""}
-              {view.state.quotaHandoff.resetAt
-                ? ` · resumes after ${new Date(view.state.quotaHandoff.resetAt).toLocaleString()}`
-                : ""}
-              {view.state.quotaHandoff.reason ? ` · ${view.state.quotaHandoff.reason}` : ""}
+              {handoff.reason ? ` · ${handoff.reason}` : ""}
             </div>
           )}
-          {view.isParent && !ended && (
+          {actions && (
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="outline"
                 disabled={pending}
-                onClick={() =>
-                  void act(
-                    view.state.quotaHandoff?.enabled
-                      ? "disable-quota-handoff"
-                      : "enable-quota-handoff",
-                  )
-                }
+                onClick={() => void act(actions.quotaHandoff)}
               >
-                {view.state.quotaHandoff?.enabled
-                  ? "Disable quota handoff"
-                  : "Enable quota handoff"}
+                {handoffEnabled ? "Disable quota handoff" : "Enable quota handoff"}
               </Button>
               <p className="basis-full text-xs text-muted-foreground">
                 A layer can switch providers once. Each destination needs fresh quota below the
@@ -154,15 +155,15 @@ export function ThreadCoordinationControl({
                 size="sm"
                 variant="outline"
                 disabled={pending}
-                onClick={() => void act(view.state.status === "paused" ? "resume" : "pause")}
+                onClick={() => void act(actions.session[0])}
               >
-                {view.state.status === "paused" ? "Resume" : "Pause"}
+                {actions.session[0] === "resume" ? "Resume" : "Pause"}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 disabled={pending}
-                onClick={() => void act("complete")}
+                onClick={() => void act(actions.session[1])}
               >
                 Complete
               </Button>
@@ -170,7 +171,7 @@ export function ThreadCoordinationControl({
                 size="sm"
                 variant="destructive"
                 disabled={pending}
-                onClick={() => void act("cancel")}
+                onClick={() => void act(actions.session[2])}
               >
                 Cancel
               </Button>
@@ -211,7 +212,7 @@ export function ThreadCoordinationControl({
                 <p className="text-xs text-muted-foreground">
                   {child.model} · {child.state.phase}
                   {child.state.report
-                    ? ` · report ${child.state.report.id} ${child.state.adopted ? "delivered" : ended ? "saved" : "waiting"}`
+                    ? ` · report ${child.state.report.id} ${getCoordinationChildReportStatus(child.state, ended)}`
                     : ""}
                 </p>
               </li>

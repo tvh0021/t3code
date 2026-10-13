@@ -969,8 +969,18 @@ export * from "./threadShell.ts";
 export * from "./threadState.ts";
 
 export { getCoordinationView } from "./coordinationView.ts";
-export { parseCoordinationLimits, formatCoordinationLimits } from "./coordinationLimits.ts";
+export {
+  buildCoordinationPolicyPatch,
+  parseCoordinationLimits,
+  formatCoordinationLimits,
+} from "./coordinationLimits.ts";
 export {
   parseCoordinationQuotaHandoffs,
   formatCoordinationQuotaHandoffs,
 } from "./coordinationQuotaHandoffs.ts";
+
+export {
+  getCoordinationActions,
+  getCoordinationQuotaHandoff,
+  getCoordinationChildReportStatus,
+} from "./coordinationControl.ts";
