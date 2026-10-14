@@ -1,38 +1,33 @@
 import { ZedSettings, ProviderDriverKind, TextGenerationError } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { HttpClient } from "effect/unstable/http";
-import { ChildProcessSpawner } from "effect/unstable/process";
 
-import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
-import { ServerConfig } from "../../config.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
-import type * as TextGeneration from "../../textGeneration/TextGeneration.ts";
-import { ProviderDriverError } from "../Errors.ts";
-import { makeZedAdapter } from "../Layers/ZedAdapter.ts";
-import {
-  buildInitialZedProviderSnapshot,
-  checkZedProviderStatus,
-  ZED_BUILT_IN_MODELS,
-} from "../Layers/ZedProvider.ts";
-import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
-import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
-import {
-  defaultProviderContinuationIdentity,
-  type ProviderDriver,
-  type ProviderInstance,
-} from "../ProviderDriver.ts";
-import { withInstanceIdentity } from "./instanceIdentity.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
-import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
+import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
+import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
-} from "../providerUpdateSettings.ts";
+} from "@t3tools/provider-core/server/snapshotSettings";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
+import { withInstanceIdentity } from "@t3tools/provider-core/server/instanceIdentity";
+import {
+  defaultProviderContinuationIdentity,
+  type ProviderDriver,
+  type ProviderInstance,
+} from "@t3tools/provider-core/server/driver";
+import { ProviderDriverError } from "../Errors.ts";
+import {
+  buildInitialZedProviderSnapshot,
+  checkZedProviderStatus,
+  ZED_BUILT_IN_MODELS,
+} from "../ZedProvider.ts";
+import {
+  ZedAdapterV2Driver,
+  type ZedAdapterV2DriverEnv,
+} from "../../orchestration-v2/Adapters/ZedAdapterV2.ts";
 
 const decodeZedSettings = Schema.decodeSync(ZedSettings);
 
@@ -42,16 +37,7 @@ const MAINTENANCE_CAPABILITIES = makeManualOnlyProviderMaintenanceCapabilities({
   packageName: null,
 });
 
-export type ZedDriverEnv =
-  | BackgroundPolicy.BackgroundPolicy
-  | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
-  | FileSystem.FileSystem
-  | HttpClient.HttpClient
-  | Path.Path
-  | ProviderEventLoggers
-  | ServerConfig
-  | ServerSettingsService;
+export type ZedDriverEnv = ZedAdapterV2DriverEnv;
 
 export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
   driverKind: DRIVER_KIND,
@@ -61,12 +47,13 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
   },
   configSchema: ZedSettings,
   defaultConfig: (): ZedSettings => decodeZedSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: (input) =>
     Effect.gen(function* () {
+      const { instanceId, displayName, accentColor, enabled, config } = input;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const serverSettings = yield* ServerSettingsService;
-      const { cwd } = yield* ServerConfig;
-      const processEnv = mergeProviderInstanceEnvironment(environment);
+      const host = yield* ProviderHost.ProviderHost;
+      const { cwd } = host.paths;
+
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
@@ -79,10 +66,18 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies ZedSettings;
-      const adapter = yield* makeZedAdapter(effectiveConfig, {
-        environment: processEnv,
-        instanceId,
-      });
+
+      const orchestrationAdapter = yield* ZedAdapterV2Driver.create(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: `Failed to create Zed adapter: ${cause.message ?? String(cause)}`,
+              cause,
+            }),
+        ),
+      );
 
       const unsupportedTextGen = (operation: string) =>
         Effect.fail(
@@ -92,17 +87,18 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
           }),
         );
 
-      const textGeneration: TextGeneration.TextGeneration["Service"] = {
+      const textGeneration: ProviderTextGeneration = {
         generateCommitMessage: () => unsupportedTextGen("generateCommitMessage"),
         generatePrContent: () => unsupportedTextGen("generatePrContent"),
         generateBranchName: () => unsupportedTextGen("generateBranchName"),
         generateThreadTitle: () => unsupportedTextGen("generateThreadTitle"),
+        generateReviewGuide: () => unsupportedTextGen("generateReviewGuide"),
       };
 
       let latestModels = ZED_BUILT_IN_MODELS;
       const checkZed = (workspaceCwd: string) =>
         Effect.suspend(() =>
-          checkZedProviderStatus(effectiveConfig, processEnv, workspaceCwd, latestModels),
+          checkZedProviderStatus(effectiveConfig, process.env, workspaceCwd, latestModels),
         ).pipe(
           Effect.tap((draft) =>
             Effect.sync(() => {
@@ -115,7 +111,7 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );
 
-      const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
+      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<ZedSettings>>({
         resolveMaintenance: () => Effect.succeed(MAINTENANCE_CAPABILITIES),
         getSettings: snapshotSettings.getSettings,
@@ -124,7 +120,6 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         initialSnapshot: (settings) =>
           buildInitialZedProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
         checkProvider,
-        enrichSnapshot: ({ snapshot: currentSnapshot }) => Effect.succeed(currentSnapshot),
       }).pipe(
         Effect.mapError(
           (cause) =>
@@ -154,7 +149,7 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         enabled,
         snapshot,
         snapshotForCwd,
-        adapter,
+        orchestrationAdapter,
         textGeneration,
       } satisfies ProviderInstance;
     }),

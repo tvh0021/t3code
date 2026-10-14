@@ -1,0 +1,254 @@
+import {
+  ProviderApprovalOption,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ZedSettings,
+  type OrchestrationV2ProviderCapabilities,
+  type ProviderSetupError,
+} from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { resolveSelfInvocation, type SelfInvocation } from "@t3tools/shared/nodeRuntime";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as EffectAcpErrors from "effect-acp/errors";
+import type * as EffectAcpSchema from "effect-acp/compat";
+
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import {
+  ProviderAdapterDriverCreateError,
+  type ProviderAdapterDriver,
+  type ProviderAdapterDriverCreateInput,
+} from "@t3tools/provider-core/server/adapterDriver";
+import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
+import {
+  AcpProviderCapabilitiesV2,
+  makeAcpAdapterV2,
+  type AcpAdapterV2Flavor,
+  type AcpAdapterV2RuntimeInput,
+} from "@t3tools/provider-acp/server/adapter";
+import {
+  makeZedAcpRuntime,
+  type ZedAcpRuntimeInput,
+} from "../../provider/acp/ZedAcpSupport.ts";
+
+const ZED_PROVIDER = ProviderDriverKind.make("zed");
+const decodeZedSettings = Schema.decodeSync(ZedSettings);
+
+export const ZedProviderCapabilitiesV2 = {
+  ...AcpProviderCapabilitiesV2,
+  sessions: {
+    ...AcpProviderCapabilitiesV2.sessions,
+    supportsModelSwitchInSession: true,
+    supportsRuntimeModeSwitchInSession: false,
+  },
+} satisfies OrchestrationV2ProviderCapabilities;
+
+export interface ZedAdapterV2Options {
+  readonly instanceId: ProviderInstanceId;
+  readonly selfInvocation: SelfInvocation;
+  readonly makeRuntime: (
+    input: Omit<ZedAcpRuntimeInput, "childProcessSpawner">,
+  ) => Effect.Effect<
+    AcpSessionRuntime.AcpSessionRuntime["Service"],
+    EffectAcpErrors.AcpError | ProviderSetupError,
+    Scope.Scope
+  >;
+  readonly defaultModel?: Effect.Effect<string | undefined>;
+  readonly onSessionStarted?: (
+    started: AcpSessionRuntime.AcpSessionRuntimeStartResult,
+    cwd: string,
+  ) => Effect.Effect<void>;
+  readonly onSessionEvent?: AcpAdapterV2Flavor["onSessionEvent"];
+  readonly nativeLogging?: Parameters<typeof makeAcpAdapterV2>[0]["nativeLogging"];
+  readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
+}
+
+interface ZedFlavorServices {
+  readonly crypto: Crypto.Crypto;
+  readonly fileSystem: FileSystem.FileSystem;
+  readonly path: Path.Path;
+  readonly host: ProviderHost.ProviderHost["Service"];
+}
+
+export function makeZedAcpAdapterFlavor(
+  options: ZedAdapterV2Options & ZedFlavorServices,
+): AcpAdapterV2Flavor {
+  const makeRuntime = (input: AcpAdapterV2RuntimeInput) =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.fork(yield* Effect.scope);
+      const runtime = yield* options
+        .makeRuntime({ ...input, zedSettings: undefined })
+        .pipe(Effect.provideService(Scope.Scope, scope));
+      return {
+        ...runtime,
+        start: () =>
+          runtime
+            .start()
+            .pipe(
+              Effect.tap(
+                (started) => options.onSessionStarted?.(started, input.cwd) ?? Effect.void,
+              ),
+            ),
+      };
+    }).pipe(
+      Effect.provideService(Crypto.Crypto, options.crypto),
+      Effect.mapError((cause): EffectAcpErrors.AcpError =>
+        cause._tag === "ProviderSetupError"
+          ? new EffectAcpErrors.AcpTransportError({ detail: cause.detail, cause })
+          : cause,
+      ),
+    );
+
+  return {
+    driver: ZED_PROVIDER,
+    runtimeHarness: "Zed",
+    capabilities: ZedProviderCapabilitiesV2,
+    makeRuntime,
+    supportsCompaction: true,
+    ...(options.onSessionEvent === undefined ? {} : { onSessionEvent: options.onSessionEvent }),
+    applyModelSelection: ({ runtime, modelSelection }) =>
+      Effect.gen(function* () {
+        const configOptions = yield* runtime.getConfigOptions;
+        const requestedModel = modelSelection.model;
+        if (requestedModel && requestedModel !== "default" && requestedModel !== "auto") {
+          const hasModelConfig = configOptions.some(
+            (option) => option.id === "model" || option.category === "model",
+          );
+          if (hasModelConfig) {
+            yield* runtime.setModel(requestedModel);
+          }
+        }
+        const effortDescriptor = configOptions.find((option) => option.id === "thinking_effort");
+        const requestedEffort = modelSelection.options?.find(
+          (opt) => opt.id === "thinking_effort",
+        )?.value;
+        if (!effortDescriptor || effortDescriptor.type !== "select") {
+          if (requestedEffort) {
+            return yield* Effect.fail(
+              EffectAcpErrors.AcpRequestError.invalidParams(
+                "This Zed bridge or model does not support thinking effort. Refresh the model catalog or rebuild zed-acp-server.",
+              ),
+            );
+          }
+        } else {
+          const nativeDefault = (effortDescriptor._meta as Record<string, unknown> | undefined)?.[
+            "defaultValue"
+          ];
+          const value =
+            (typeof requestedEffort === "string" ? requestedEffort : undefined) ??
+            (typeof nativeDefault === "string" ? nativeDefault : effortDescriptor.currentValue);
+          if (value && value !== effortDescriptor.currentValue) {
+            yield* runtime.setConfigOption(effortDescriptor.id, value);
+          }
+        }
+        return requestedModel;
+      }),
+    approvalOptions: (request) => {
+      const options: ProviderApprovalOption[] = [];
+      const optionWithKind = (kind: EffectAcpSchema.PermissionOption["kind"]) =>
+        request.options.find((entry) => entry.kind === kind && entry.optionId.trim());
+      const once = optionWithKind("allow_once");
+      if (once) {
+        options.push({ decision: "accept", label: "Allow once" });
+      }
+      const always = optionWithKind("allow_always");
+      if (always) {
+        options.push({ decision: "acceptForSession", label: "Allow for this thread" });
+      }
+      if (optionWithKind("reject_once")) {
+        options.push({ decision: "decline", label: "Deny" });
+      }
+      options.push({ decision: "cancel", label: "Cancel" });
+      return options;
+    },
+  };
+}
+
+export const makeZedAdapterV2 = Effect.fn("makeZedAdapterV2")(function* (
+  options: ZedAdapterV2Options,
+) {
+  const services: ZedFlavorServices = {
+    crypto: yield* Crypto.Crypto,
+    fileSystem: yield* FileSystem.FileSystem,
+    path: yield* Path.Path,
+    host: yield* ProviderHost.ProviderHost,
+  };
+  return yield* makeAcpAdapterV2({
+    instanceId: options.instanceId,
+    flavor: makeZedAcpAdapterFlavor({ ...options, ...services }),
+    selfInvocation: options.selfInvocation,
+    ...(options.nativeLogging === undefined ? {} : { nativeLogging: options.nativeLogging }),
+    ...(options.continuationRequests === undefined
+      ? {}
+      : { continuationRequests: options.continuationRequests }),
+  });
+});
+
+export type ZedAdapterV2DriverEnv =
+  | ChildProcessSpawner.ChildProcessSpawner
+  | Crypto.Crypto
+  | FileSystem.FileSystem
+  | IdAllocator.IdAllocatorV2
+  | McpProviderSessions.McpProviderSessions
+  | Path.Path
+  | ProviderEventLoggers.ProviderEventLoggers
+  | ProviderHost.ProviderHost;
+
+export const ZedAdapterV2Driver: ProviderAdapterDriver<
+  ZedSettings,
+  ZedAdapterV2DriverEnv
+> = {
+  driverKind: ZED_PROVIDER,
+  configSchema: ZedSettings,
+  defaultConfig: (): ZedSettings => decodeZedSettings({}),
+  create: Effect.fn("ZedAdapterV2Driver.create")(
+    function* (input: ProviderAdapterDriverCreateInput<ZedSettings>) {
+      const crypto = yield* Crypto.Crypto;
+      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const hostEnvironment = yield* HostProcess.Environment;
+      const selfInvocation = yield* resolveSelfInvocation();
+      const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
+      const makeNativeLogger = yield* makeAcpNativeLoggerFactory();
+      const processEnv = yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment);
+      return yield* makeZedAdapterV2({
+        instanceId: input.instanceId,
+        selfInvocation,
+        makeRuntime: (runtimeInput) =>
+          makeZedAcpRuntime({
+            ...runtimeInput,
+            childProcessSpawner,
+            zedSettings: input.config,
+            environment: processEnv,
+          }).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+        nativeLogging: (threadId) =>
+          makeNativeLogger({
+            nativeEventLogger: providerEventLoggers.native,
+            provider: ZED_PROVIDER,
+            threadId,
+          }),
+      });
+    },
+    (effect, input) =>
+      effect.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderAdapterDriverCreateError({
+              driver: ZED_PROVIDER,
+              instanceId: input.instanceId,
+              detail: "Failed to create Zed adapter.",
+              cause,
+            }),
+        ),
+      ),
+  ),
+};
