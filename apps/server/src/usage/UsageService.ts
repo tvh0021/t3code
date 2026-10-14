@@ -59,8 +59,16 @@ import type {
   TranscriptUsageFormat,
   UsageRecord,
 } from "@t3tools/provider-core/server/usage";
-import { resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
-import { codexUsageFormat, reconcileCodexCreditUsage, type CodexScanState } from "../provider/Drivers/codexUsage.ts";
+import {
+  type CreditedUsageRecord,
+  resolveModelAliases,
+  UsageAggregator,
+} from "./usageAggregation.ts";
+import {
+  codexUsageFormat,
+  reconcileCodexCreditUsage,
+  type CodexScanState,
+} from "../provider/Drivers/codexUsage.ts";
 import {
   createOverrideRateTable,
   OFFICIAL_MODEL_RATES,
@@ -129,12 +137,12 @@ function abacusCredits(parsed: unknown): number | null {
 }
 
 function asAbacusRecords(
-  records: readonly UsageRecord[],
+  records: readonly CreditedUsageRecord[],
   parsed: () => unknown,
-): readonly UsageRecord[] {
+): readonly CreditedUsageRecord[] {
   if (records.length === 0) return records;
   const parsedCredits = abacusCredits(parsed());
-  return records.map((record): UsageRecord => {
+  return records.map((record): CreditedUsageRecord => {
     const credits = parsedCredits ?? record.credits;
     return {
       ...record,
@@ -853,9 +861,7 @@ export const make = Effect.gen(function* () {
           continue;
         retainedFiles.push({ path: filePath, records: [...entry.records, ...entry.tailRecords] });
       }
-      return provider === "codex"
-        ? reconcileCodexCreditUsage(retainedFiles)
-        : retainedFiles;
+      return provider === "codex" ? reconcileCodexCreditUsage(retainedFiles) : retainedFiles;
     });
     const crossFileSessions = sharedSessions(filesByDir.flat());
 

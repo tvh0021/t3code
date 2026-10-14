@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - session updates are deduplicated synchronously.
+import * as NodeCrypto from "node:crypto";
+
 import type { ZedSettings, ProviderApprovalDecision } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -11,17 +14,10 @@ import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRunti
 
 type ZedAcpRuntimeZedSettings = Pick<ZedSettings, "binaryPath" | "dataDir" | "model">;
 
-function hashString(str: string): string {
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
-  }
-  return (hash >>> 0).toString(16);
-}
-
 const ZED_CLIENT_CAPABILITIES: NonNullable<
   EffectAcpSchema.InitializeRequest["clientCapabilities"]
 > = {
+  elicitation: { form: {} },
   fs: {
     readTextFile: false,
     writeTextFile: false,
@@ -36,17 +32,15 @@ export interface ZedAcpRuntimeInput extends Omit<
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly zedSettings: ZedAcpRuntimeZedSettings | null | undefined;
   readonly environment?: NodeJS.ProcessEnv;
-  readonly coordinationRole?: "parent" | "review" | "edit";
 }
 
 export function buildZedAcpSpawnInput(
   zedSettings: ZedAcpRuntimeZedSettings | null | undefined,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
-  coordinationRole?: "parent" | "review" | "edit",
 ): AcpSessionRuntime.AcpSpawnInput {
   const binary = zedSettings?.binaryPath?.trim() || "zed-acp-server";
-  const args: string[] = coordinationRole ? ["--worker-mode", coordinationRole] : [];
+  const args: string[] = [];
   if (cwd) {
     args.push("--worktree", cwd);
   }
@@ -88,19 +82,14 @@ export const makeZedAcpRuntime = Effect.fn("makeZedAcpRuntime")(function* (
           return normalized;
         }
         const key = JSON.stringify([normalized.sessionId, update.toolCallId]);
-        const digest = hashString(JSON.stringify(update));
+        const digest = NodeCrypto.createHash("sha256").update(JSON.stringify(update)).digest("hex");
         if (completedSnapshots.get(key) === digest) {
           return { ...normalized, _meta: { ...normalized._meta, isReplay: true } };
         }
         completedSnapshots.set(key, digest);
         return normalized;
       },
-      spawn: buildZedAcpSpawnInput(
-        input.zedSettings,
-        input.cwd,
-        input.environment,
-        input.coordinationRole,
-      ),
+      spawn: buildZedAcpSpawnInput(input.zedSettings, input.cwd, input.environment),
       clientCapabilities: ZED_CLIENT_CAPABILITIES,
       clientInfo: {
         name: "t3-code",

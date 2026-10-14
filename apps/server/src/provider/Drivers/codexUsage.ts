@@ -20,9 +20,10 @@ import {
   totalTokens,
   type ProviderUsageReader,
   type TranscriptUsageFormat,
-  type UsageRecord,
   type UsageSpeed,
 } from "@t3tools/provider-core/server/usage";
+
+import type { CreditedUsageRecord as UsageRecord } from "../../usage/usageAggregation.ts";
 
 import { resolveCodexHomeLayout } from "./CodexHomeLayout.ts";
 

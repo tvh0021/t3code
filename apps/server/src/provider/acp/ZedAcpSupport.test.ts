@@ -3,19 +3,12 @@ import { describe, expect, it } from "vite-plus/test";
 import { buildZedAcpSpawnInput, selectAcpPermissionOptionId } from "./ZedAcpSupport.ts";
 
 describe("buildZedAcpSpawnInput", () => {
-  it("requests an explicit native worker policy before starting a review", () => {
+  it("isolates the Zed server in the configured data directory", () => {
     const spawn = buildZedAcpSpawnInput(
-      {
-        binaryPath: "/tmp/zed-acp-server",
-        dataDir: "/tmp/isolated-data",
-        model: "glm/glm-5.3-flash",
-      },
+      { binaryPath: "/tmp/zed-acp-server", dataDir: "/tmp/isolated-data", model: "" },
       "/tmp/project",
-      {},
-      "review",
     );
-    expect(spawn.args.slice(0, 2)).toEqual(["--worker-mode", "review"]);
-    expect(spawn.args).toContain("/tmp/isolated-data");
+    expect(spawn.args).toEqual(["--worktree", "/tmp/project", "--data-dir", "/tmp/isolated-data"]);
   });
 
   it("passes the configured model to the headless Zed server", () => {

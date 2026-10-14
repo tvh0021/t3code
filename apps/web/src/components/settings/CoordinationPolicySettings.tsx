@@ -47,7 +47,7 @@ export function CoordinationPolicySettings({
       });
       setMessage(
         result._tag === "Success"
-          ? "Saved for future T3 orchestration layers. Active session budgets are unchanged."
+          ? "Saved. New delegated tasks use these limits."
           : "Could not save limits. Reconnect and retry.",
       );
       if (result._tag === "Success") {
@@ -70,7 +70,7 @@ export function CoordinationPolicySettings({
       });
       setMessage(
         result._tag === "Success"
-          ? "Models and pricing refreshed. Future T3 orchestration layers use the updated policy."
+          ? "Models and pricing refreshed. New delegated tasks use the updated policy."
           : "Could not refresh model policy. The previous policy remains available.",
       );
     } finally {
@@ -80,11 +80,11 @@ export function CoordinationPolicySettings({
   return (
     <section className="flex flex-col gap-3 px-4 py-5" aria-labelledby="coordination-policy-title">
       <h2 id="coordination-policy-title" className="text-sm font-medium">
-        T3 orchestration layer limits
+        Delegated task limits
       </h2>
       <p className="text-sm text-muted-foreground">
-        Models above $10 per million output tokens get one automatic turn. Models below $1 are
-        unlimited. Prices from $1 through $10 get four turns. Maintenance refreshes models and
+        Each thread may delegate one task to a model above $10 per million output tokens and four to
+        a model from $1 through $10. Models below $1 are unlimited. Maintenance refreshes models and
         pricing monthly while the server is running.
       </p>
       <p className="text-sm text-muted-foreground">
@@ -106,7 +106,8 @@ export function CoordinationPolicySettings({
         onChange={(event) => setDraft(event.target.value)}
       />
       <label htmlFor="coordination-quota-threshold" className="text-sm">
-        Interrupt opted-in layer work when any reported quota window reaches this percentage.
+        When a thread hits a usage limit and auto-resume is on, switch to a fallback only if its
+        quota windows are below this percentage.
       </label>
       <Input
         id="coordination-quota-threshold"

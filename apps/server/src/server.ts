@@ -176,6 +176,7 @@ import {
   persistServerRuntimeState,
 } from "./serverRuntimeState.ts";
 import * as CoordinationPolicy from "./orchestration-v2/CoordinationPolicy.ts";
+import * as DelegationGuards from "./orchestration-v2/delegationGuards.ts";
 import * as OrchestrationHttp from "./orchestration-v2/http.ts";
 import * as ProjectHttp from "./project/http.ts";
 import * as NetService from "@t3tools/shared/Net";
@@ -584,6 +585,9 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // existed, or by a cleanup write that failed. See ProjectService.delete
   // for the normal (on-delete) path.
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
+  // Personal fork: delegate_task turn budgets and review snapshots. The policy
+  // also serves the Settings refresh and re-reads prices daily.
+  DelegationGuards.layer.pipe(Layer.provideMerge(CoordinationPolicy.layer)),
 ).pipe(
   // Core Services
   Layer.provideMerge(layerOrchestrationApplication),
@@ -683,7 +687,6 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(RemoteOpenTargets.layer),
   Layer.provideMerge(DirectEndpoints.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
-  Layer.provideMerge(CoordinationPolicy.layer),
   Layer.provide(NetService.layer),
 );
 

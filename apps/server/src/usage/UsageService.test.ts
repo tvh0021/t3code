@@ -1496,10 +1496,11 @@ describe("UsageService", () => {
       Effect.gen(function* () {
         const { home, settings } = yield* setup;
         const sessions = NodePath.join(home, "codex", "sessions");
+        // Personal fork: official rates outrank the rate table, so use a model without one.
         const rollout = (sessionId: string, outputTokens: number) =>
           [
             { type: "session_meta", payload: { id: sessionId } },
-            { type: "turn_context", payload: { model: "gpt-6-astra" } },
+            { type: "turn_context", payload: { model: "gpt-6-test-tier" } },
             {
               type: "event_msg",
               payload: {
@@ -1571,7 +1572,7 @@ describe("UsageService", () => {
               home,
               settings,
               ratesDocument: {
-                "gpt-6-astra": {
+                "gpt-6-test-tier": {
                   input_cost_per_token: 0,
                   output_cost_per_token: 1,
                   input_cost_per_token_ultrafast: 0,

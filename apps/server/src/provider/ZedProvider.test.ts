@@ -40,37 +40,34 @@ describe("buildInitialZedProviderSnapshot", () => {
 });
 
 describe("checkZedProviderStatus", () => {
-  for (const exitCode of [0, 1]) {
-    it.effect(`keeps account spend unavailable after a probe exits ${exitCode}`, () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const directory = yield* fs.makeTempDirectoryScoped();
-        const binaryPath = writeFakeCli({
-          directory,
-          name: "zed-acp-server",
-          source: `process.exit(${exitCode});`,
-        });
-        const snapshot = yield* checkZedProviderStatus(
-          decodeSettings({ enabled: true, binaryPath }),
-        );
+  it.effect.each([0, 1])("keeps account spend unavailable after a probe exits %i", (exitCode) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const binaryPath = writeFakeCli({
+        directory,
+        name: "zed-acp-server",
+        source: `process.exit(${exitCode});`,
+      });
+      const snapshot = yield* checkZedProviderStatus(decodeSettings({ enabled: true, binaryPath }));
 
-        expect(snapshot.status).toBe(exitCode === 0 ? "ready" : "error");
-        expect(snapshot.usageLimits).toMatchObject({
-          checkedAt: snapshot.checkedAt,
-          windows: [],
-          unavailable: { reason: "unsupported" },
-          externalUsage: { label: "Zed dashboard", url: "https://dashboard.zed.dev" },
-        });
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-    );
-  }
+      expect(snapshot.status).toBe(exitCode === 0 ? "ready" : "error");
+      expect(snapshot.usageLimits).toMatchObject({
+        checkedAt: snapshot.checkedAt,
+        windows: [],
+        unavailable: { reason: "unsupported" },
+        externalUsage: { label: "Zed dashboard", url: "https://dashboard.zed.dev" },
+      });
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
 });
 
 describe("Zed model discovery", () => {
   it("exposes the bridge's supported thinking efforts and default", () => {
     const models = parseLatestZedModels(
       encodeJson([
-        {          slug: "zed.dev/gpt-6.1-luna",
+        {
+          slug: "zed.dev/gpt-6.1-luna",
           name: "Luna",
           effortLevels: [
             { value: "low", name: "Low", isDefault: false },
@@ -224,8 +221,9 @@ describe("Zed model discovery", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  for (const output of ["invalid JSON", "[]", encodeJson(catalog.slice(0, 1))]) {
-    it.effect(`retains the last catalog on failed or incomplete discovery: ${output}`, () =>
+  it.effect.each(["invalid JSON", "[]", encodeJson(catalog.slice(0, 1))])(
+    "retains the last catalog on failed or incomplete discovery: %s",
+    (output) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const directory = yield* fs.makeTempDirectoryScoped();
@@ -241,9 +239,9 @@ describe("Zed model discovery", () => {
           undefined,
           previous,
         );
-        expect(snapshot.models.slice(0, 2)).toEqual(previous);
+        expect(snapshot.models).toEqual(previous);
         expect(snapshot.message).toContain("Keeping the previous list");
+        expect(snapshot.status).toBe("ready");
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-    );
-  }
+  );
 });

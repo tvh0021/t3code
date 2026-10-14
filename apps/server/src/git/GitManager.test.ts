@@ -47,6 +47,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import { decodeGitHubPullRequestListJson } from "@t3tools/source-control-github/server/gitHubPullRequests";
 import * as GitHubChangeRequestTemplate from "@t3tools/source-control-github/server/gitHubChangeRequestTemplate";
+import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
 import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
@@ -3308,11 +3309,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         ghScenario: {
-          failWith: new GitHubCli.GitHubCliAuthenticationError({
-            command: "gh",
-            cwd: repoDir,
-            cause: new Error("gh is not authenticated"),
-          }),
+          failWith: "GitHub is not authenticated.",
+          failCause: new GitHubCredentials.GitHubNotSignedInError({ host: "github.com" }),
         },
       });
       const logs: string[] = [];

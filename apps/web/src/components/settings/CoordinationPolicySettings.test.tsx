@@ -88,7 +88,7 @@ it("keeps invalid edits visible, then saves canonical limits for the selected en
     },
   });
   expect(renderer.root.findByProps({ role: "status" }).children.join("")).toContain(
-    "Active session budgets are unchanged",
+    "New delegated tasks use these limits",
   );
 });
 

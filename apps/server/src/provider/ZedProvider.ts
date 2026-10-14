@@ -96,7 +96,8 @@ function parseZedCatalog(output: string) {
       optionDescriptors:
         levels.length > 0
           ? [
-              {                id: "thinking_effort",
+              {
+                id: "thinking_effort",
                 label: "Thinking effort",
                 type: "select",
                 ...(defaultValue ? { currentValue: defaultValue } : {}),

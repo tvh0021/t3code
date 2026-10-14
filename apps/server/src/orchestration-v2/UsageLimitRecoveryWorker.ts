@@ -1,45 +1,20 @@
-// @effect-diagnostics deterministicKeys:off
 import {
   CommandId,
-  coordinationModelKey,
   MessageId,
-  type ModelSelection,
   type OrchestrationV2Command,
-  type ProviderInstanceId,
   type ServerProvider,
+  type ThreadId,
 } from "@t3tools/contracts";
-import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { firstEligibleQuotaFallback } from "./CoordinationQuotaPolicy.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-
-export interface ProviderRegistryShape {
-  readonly getProviders: Effect.Effect<ReadonlyArray<ServerProvider>>;
-  readonly refreshInstance: (
-    instanceId: ProviderInstanceId,
-  ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
-}
-
-export class ProviderRegistry extends Context.Service<
-  ProviderRegistry,
-  ProviderRegistryShape
->()("t3/provider/ProviderRegistry") {}
-
-export interface ThreadManagementServiceShape {
-  readonly dispatch: (
-    command: OrchestrationV2Command,
-  ) => Effect.Effect<unknown, never>;
-}
-
-export class ThreadManagementService extends Context.Service<
-  ThreadManagementService,
-  ThreadManagementServiceShape
->()("t3/orchestration-v2/ThreadManagementService") {}
+import * as ThreadManagement from "./ThreadManagementService.ts";
 
 /** The persisted run and reset form the identity of one recovery opportunity. */
 export function limitRecoveryCommand(
@@ -47,7 +22,10 @@ export function limitRecoveryCommand(
   autoResume: boolean,
   nowMs: number,
   snooze = false,
-  fallback?: { readonly provider: Pick<ServerProvider, "instanceId">; readonly model: string } | null,
+  fallback?: {
+    readonly provider: Pick<ServerProvider, "instanceId">;
+    readonly model: string;
+  } | null,
 ): OrchestrationV2Command | null {
   if (
     thread.status !== "failed" ||
@@ -132,9 +110,46 @@ export function limitRecoveryCommand(
 
 export const makeSweep = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
-  const threads = yield* ThreadManagementService;
+  const threads = yield* ThreadManagement.ThreadManagementService;
   const settings = yield* ServerSettings.ServerSettingsService;
+  // Personal fork: the server always provides this; upstream's tests do not.
   const providerRegistry = yield* Effect.serviceOption(ProviderRegistry);
+
+  /** A mapped fallback with quota to spare; stale snapshots are refreshed once before giving up. */
+  const findFallback = Effect.fn("UsageLimitRecoveryWorker.findFallback")(function* (
+    threadId: ThreadId,
+    fallbackModels: Readonly<Record<string, ReadonlyArray<string>>>,
+    thresholdPercent: number,
+    now: string,
+  ) {
+    if (Option.isNone(providerRegistry)) return undefined;
+    const registry = providerRegistry.value;
+    const shell = yield* projections.getThreadShell(threadId).pipe(Effect.option);
+    if (Option.isNone(shell) || !shell.value) return undefined;
+    const { modelSelection } = shell.value;
+    const resolve = (providers: ReadonlyArray<ServerProvider>) =>
+      firstEligibleQuotaFallback({
+        sourceModel: modelSelection.model,
+        sourceInstanceId: modelSelection.instanceId,
+        fallbackModels,
+        providers,
+        thresholdPercent,
+        now,
+      });
+    const providers = yield* registry.getProviders;
+    const cached = resolve(providers);
+    if (cached) return cached;
+    const mapped = new Set(Object.values(fallbackModels).flat());
+    let refreshed = providers;
+    for (const provider of providers) {
+      if (provider.instanceId === modelSelection.instanceId) continue;
+      if (!provider.models.some((entry) => mapped.has(entry.slug))) continue;
+      refreshed = yield* registry
+        .refreshInstance(provider.instanceId)
+        .pipe(Effect.orElseSucceed(() => refreshed));
+    }
+    return resolve(refreshed);
+  });
 
   return Effect.fn("UsageLimitRecoveryWorker.sweep")(function* () {
     const preferences = yield* settings.getSettings;
@@ -145,74 +160,18 @@ export const makeSweep = Effect.gen(function* () {
       snooze: preferences.snoozeLimitedThreads,
     });
     const nowMs = DateTime.toEpochMillis(now);
-    const nowIso = DateTime.formatIso(now);
-    const providers = Option.isSome(providerRegistry)
-      ? yield* providerRegistry.value.getProviders
-      : [];
-
+    const handoffEnabled =
+      preferences.autoResumeLimitedThreads &&
+      Object.keys(preferences.coordinationQuotaHandoffFallbacks).length > 0;
     for (const thread of candidates) {
-      let modelSelection: ModelSelection | undefined;
-      let providerInstanceId: ProviderInstanceId | undefined;
-
-      if (providers.length > 0) {
-        const shell = yield* projections.getThreadShell(thread.id).pipe(
-          Effect.option,
-          Effect.orElseSucceed(() => Option.none()),
-        );
-        if (Option.isSome(shell) && shell.value) {
-          modelSelection = shell.value.modelSelection;
-          providerInstanceId = shell.value.providerInstanceId;
-        }
-      }
-
-      let fallback =
-        modelSelection && providers.length > 0
-          ? firstEligibleQuotaFallback({
-              sourceModel: modelSelection.model,
-              sourceInstanceId: modelSelection.instanceId ?? providerInstanceId,
-              fallbackModels: preferences.coordinationQuotaHandoffFallbacks,
-              providers,
-              thresholdPercent: preferences.coordinationQuotaHandoffThresholdPercent,
-              now: nowIso,
-            })
-          : undefined;
-
-      if (!fallback && Option.isSome(providerRegistry) && modelSelection) {
-        const mappedModels =
-          preferences.coordinationQuotaHandoffFallbacks[modelSelection.model] ??
-          preferences.coordinationQuotaHandoffFallbacks[coordinationModelKey(modelSelection.model)] ??
-          preferences.coordinationQuotaHandoffFallbacks[modelSelection.instanceId] ??
-          [];
-
-        const candidateInstances = new Set(
-          providers
-            .filter(
-              (p) =>
-                p.instanceId !== (modelSelection?.instanceId ?? providerInstanceId) &&
-                mappedModels.some((m) => p.models.some((entry) => entry.slug === m)),
-            )
-            .map((p) => p.instanceId),
-        );
-
-        let refreshedProviders = providers;
-        for (const instanceId of candidateInstances) {
-          refreshedProviders = yield* providerRegistry.value
-            .refreshInstance(instanceId)
-            .pipe(Effect.catchCause(() => Effect.succeed(refreshedProviders)));
-        }
-
-        if (candidateInstances.size > 0) {
-          fallback = firstEligibleQuotaFallback({
-            sourceModel: modelSelection.model,
-            sourceInstanceId: modelSelection.instanceId ?? providerInstanceId,
-            fallbackModels: preferences.coordinationQuotaHandoffFallbacks,
-            providers: refreshedProviders,
-            thresholdPercent: preferences.coordinationQuotaHandoffThresholdPercent,
-            now: nowIso,
-          });
-        }
-      }
-
+      const fallback = handoffEnabled
+        ? yield* findFallback(
+            thread.id,
+            preferences.coordinationQuotaHandoffFallbacks,
+            preferences.coordinationQuotaHandoffThresholdPercent,
+            DateTime.formatIso(now),
+          )
+        : undefined;
       const command = limitRecoveryCommand(
         thread,
         preferences.autoResumeLimitedThreads,

@@ -197,7 +197,8 @@ const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 function isSourceControlAuthenticationCause(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const tag = "_tag" in error && typeof error._tag === "string" ? error._tag : null;
-  if (tag?.endsWith("AuthenticationError") === true) return true;
+  if (tag?.endsWith("AuthenticationError") === true || tag === "GitHubNotSignedInError")
+    return true;
   if (tag === "ForgejoCliError" && "reason" in error && error.reason === "authentication") {
     return true;
   }

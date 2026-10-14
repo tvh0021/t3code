@@ -1919,7 +1919,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         yield* fileSystem.readFileString(serverConfig.settingsPath),
         replacementKey,
       );
-    }).pipe(Effect.provide(makeServerSettingsLayer())),
+    }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 
   it.effect("materializes provider secrets for terminal environment resolution", () =>

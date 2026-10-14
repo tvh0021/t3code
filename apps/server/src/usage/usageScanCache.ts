@@ -15,9 +15,10 @@
  * @module usageScanCache
  */
 import type { UsageProviderKind } from "@t3tools/contracts";
-import type { TranscriptUsageFormat, UsageRecord, UsageSpeed } from "@t3tools/provider-core/server/usage";
+import type { TranscriptUsageFormat, UsageSpeed } from "@t3tools/provider-core/server/usage";
 import * as Schema from "effect/Schema";
 
+import type { CreditedUsageRecord as UsageRecord } from "./usageAggregation.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
 // v2: Codex fork-copy suppression changed what a file parses to, so v1
@@ -27,9 +28,10 @@ import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptRea
 // v4: records carry Claude fast mode, which v3 rows never captured.
 // v5: Codex records carry their service tier. v4 rows store speed the same
 // way, so v4 entries still load; see `decodeScanCache` for v4 stateful entries.
-// v6: records carry ChatLLM credits as an optional trailing field. Earlier
-// personal-fork builds wrote an incompatible v5 layout to the legacy file;
-// treating it as older re-parses stateful entries and rejects mismatched rows.
+// v6: records carry ChatLLM credits and the Codex credit balance as optional
+// trailing fields. Earlier personal-fork builds wrote an incompatible v5 layout
+// to the legacy file; treating it as older re-parses stateful entries and
+// rejects mismatched rows.
 const USAGE_SCAN_CACHE_VERSION = 6 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 
@@ -37,26 +39,24 @@ const SPEED_COMPATIBLE_SINCE_VERSION = 4;
  * Each cache version writes its own file in the state directory. An older
  * server sharing that directory cannot read a newer cache and would replace
  * it, dropping saved usage for deleted transcripts. Separate files keep both.
+ * A current server reads the legacy file once, when its own file is missing.
  */
-export const SCAN_CACHE_FILE_NAME = `usage-scan-cache.v${USAGE_SCAN_CACHE_VERSION}.json`;
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v6.json";
 export const LEGACY_SCAN_CACHE_FILE_NAME = "usage-scan-cache.json";
 
+/** Serialised as the index into this list. */
 const SPEEDS: readonly UsageSpeed[] = ["standard", "fast", "ultrafast"];
 
 export interface CachedFile {
   readonly size: number;
   readonly mtimeMs: number;
   readonly provider: UsageProviderKind;
-  /**
-   * Usage events at or before `position.resumeOffset`. These are never altered
-   * when a growing file is resumed, because the format reducer has advanced
-   * past them.
-   */
+  /** Records from newline-terminated lines, up to `position.resumeOffset`. */
   readonly records: readonly UsageRecord[];
   /**
-   * Usage events from the tail window after `position.resumeOffset`. These are
-   * held in memory for fast cache hits on unchanged files, but dropped on
-   * resume: the tail parser re-emits them with any newly appended events.
+   * Records from a trailing segment the writer had not newline-terminated at
+   * parse time. Kept apart from `records` because an incremental parse
+   * re-reads that segment and would otherwise double count it.
    */
   readonly tailRecords: readonly UsageRecord[];
   readonly position: TranscriptParsePosition;
@@ -181,32 +181,25 @@ export function encodeScanCache(cache: ScanCache): SerializedCache {
  *
  * Writes the same document as `encodeScanCache`. Most entries never change
  * between scans, and encoding all of them made each persist cost close to a
- * full cold read (~25ms CPU per call on 90 days).
+ * second on a large cache. Entries are replaced, never mutated, when their file
+ * changes, so an entry's JSON is memoised by identity. The intern tables only
+ * grow, so a memoised entry's indexes stay valid; a pruned entry can leave an
+ * unused string behind until the next process start.
  */
 export function makeScanCacheWriter(): (
   cache: ScanCache,
-  extra?: Readonly<Record<string, unknown>>,
+  extra: Readonly<Record<string, unknown>>,
 ) => string {
   const tables = makeInternTables();
-  const fileFragments = new Map<string, { size: number; mtime: number; fragment: string }>();
-
-  return (cache, extra = {}) => {
-    // Drop removed files first so their fragment memory does not leak.
-    for (const path of fileFragments.keys()) {
-      if (!cache.has(path)) fileFragments.delete(path);
-    }
+  const fragments = new WeakMap<CachedFile, string>();
+  return (cache, extra) => {
     const files: string[] = [];
     for (const [path, entry] of cache) {
-      let held = fileFragments.get(path);
-      if (held === undefined || held.size !== entry.size || held.mtime !== entry.mtimeMs) {
-        held = {
-          size: entry.size,
-          mtime: entry.mtimeMs,
-          fragment: JSON.stringify(serializeFile(entry, tables)),
-        };
-        fileFragments.set(path, held);
+      let fragment = fragments.get(entry);
+      if (fragment === undefined) {
+        fragment = JSON.stringify(serializeFile(entry, tables));
+        fragments.set(entry, fragment);
       }
-      const fragment = held.fragment;
       files.push(`${JSON.stringify(path)}:${fragment}`);
     }
     // Encoded after the files, which may have added to the intern tables.
@@ -409,33 +402,34 @@ function makeStateValidators(
 
 /** Keeps saved usage after transcript cleanup, until the reporting retention expires. */
 export function pruneScanCache(cache: ScanCache, retentionCutoffMs: number): number {
-  let dropped = 0;
+  let removed = 0;
   for (const [path, entry] of cache) {
     if (entry.mtimeMs < retentionCutoffMs) {
       cache.delete(path);
-      dropped += 1;
+      removed += 1;
     }
   }
-  return dropped;
+  return removed;
 }
 
 /**
- * Drops records whose dedupe key was already seen earlier in the same file.
- * Records with `dedupeKey: null` are kept unconditionally.
+ * Within-file de-duplication, applied before an entry is cached.
+ *
+ * Callers stitching an incremental parse together pass one `seen` set across
+ * the line and tail record batches so the whole file stays deduplicated as a
+ * unit; the set is mutated in place.
  */
 export function dedupeWithinFile(
   records: readonly UsageRecord[],
   seen: Set<string> = new Set(),
 ): readonly UsageRecord[] {
-  const out: UsageRecord[] = [];
+  const kept: UsageRecord[] = [];
   for (const record of records) {
-    if (record.dedupeKey === null) {
-      out.push(record);
-      continue;
+    if (record.dedupeKey !== null) {
+      if (seen.has(record.dedupeKey)) continue;
+      seen.add(record.dedupeKey);
     }
-    if (seen.has(record.dedupeKey)) continue;
-    seen.add(record.dedupeKey);
-    out.push(record);
+    kept.push(record);
   }
-  return out;
+  return kept;
 }

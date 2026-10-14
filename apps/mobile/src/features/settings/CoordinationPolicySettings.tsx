@@ -51,7 +51,7 @@ export function CoordinationPolicySettings({
         setThresholdDraft(null);
         Alert.alert(
           "Limits saved",
-          "Future T3 orchestration layers use these limits. Active session budgets are unchanged.",
+          "New delegated tasks use these limits.",
         );
       }
     } catch (error) {
@@ -73,7 +73,7 @@ export function CoordinationPolicySettings({
       Alert.alert(
         result._tag === "Success" ? "Model policy refreshed" : "Refresh failed",
         result._tag === "Success"
-          ? "Future T3 orchestration layers use updated models and prices."
+          ? "New delegated tasks use updated models and prices."
           : "The previous policy remains available.",
       );
     } finally {
@@ -81,7 +81,7 @@ export function CoordinationPolicySettings({
     }
   };
   return (
-    <SettingsSection title={`T3 orchestration layer limits · ${environmentLabel}`}>
+    <SettingsSection title={`Delegated task limits · ${environmentLabel}`}>
       <View className="gap-3 p-4">
         <AppText>
           Monthly maintenance refreshes models and pricing. Output prices above $10 per million
@@ -103,8 +103,8 @@ export function CoordinationPolicySettings({
         />
         <MaterialButton label="Save limits" disabled={pending} onPress={() => void save()} />
         <AppText>
-          Interrupt opted-in T3 orchestration layers when any reported quota window reaches this
-          percentage.
+          When a thread hits a usage limit and auto-resume is on, switch to a fallback only if its
+          quota windows are below this percentage.
         </AppText>
         <TextInput
           accessibilityLabel="Quota handoff threshold"

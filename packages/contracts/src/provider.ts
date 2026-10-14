@@ -54,7 +54,6 @@ export const ProviderSession = Schema.Struct({
 export type ProviderSession = typeof ProviderSession.Type;
 
 export const ProviderSessionStartInput = Schema.Struct({
-  coordinationRole: Schema.optional(Schema.Literals(["parent", "review", "edit"])),
   threadId: ThreadId,
   provider: Schema.optional(ProviderDriverKind),
   // See ProviderSession for the migration story.

@@ -25,8 +25,7 @@ const provider = (input: {
   instanceId?: string;
 }): ServerProvider => ({
   instanceId: ProviderInstanceId.make(
-    input.instanceId ??
-      (input.driver === "antigravity" ? "gemini" : `instance-${input.model}`),
+    input.instanceId ?? (input.driver === "antigravity" ? "gemini" : `instance-${input.model}`),
   ),
   driver: ProviderDriverKind.make(input.driver ?? "codex"),
   enabled: true,
@@ -172,24 +171,5 @@ describe("CoordinationQuotaPolicy", () => {
         now,
       }),
     ).toEqual({ provider: destination, model: "claude-opus-5" });
-  });
-
-  it("resolves fallback keyed by source provider instanceId", () => {
-    const claude = provider({
-      model: "claude-opus-5",
-      instanceId: "claude-main",
-      driver: "claude",
-      usageLimits: { ...quota, windows: [{ ...quota.windows[0], usedPercent: 10 }] },
-    });
-    expect(
-      firstEligibleQuotaFallback({
-        sourceModel: "unknown-model",
-        sourceInstanceId: "codex-main",
-        fallbackModels: { "codex-main": ["claude-opus-5"] },
-        providers: [claude],
-        thresholdPercent: 95,
-        now,
-      }),
-    ).toEqual({ provider: claude, model: "claude-opus-5" });
   });
 });

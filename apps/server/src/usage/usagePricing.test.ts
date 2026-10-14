@@ -68,9 +68,9 @@ describe("usage pricing", () => {
     const variantOnly = createOverrideRateTable({
       "claude-sonnet-5-5-high": { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 4 },
     });
-    expect(
-      priceUsage(table, record("claude-sonnet-5-5-low"), variantOnly).costUsd,
-    ).toBeCloseTo(14.6);
+    expect(priceUsage(table, record("claude-sonnet-5-5-low"), variantOnly).costUsd).toBeCloseTo(
+      14.6,
+    );
   });
 
   it("uses custom token rates ahead of public and provider-reported costs", () => {

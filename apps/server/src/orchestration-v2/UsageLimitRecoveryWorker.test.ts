@@ -18,12 +18,9 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import {
-  limitRecoveryCommand,
-  makeSweep,
-  ProviderRegistry,
-  ThreadManagementService,
-} from "./UsageLimitRecoveryWorker.ts";
+import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
+import { ThreadManagementService } from "./ThreadManagementService.ts";
+import { limitRecoveryCommand, makeSweep } from "./UsageLimitRecoveryWorker.ts";
 
 const quota = (checkedAt: string, resetAt: string, usedPercent = 20) =>
   ({
@@ -59,7 +56,9 @@ const makeCandidate = (
   ...overrides,
 });
 
-const makeShell = (candidate: ProjectionStore.ProjectionLimitRecoveryCandidate): OrchestrationV2ThreadShell =>
+const makeShell = (
+  candidate: ProjectionStore.ProjectionLimitRecoveryCandidate,
+): OrchestrationV2ThreadShell =>
   ({
     ...candidate,
     title: "Test Thread",
@@ -171,8 +170,12 @@ describe("UsageLimitRecoveryWorker limitRecoveryCommand", () => {
     const command = limitRecoveryCommand(candidate, true, nowMs, false, fallback);
     expect(command).toEqual({
       type: "message.dispatch",
-      commandId: CommandId.make(`limit-fallback:thread-1:run-1:${resetMs}:fallback:claude:claude-sonnet-4-6`),
-      messageId: MessageId.make(`limit-fallback:thread-1:run-1:${resetMs}:fallback:claude:claude-sonnet-4-6`),
+      commandId: CommandId.make(
+        `limit-fallback:thread-1:run-1:${resetMs}:fallback:claude:claude-sonnet-4-6`,
+      ),
+      messageId: MessageId.make(
+        `limit-fallback:thread-1:run-1:${resetMs}:fallback:claude:claude-sonnet-4-6`,
+      ),
       threadId: candidate.id,
       usageLimitContinuationOfRunId: candidate.latestRunId,
       modelSelection: {
@@ -240,15 +243,10 @@ describe("UsageLimitRecoveryWorker makeSweep", () => {
         getThread: () => Effect.succeed(null),
       } as unknown as ProjectionStore.ProjectionStoreV2["Service"]);
 
-      const mockThreadManagement = Layer.succeed(
-        ThreadManagementService,
-        {
-          dispatch: (cmd: OrchestrationV2Command) =>
-            Ref.update(dispatchedCommands, (prev) => [...prev, cmd]).pipe(
-              Effect.as({} as any),
-            ),
-        },
-      );
+      const mockThreadManagement = Layer.succeed(ThreadManagementService, {
+        dispatch: (cmd: OrchestrationV2Command) =>
+          Ref.update(dispatchedCommands, (prev) => [...prev, cmd]),
+      } as unknown as ThreadManagementService["Service"]);
 
       let currentProviders = [...params.providers];
       const mockProviderRegistry = Layer.succeed(ProviderRegistry, {
@@ -262,16 +260,11 @@ describe("UsageLimitRecoveryWorker makeSweep", () => {
               return currentProviders;
             }),
           ),
-      });
+      } as unknown as ProviderRegistry["Service"]);
 
       const sweep = yield* makeSweep.pipe(
         Effect.provide(
-          Layer.mergeAll(
-            mockSettings,
-            mockProjections,
-            mockThreadManagement,
-            mockProviderRegistry,
-          ),
+          Layer.mergeAll(mockSettings, mockProjections, mockThreadManagement, mockProviderRegistry),
         ),
       );
 

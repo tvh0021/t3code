@@ -92,7 +92,7 @@ import {
   EnvironmentAuthorizationError,
   type ProjectId,
   type ProviderDriverKind,
-  type ProviderInstanceId,
+  ProviderInstanceId,
   ThreadId,
   type TerminalAttachStreamEvent,
   type TerminalError,
@@ -117,6 +117,7 @@ import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
+import * as CoordinationPolicy from "./orchestration-v2/CoordinationPolicy.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
@@ -1290,6 +1291,7 @@ const layerWsRpc = (
       const modelManifest = yield* ModelManifest.ModelManifest;
       const providerLatestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+      const coordinationPolicy = yield* CoordinationPolicy.CoordinationPolicy;
       const acpRegistryCatalog = yield* AcpRegistrySupport.AcpRegistryCatalog;
       const acpRegistryRuntimeCoordinator =
         yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
@@ -2268,6 +2270,19 @@ const layerWsRpc = (
                 providers = yield* providerRegistry.refreshInstance(instance.instanceId);
               }
             }
+            // Settings' model budget refresh; prices and catalogs were just reloaded above.
+            if (input.refreshCoordinationPolicy)
+              yield* coordinationPolicy.read(true, !input.refreshModels).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ProviderSetupError({
+                      instanceId: ProviderInstanceId.make("coordination"),
+                      operation: "configure",
+                      detail: cause.message,
+                      cause,
+                    }),
+                ),
+              );
             return { providers };
           }),
         [WS_METHODS.mcpAppsCallTool]: (input) => mcpAppRequests.callTool(input),

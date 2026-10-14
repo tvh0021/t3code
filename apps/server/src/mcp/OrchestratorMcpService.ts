@@ -56,9 +56,6 @@ import {
   type ScheduledTaskUpsertInput,
   type ServerProvider,
   ThreadId,
-  coordinationLimit,
-  coordinationModelKey,
-  DEFAULT_COORDINATION_LIMITS,
 } from "@t3tools/contracts";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Clock from "effect/Clock";
@@ -73,11 +70,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
-import { coordinationReviewDir } from "../orchestration-v2/coordinationIds.ts";
-import * as ProcessRunner from "../processRunner.ts";
-import * as ServerConfig from "../config.ts";
+import { DelegationGuards } from "../orchestration-v2/delegationGuards.ts";
 
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import {
@@ -913,10 +906,8 @@ const make = Effect.gen(function* () {
   const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
   const projects = yield* ProjectService.ProjectService;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  const fsOpt = yield* Effect.serviceOption(FileSystem.FileSystem);
-  const pathOpt = yield* Effect.serviceOption(Path.Path);
-  const serverConfigOpt = yield* Effect.serviceOption(ServerConfig.ServerConfig);
-  const processRunnerOpt = yield* Effect.serviceOption(ProcessRunner.ProcessRunner);
+  // Personal fork: the server always provides these; upstream's tests do not.
+  const delegationGuards = yield* Effect.serviceOption(DelegationGuards);
 
   /** A caller-named project, which must exist before anything is recorded against it. */
   const requireProject = (projectId: ProjectId) =>
@@ -2006,151 +1997,24 @@ const make = Effect.gen(function* () {
           input.interactionMode,
         );
 
-        if (!isRetryOfAcceptedDelegation) {
-          const settings = yield* serverSettings.getSettings.pipe(
-            Effect.mapError((err) =>
-              failure("orchestration_error", `Could not read server settings: ${err.message}`),
-            ),
-          );
-          const overrides = {
-            ...DEFAULT_COORDINATION_LIMITS,
-            ...Object.fromEntries(
-              Object.entries(settings.coordinationModelLimits ?? {}).map(([model, limit]) => [
-                coordinationModelKey(model),
-                limit,
-              ]),
-            ),
-          };
-          const targetModel = target.modelSelection.model;
-          const modelKey = coordinationModelKey(targetModel);
-          const limit = coordinationLimit(targetModel, undefined, overrides);
-          if (limit !== undefined && limit !== null) {
-            const used = parent.subagents.filter((subagent) => {
-              if (subagent.origin !== "app_owned") return false;
-              const m = subagent.model ?? subagent.modelSelection?.model;
-              return m !== null && m !== undefined && coordinationModelKey(m) === modelKey;
-            }).length;
-            if (used >= limit) {
-              return yield* failure(
-                "invalid_request",
-                `Turn budget exceeded for model "${targetModel}". Limit is ${limit} turns.`,
-              );
-            }
+        // Retries of an accepted delegation were already counted and snapshotted.
+        let reviewSnapshotPath: string | undefined;
+        if (!isRetryOfAcceptedDelegation && Option.isSome(delegationGuards)) {
+          const guards = delegationGuards.value;
+          yield* guards
+            .checkTurnBudget(parent.subagents, target.modelSelection.model)
+            .pipe(Effect.mapError((message) => failure("invalid_request", message)));
+          if (input.reviewRef !== undefined) {
+            const project = yield* requireProject(parent.thread.projectId);
+            reviewSnapshotPath = yield* guards
+              .prepareReviewSnapshot(
+                parent.thread.worktreePath ?? project.workspaceRoot,
+                input.reviewRef,
+              )
+              .pipe(Effect.mapError((message) => failure("invalid_request", message)));
           }
-        }
-
-        const removeSnapshot = (target: string) =>
-          fsOpt._tag === "Some"
-            ? fsOpt.value.remove(target, { recursive: true }).pipe(Effect.orElseSucceed(() => undefined))
-            : Effect.void;
-
-        let delegatedWorktreePath: string | undefined;
-        if (input.reviewRef !== undefined && !isRetryOfAcceptedDelegation) {
-          if (
-            processRunnerOpt._tag === "None" ||
-            fsOpt._tag === "None" ||
-            pathOpt._tag === "None" ||
-            serverConfigOpt._tag === "None"
-          ) {
-            return yield* failure(
-              "invalid_request",
-              "Review snapshots are not supported in this runtime environment.",
-            );
-          }
-          const processRunner = processRunnerOpt.value;
-          const fs = fsOpt.value;
-          const path = pathOpt.value;
-          const config = serverConfigOpt.value;
-          const project = yield* requireProject(parent.thread.projectId);
-          const cwd = parent.thread.worktreePath ?? project.workspaceRoot;
-
-          const revision = yield* processRunner
-            .run({
-              command: "git",
-              args: ["rev-parse", "--verify", "--end-of-options", `${input.reviewRef}^{commit}`],
-              cwd,
-              timeout: "10 seconds",
-            })
-            .pipe(
-              Effect.mapError((error) =>
-                failure(
-                  "invalid_request",
-                  `Failed to resolve review revision "${input.reviewRef}": ${error.message}`,
-                ),
-              ),
-            );
-          const resolvedRef = revision.stdout.trim();
-          if (revision.code !== 0 || !/^[a-f0-9]{40,64}$/.test(resolvedRef)) {
-            return yield* failure(
-              "invalid_request",
-              `The review revision "${input.reviewRef}" is not an existing Git commit.`,
-            );
-          }
-          const snapshotId = ThreadId.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie));
-          const snapshotPath = coordinationReviewDir(config, snapshotId, path);
-          yield* fs.makeDirectory(path.dirname(snapshotPath), { recursive: true }).pipe(
-            Effect.mapError((error) =>
-              failure(
-                "orchestration_error",
-                `Could not create review snapshot directory: ${error.message}`,
-              ),
-            ),
-          );
-          yield* Effect.gen(function* () {
-            const cloned = yield* processRunner
-              .run({
-                command: "git",
-                args: [
-                  "clone",
-                  "--local",
-                  "--no-hardlinks",
-                  "--no-checkout",
-                  "--",
-                  cwd,
-                  snapshotPath,
-                ],
-                cwd,
-                timeout: "30 seconds",
-              })
-              .pipe(
-                Effect.mapError((error) =>
-                  failure(
-                    "invalid_request",
-                    `Could not clone the review revision: ${error.message}`,
-                  ),
-                ),
-              );
-            if (cloned.code !== 0) {
-              return yield* failure(
-                "invalid_request",
-                `Could not clone the review revision: ${cloned.stderr.slice(0, 500)}`,
-              );
-            }
-            const checkout = yield* processRunner
-              .run({
-                command: "git",
-                args: ["checkout", "--detach", resolvedRef],
-                cwd: snapshotPath,
-                timeout: "30 seconds",
-              })
-              .pipe(
-                Effect.mapError((error) =>
-                  failure(
-                    "invalid_request",
-                    `Could not check out the review revision: ${error.message}`,
-                  ),
-                ),
-              );
-            if (checkout.code !== 0) {
-              return yield* failure(
-                "invalid_request",
-                "Could not check out the review revision.",
-              );
-            }
-          }).pipe(
-            Effect.onError(() => removeSnapshot(snapshotPath)),
-          );
-          delegatedWorktreePath = snapshotPath;
+        } else if (input.reviewRef !== undefined && Option.isNone(delegationGuards)) {
+          return yield* failure("invalid_request", "Review snapshots are unavailable here.");
         }
 
         // ThreadManagementService.dispatch is the chokepoint for this command
@@ -2170,7 +2034,7 @@ const make = Effect.gen(function* () {
             modelSelection: target.modelSelection,
             runtimeMode,
             interactionMode,
-            ...(delegatedWorktreePath !== undefined ? { worktreePath: delegatedWorktreePath } : {}),
+            ...(reviewSnapshotPath !== undefined ? { worktreePath: reviewSnapshotPath } : {}),
             // Async delegations wake the parent on every child terminal; wait
             // delegations deliver through the blocking tool call, so a wake is
             // only needed if the parent settled first (timeout, disconnect).
@@ -2178,9 +2042,9 @@ const make = Effect.gen(function* () {
           })
           .pipe(
             Effect.onError(() =>
-              delegatedWorktreePath !== undefined
-                ? removeSnapshot(delegatedWorktreePath)
-                : Effect.void,
+              reviewSnapshotPath === undefined || Option.isNone(delegationGuards)
+                ? Effect.void
+                : delegationGuards.value.removeReviewSnapshot(reviewSnapshotPath),
             ),
             Effect.mapError((error) =>
               error._tag === "ThreadManagementProviderInstanceDisabledError"

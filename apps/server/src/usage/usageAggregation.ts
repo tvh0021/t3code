@@ -26,7 +26,8 @@ import { EMPTY_TOTALS, type UsageRecord } from "@t3tools/provider-core/server/us
 import { cacheSavingsUsd, priceUsage, type RateTable } from "./usagePricing.ts";
 
 /**
- * Formats an instant as a `YYYY-MM-DD` day in `timeZone`.\n *
+ * Formats an instant as a `YYYY-MM-DD` day in `timeZone`.
+ *
  * `en-CA` yields ISO-ordered parts, which is why it is used here rather than
  * assembling the day from `Date` getters (those are host-local only).
  */
@@ -86,9 +87,15 @@ interface MutableBucket {
 }
 
 /**
- * UsageRecord carrying optional credits directly on the provider-core type.
+ * Credit-billed records (ChatLLM, Codex credits) carry the credits spent.
+ * Credit and subscription usage of one model land in separate buckets.
+ * Codex records also carry the raw account balance, which
+ * `reconcileCodexCreditUsage` turns into credits across rollouts.
  */
-export type CreditedUsageRecord = UsageRecord;
+export type CreditedUsageRecord = UsageRecord & {
+  readonly credits?: number | null;
+  readonly creditBalance?: number | null;
+};
 
 export interface AggregateOptions {
   readonly timeZone: string;
@@ -179,7 +186,7 @@ export class UsageAggregator {
    * can derive per-window facts (distinct sessions, for one) from the records
    * that landed rather than everything the mtime prefilter happened to admit.
    */
-  add(input: UsageRecord, sourcePath?: string): boolean {
+  add(input: CreditedUsageRecord, sourcePath?: string): boolean {
     const record = this.#mapModel(input);
     if (record.dedupeKey !== null) {
       if (this.#seen.has(record.dedupeKey)) {
@@ -273,7 +280,7 @@ export class UsageAggregator {
   }
 
   /** The target's own rate applies, so a provider-specific `rateModel` is dropped. */
-  #mapModel(record: UsageRecord): UsageRecord {
+  #mapModel(record: CreditedUsageRecord): CreditedUsageRecord {
     const model = this.#options.modelAliases?.get(record.model);
     if (model === undefined) return record;
     const { rateModel: _rateModel, ...rest } = record;
@@ -407,5 +414,3 @@ function resolveCostSource(bucket: MutableBucket): UsageBucket["costSource"] {
   if (bucket.providerReportedRecords === bucket.records) return "providerReported";
   return "modelPriced";
 }
-
-export { reconcileCodexCreditUsage } from "../provider/Drivers/codexUsage.ts";
