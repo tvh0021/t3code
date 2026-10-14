@@ -128,6 +128,7 @@ describe("Antigravity subscription limits", () => {
       });
       expect(byId.get("3p-5h")).toMatchObject({ kind: "session", windowDurationMins: 300 });
       expect(byId.get("3p-5h")?.usedPercent).toBeCloseTo(56);
+      expect(limits.windows.map((w) => w.windowDurationMins)).toEqual([300, 300, 10080, 10080]);
       yield* probe;
       expect(requests.filter((request) => request.url.endsWith("/token"))).toHaveLength(1);
       expect(

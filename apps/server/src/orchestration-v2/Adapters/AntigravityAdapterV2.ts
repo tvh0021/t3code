@@ -33,6 +33,7 @@ import {
   extractAntigravityUserInputQuestion,
   makeAntigravityUserInputResponse,
   normalizeAntigravityToolCall,
+  parseAntigravityTaskNotification,
 } from "../../provider/acp/AntigravityProtocol.ts";
 import {
   AcpProviderCapabilitiesV2,
@@ -221,6 +222,30 @@ export function makeAntigravityAcpAdapterFlavor(
     },
     normalizeToolCall: normalizeAntigravityToolCall,
     extractSubagentUpdate: extractAntigravitySubagentUpdate,
+    extractBackgroundTaskId: (toolCall) => {
+      const text = `${toolCall.detail ?? ""} ${toolCall.title ?? ""} ${JSON.stringify(toolCall.data ?? "")}`;
+      return /\b([^\s<>"'\\]+\/task-\d+)\b/.exec(text)?.[1];
+    },
+    extractBackgroundToolMutation: (text) => {
+      const match = /<task_notification>\s*Task ([^\s<>]+) completed with status:/i.exec(text);
+      if (match?.[1]) {
+        const idx = match[1].lastIndexOf("/task-");
+        if (idx !== -1) {
+          const sessionId = match[1].slice(0, idx);
+          const parsed = parseAntigravityTaskNotification(text, sessionId);
+          if (parsed) {
+            return [
+              {
+                taskId: parsed.taskId,
+                status: parsed.status === "failed" ? "failed" : "completed",
+                appendOutput: parsed.summary ? `${parsed.summary}\n` : "",
+              },
+            ];
+          }
+        }
+      }
+      return [];
+    },
     supportsImagePrompts: true,
     supportsCompaction: true,
   };
