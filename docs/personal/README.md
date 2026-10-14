@@ -1,7 +1,7 @@
 # Personal fork notes
 
 This folder records the changes to the personal T3 Code fork. The latest
-recorded release is Personal 0.3.3. On October 13, 2026 the fork was synced
+recorded release is Personal 0.4.0. On October 13, 2026 the fork was synced
 onto upstream's orchestration-v2; see the [changelog](./CHANGELOG.md).
 
 - [Verification record](./VERIFICATION.md) is the canonical record of the latest

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
-import { coordinationProviderIssue } from "../provider/coordinationWorkerPolicy.ts";
 import { firstEligibleQuotaFallback, quotaWindowVerdict } from "./CoordinationQuotaPolicy.ts";
 
 const now = "2026-09-28T12:00:00.000Z";
@@ -142,8 +141,7 @@ describe("CoordinationQuotaPolicy", () => {
         providers: [gemini],
         thresholdPercent: 95,
         now,
-        canRunProviderModel: (candidate) =>
-          coordinationProviderIssue(candidate.driver, "parent") === undefined,
+        canRunProviderModel: (candidate) => candidate.driver === "antigravity",
       }),
     ).toEqual({ provider: gemini, model: "gemini-3.8-flash-high" });
   });

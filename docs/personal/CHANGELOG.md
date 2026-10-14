@@ -216,3 +216,12 @@ with orchestration-v2 and moved providers into `packages/provider-*`.
 - Adopted upstream's Antigravity quota probe, its shared "Claude & GPT" bucket and its SQLite usage scanner. ChatLLM keeps the live turn-usage writer.
 - Ported the Zed and ChatLLM providers to orchestration-v2 adapters and drivers. Kept upstream's usage scan cache and added the Codex credit balance to its v6 rows.
 - Verification: server, contracts, client-runtime, provider-core, web and desktop typechecks passed. 700+ focused tests passed across the touched areas. Migrations ran cleanly on a read-only copy of the personal V1 database. Two upstream Antigravity client-file tests fail on macOS: new files under not-yet-created directories in a symlinked temp path are rejected. That code is upstream's and unchanged here. Mobile, the installed app and live delegation and quota handoff were not exercised.
+
+### 2026-10-14: Personal 0.4.0
+
+Feature release of the upstream orchestration-v2 sync above.
+
+- Clearing the delegated task limit overrides now removes them. The server had deep-merged the empty map, so a cleared field reported success but kept the old entries. This bug predates the sync.
+- Removed `coordinationWorkerPolicy.ts`, which only the removed orchestration-layer code used.
+- Dev desktop verification, October 14: two GPT-6.1 Sol High workers drove an isolated `vp run dev:desktop` with this worktree's migrated September dev state (14 projects, 322 threads). Passed: migrated history, Settings, Usage, personal header and fonts, Zed/ChatLLM/Antigravity listing, two Codex Luna turns with thread reopen, a `delegate_task` Luna child shown under Previous agents, and saving then clearing a delegated limit override. Not exercised: a live quota fallback and a `reviewRef` review snapshot. Evidence: `/private/tmp/t3-sync-verification/` (local, not preserved).
+- Installed-app verification: pending.

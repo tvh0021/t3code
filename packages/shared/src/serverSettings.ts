@@ -402,8 +402,9 @@ export function applyServerSettingsPatch(
     sourceControlHosts: sourceControlHostsPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
     usageModelAliases: usageModelAliasesPatch,
-    // Users edit this complete ordered model map in one settings field.
+    // Users edit these complete model maps in one settings field each.
     coordinationQuotaHandoffFallbacks: quotaHandoffFallbacksPatch,
+    coordinationModelLimits: coordinationModelLimitsPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesPatch,
     // Already translated into `projectSettingsOverrides` above; the legacy
@@ -502,6 +503,9 @@ export function applyServerSettingsPatch(
     ...(quotaHandoffFallbacksPatch === undefined
       ? {}
       : { coordinationQuotaHandoffFallbacks: quotaHandoffFallbacksPatch }),
+    ...(coordinationModelLimitsPatch === undefined
+      ? {}
+      : { coordinationModelLimits: coordinationModelLimitsPatch }),
     ...(worktreeCleanupPatch === undefined
       ? {}
       : {

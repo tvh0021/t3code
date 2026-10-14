@@ -108,6 +108,16 @@ describe("serverSettings helpers", () => {
     ).toEqual({});
   });
 
+  it("replaces delegated task limit overrides so a blank field restores defaults", () => {
+    const custom = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      coordinationModelLimits: { "gpt-6-luna": 3 },
+    });
+    expect(custom.coordinationModelLimits).toEqual({ "gpt-6-luna": 3 });
+    expect(
+      applyServerSettingsPatch(custom, { coordinationModelLimits: {} }).coordinationModelLimits,
+    ).toEqual({});
+  });
+
   it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {
     const project = { id: ProjectId.make("project-actions"), scripts: [] };
     const action = {
