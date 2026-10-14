@@ -1,4 +1,8 @@
-import type { ServerProvider, ServerProviderUsageLimits } from "@t3tools/contracts";
+import {
+  coordinationModelKey,
+  type ServerProvider,
+  type ServerProviderUsageLimits,
+} from "@t3tools/contracts";
 
 type QuotaWindowVerdict =
   | { readonly status: "unknown"; readonly reason: string }
@@ -41,6 +45,7 @@ export const isProviderReadyForHandoff = (provider: ServerProvider | undefined):
 /** Resolve the first mapped model whose provider is ready and whose quota is known to be usable. */
 export function firstEligibleQuotaFallback(input: {
   readonly sourceModel: string;
+  readonly sourceInstanceId?: string;
   readonly fallbackModels: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly thresholdPercent: number;
@@ -48,11 +53,18 @@ export function firstEligibleQuotaFallback(input: {
   readonly canRunModel?: (model: string) => boolean;
   readonly canRunProviderModel?: (provider: ServerProvider, model: string) => boolean;
 }): { readonly provider: ServerProvider; readonly model: string } | undefined {
-  for (const model of input.fallbackModels[input.sourceModel] ?? []) {
+  const modelKey = coordinationModelKey(input.sourceModel);
+  const fallbacks =
+    input.fallbackModels[input.sourceModel] ??
+    input.fallbackModels[modelKey] ??
+    (input.sourceInstanceId ? input.fallbackModels[input.sourceInstanceId] : undefined) ??
+    [];
+  for (const model of fallbacks) {
     if (input.canRunModel && !input.canRunModel(model)) continue;
     const candidates = input.providers.filter(
       (candidate) =>
         isProviderReadyForHandoff(candidate) &&
+        (!input.sourceInstanceId || candidate.instanceId !== input.sourceInstanceId) &&
         (!input.canRunProviderModel || input.canRunProviderModel(candidate, model)) &&
         candidate.models.some((entry) => entry.slug === model && entry.isLegacy !== true),
     );

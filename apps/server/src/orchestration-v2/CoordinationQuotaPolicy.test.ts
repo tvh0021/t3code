@@ -21,10 +21,12 @@ const provider = (input: {
   model: string;
   usageLimits?: ServerProvider["usageLimits"];
   status?: ServerProvider["status"];
-  driver?: "codex" | "antigravity";
+  driver?: "codex" | "antigravity" | "claude";
+  instanceId?: string;
 }): ServerProvider => ({
   instanceId: ProviderInstanceId.make(
-    input.driver === "antigravity" ? "gemini" : `instance-${input.model}`,
+    input.instanceId ??
+      (input.driver === "antigravity" ? "gemini" : `instance-${input.model}`),
   ),
   driver: ProviderDriverKind.make(input.driver ?? "codex"),
   enabled: true,
@@ -145,5 +147,49 @@ describe("CoordinationQuotaPolicy", () => {
           coordinationProviderIssue(candidate.driver, "parent") === undefined,
       }),
     ).toEqual({ provider: gemini, model: "gemini-3.8-flash-high" });
+  });
+
+  it("resolves canonical model keys and excludes the limited source instance", () => {
+    const source = provider({
+      model: "gpt-6-sol",
+      instanceId: "codex-main",
+      driver: "codex",
+      usageLimits: { ...quota, windows: [{ ...quota.windows[0], usedPercent: 100 }] },
+    });
+    const destination = provider({
+      model: "claude-opus-5",
+      instanceId: "claude-main",
+      driver: "claude",
+      usageLimits: { ...quota, windows: [{ ...quota.windows[0], usedPercent: 10 }] },
+    });
+    expect(
+      firstEligibleQuotaFallback({
+        sourceModel: "openai/6-sol-latest",
+        sourceInstanceId: "codex-main",
+        fallbackModels: { "gpt-6-sol": ["claude-opus-5"] },
+        providers: [source, destination],
+        thresholdPercent: 95,
+        now,
+      }),
+    ).toEqual({ provider: destination, model: "claude-opus-5" });
+  });
+
+  it("resolves fallback keyed by source provider instanceId", () => {
+    const claude = provider({
+      model: "claude-opus-5",
+      instanceId: "claude-main",
+      driver: "claude",
+      usageLimits: { ...quota, windows: [{ ...quota.windows[0], usedPercent: 10 }] },
+    });
+    expect(
+      firstEligibleQuotaFallback({
+        sourceModel: "unknown-model",
+        sourceInstanceId: "codex-main",
+        fallbackModels: { "codex-main": ["claude-opus-5"] },
+        providers: [claude],
+        thresholdPercent: 95,
+        now,
+      }),
+    ).toEqual({ provider: claude, model: "claude-opus-5" });
   });
 });
