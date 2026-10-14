@@ -12,8 +12,8 @@ import { CoordinationPolicy, layer } from "./CoordinationPolicy.ts";
 import { ServerConfig } from "../config.ts";
 import { ServerActivation } from "../serverActivation.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
-import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
+import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
 import { UsageService } from "../usage/UsageService.ts";
 
 it.effect(

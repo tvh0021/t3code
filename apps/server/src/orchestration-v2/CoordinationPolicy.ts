@@ -15,8 +15,8 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { ServerConfig } from "../config.ts";
-import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
-import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
+import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { UsageService } from "../usage/UsageService.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -44,7 +44,7 @@ export class CoordinationPolicy extends Context.Service<
       CoordinationPolicyError
     >;
   }
->()("t3/orchestration/CoordinationPolicy") {}
+>()("t3/orchestration-v2/CoordinationPolicy") {}
 
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;

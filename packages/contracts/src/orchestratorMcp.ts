@@ -187,6 +187,10 @@ export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
   runtimeMode: Schema.optional(OrchestratorMcpRuntimeMode),
   interactionMode: Schema.optional(OrchestratorMcpInteractionMode),
+  reviewRef: Schema.optional(Schema.String).annotate({
+    description:
+      "Optional git ref/revision to check out in an isolated read-only snapshot worktree for review.",
+  }),
 });
 export type OrchestratorMcpDelegateTaskInput = typeof OrchestratorMcpDelegateTaskInput.Type;
 
