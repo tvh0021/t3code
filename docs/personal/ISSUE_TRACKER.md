@@ -484,9 +484,9 @@ the provider ready. It now reports an error. Both paths keep account spend
 unavailable. The unused `ServerProvider` import is removed.
 
 Verification: 18 focused Zed tests pass, with the hosted smoke test skipped.
-Targeted lint, the server typecheck, and `git diff --check` pass. T3 UI
-verification remains pending because this session lacks the required Browser
-panel tools.
+Targeted lint, the server typecheck, and `git diff --check` pass. Installed Personal 0.4.0 computer use on October 14 confirmed that Usage
+shows the unavailable-spend message and dashboard action for Zed. This checks
+the display, not authenticated billing access.
 
 #### Remaining work
 

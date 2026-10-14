@@ -4,6 +4,34 @@ Last changelog audit: October 11, 2026. Last complete cross-client,
 cross-provider runtime test: **not established by the retained evidence**.
 Do not treat this audit date as a full-app PASS.
 
+## Personal 0.4.0 release verification, October 14, 2026
+
+Native About reports 0.4.0 at `a97e3bb66ef8`. The installed app preserves the
+Personal bundle ID and signing identity. Deep signature verification passed
+with macOS signing-service access outside the filesystem sandbox. All four
+release artifact checksums match `SHA256SUMS`.
+
+Installed-app computer use confirmed retained conversations after migration,
+Settings, the provider listing, Usage limits, and Luna model selection. Two
+ordinary turns passed in `/private/tmp/t3-personal-0.4.0-probe`, with a thread
+reopen between turns. Responses contained `PERSONAL_040_TURN_ONE_OK` and
+`PERSONAL_040_TURN_TWO_OK`. A temporary delegated-limit override persisted after
+save and reload. Clearing it, saving, and reloading restored the blank field
+and named defaults.
+
+No visible error blocked these flows. Traces include startup readiness retries,
+unavailable optional CLI probes, an unauthenticated Bitbucket probe, and the
+expected missing `t3.json` in the empty probe folder. Screenshots and the local
+verification report are in `/private/tmp/t3-personal-0.4.0-release/verify/`.
+The previous app and pre-migration database copies are in the release directory's
+`backup/` and `db-backup/` directories.
+
+The earlier isolated dev desktop pass covered a live `delegate_task` child.
+This installed-app pass did not repeat delegation or the legacy paused-layer
+MCP rejection checks. Live quota fallback and `reviewRef` review snapshots remain
+untested. Hosted web, remote connections, and fresh inference through other
+providers were not tested. Mobile verification is outside this fork's scope.
+
 ## Upstream orchestration-v2 sync, October 13, 2026
 
 The fork moved onto upstream's orchestration-v2. The T3 orchestration layers,
@@ -21,8 +49,9 @@ upstream AntigravityAdapterV2 client-file tests fail on macOS because of the
 `/var` versus `/private/var` path. That failure exists on upstream and is not
 from the fork.
 
-Not yet exercised: a desktop runtime pass, a live `delegate_task` child with a
-turn budget or review snapshot, and a live quota fallback.
+The October 14 release checks above supersede the pending desktop runtime pass.
+A live `delegate_task` turn budget or review snapshot and a live quota fallback
+remain untested.
 
 ## Personal 0.3.3 release verification, October 13, 2026
 
