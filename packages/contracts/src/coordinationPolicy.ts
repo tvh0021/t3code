@@ -1,3 +1,13 @@
+import * as Schema from "effect/Schema";
+import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+
+export const CoordinationBudget = Schema.Struct({
+  model: TrimmedNonEmptyString,
+  limit: Schema.NullOr(NonNegativeInt),
+  used: NonNegativeInt,
+});
+export type CoordinationBudget = typeof CoordinationBudget.Type;
+
 /** One budget identity across provider prefixes, aliases, and dated releases. */
 export function coordinationModelKey(model: string): string {
   const name = model.trim().toLowerCase().split("/").at(-1) ?? model;

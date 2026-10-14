@@ -1,4 +1,3 @@
-import { ThreadCoordinationControl } from "./ThreadCoordinationControl";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
@@ -307,12 +306,6 @@ export const ChatHeader = memo(function ChatHeader({
       )}
       onContextMenu={handleHeaderContextMenu}
     >
-      {isServerThread && (
-        <ThreadCoordinationControl
-          environmentId={activeThreadEnvironmentId}
-          threadId={activeThreadId}
-        />
-      )}
       <WorkspaceBreadcrumb
         ariaLabel="Thread breadcrumb"
         className="flex-1 overflow-clip [overflow-clip-margin:2px]"

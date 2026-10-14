@@ -1,9 +1,6 @@
 "use client";
 
-import { getCoordinationActions } from "@t3tools/client-runtime/state/threads";
-
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
-import { threadEnvironment } from "../state/threads";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -620,9 +617,6 @@ function OpenCommandPaletteDialog(props: {
     setHighlightedItemValue(null);
   }
   const clientSettings = useClientSettings();
-  const controlCoordination = useAtomCommand(threadEnvironment.controlCoordination, {
-    reportFailure: true,
-  });
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
@@ -1811,38 +1805,6 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  const coordinationActions = getCoordinationActions(activeThread?.coordination);
-  if (activeThread && coordinationActions) {
-    const actions = coordinationActions.session;
-    for (const action of actions)
-      actionItems.push({
-        kind: "action",
-        value: `action:workflow-${action}`,
-        searchTerms: ["T3 orchestration layer", "children", "coordination", action],
-        title: `${action[0]!.toUpperCase()}${action.slice(1)} T3 orchestration layer`,
-        icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
-        run: async () => {
-          await controlCoordination({
-            environmentId: activeThread.environmentId,
-            input: { threadId: activeThread.id, action },
-          });
-        },
-      });
-    const quotaHandoffAction = coordinationActions.quotaHandoff;
-    actionItems.push({
-      kind: "action",
-      value: `action:workflow-${quotaHandoffAction}`,
-      searchTerms: ["T3 orchestration layer", "quota", "usage limit", quotaHandoffAction],
-      title: `${quotaHandoffAction === "enable-quota-handoff" ? "Enable" : "Disable"} quota handoff for T3 orchestration layer`,
-      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
-      run: async () => {
-        await controlCoordination({
-          environmentId: activeThread.environmentId,
-          input: { threadId: activeThread.id, action: quotaHandoffAction },
-        });
-      },
-    });
-  }
 
   if (projects.length > 0) {
     const activeProjectTitle =
