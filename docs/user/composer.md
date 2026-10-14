@@ -122,77 +122,35 @@ include a handoff or clear review instructions. The source thread stays intact.
 For repeated reviews, authorize the agent to read the reviewer's results and send
 follow-up work. You can open and stop either thread from any connected client.
 
-## Start a T3 orchestration layer
+## Delegate tasks to other models
 
-Ask your agent to start a T3 orchestration layer, choose each child's model and
-provider, and assign work. For example: "Start a T3 orchestration layer with
-parent GPT 6 Sol Medium and children GPT 6 Luna XHigh to review this revision
-independently, then combine their reports." If the current thread uses another
-parent model or effort, the agent creates a new parent thread with the requested
-selection. It resolves child models and options from the configured providers.
+Ask your agent to delegate work, naming the model for each task. For example:
+"Delegate two reviews of HEAD to GPT 6 Luna XHigh, one for correctness and one
+for tests, then combine their findings." The agent uses the `delegate_task` tool
+to start each child thread. Delegated work appears in the thread's subagent list.
 
-Choose models available in your configured providers. Parents need a
-provider that exposes T3 orchestration layer tools. Children can use Codex,
-Claude, ChatLLM, Antigravity, and Zed with a worker-aware ACP binary.
-Provider-native subagents are allowed, but a T3 child cannot start another layer
-or create T3 child threads, so it cannot reset the shared model budget. Four T3 children
-run concurrently; additional assignments queue until a slot opens. Initial
-assignments start after the parent's planning turn ends. Reports wait while the
-parent is busy, then resume it within the remaining budget. Reviews stay
-read-only and target a fixed Git revision. Editing children require separate
-existing worktrees.
+Ask for a review of a commit, branch, or `HEAD` to give the child a read-only
+snapshot of that revision instead of your changing files. Commit new changes
+first if the review should include them.
 
-Open **T3 orchestration layer** in the thread to inspect reports and model
-budgets. Pause stops new automatic work. Resume keeps the same counters.
-Complete ends automatic work and retains late reports. Cancel also interrupts
-running children. A manual parent message or interrupt pauses coordination.
-Server restarts pause orchestration layers for explicit resume, so uncertain
-paid work is not replayed.
+Each thread can delegate a limited number of tasks per model. Astra gets one,
+Sol two, and Luna and Gemini 3.8 Flash are unlimited. Sonnet 5, Opus 5, Opus 5.5,
+and Fable 5.1 get one each; GLM 5.3 Flash is unlimited. Unnamed models above $10
+per million output tokens get one task; below $1, unlimited; from $1 through
+$10, four. Unlimited means no task limit; provider charges and rate limits still
+apply. Change these under **Settings → Providers → Delegated task limits** on
+web and desktop, or **Settings → Maintenance** on mobile. Monthly maintenance
+refreshes model catalogs and pricing while the server runs.
 
-Quota handoff is off until you enable it in the layer controls. Configure its
-threshold and ordered provider mappings under **Settings → Providers → T3
-orchestration layer limits** on web and desktop, or **Settings → Maintenance**
-on mobile. The default threshold is 95% used in any reported quota window. The
-default mappings are Sol to Opus, Astra to Fable, and Luna to Gemini Flash High.
-When a running parent or child crosses the threshold, T3 interrupts its turn and
-creates a linked thread on the first mapped provider with a healthy login and a
-fresh quota reading below the threshold. That model summarizes the source
-history, then continues the unfinished task. A layer can switch providers once.
-If no fallback qualifies, T3 waits for the source quota reset and creates a new
-linked thread on the same model. Missing quota or reset information pauses the
-layer with a reason. A manual prompt, interrupt, or resume takes precedence over
-a pending automatic action. The destination summary is an additional provider-billed
-turn; the unfinished assignment or continuation uses the layer's normal model
-budget.
+### Switch providers when a quota runs out
 
-For example, send:
-
-```text
-Start a T3 orchestration layer for this repository with parent GPT 6 Sol Medium
-and two Codex GPT 6 Luna XHigh review children for HEAD. Confirm the parent
-selection and child models are available. One child checks correctness,
-the other checks tests and edge cases. Do not edit files or delegate further.
-Wait for their reports, combine the findings, then complete the orchestration layer.
-```
-
-`HEAD` reviews the committed revision. Commit or choose a checkpoint to include
-new changes. The parent lists available models, starts the workflow, spawns the
-children, and calls `wait_for_children` before ending its turn. Reports resume
-it automatically. Another parent model works the same way within its limits.
-
-Automatic turn limits are shared by model across the parent and all children.
-Initial user planning does not count. Astra has one turn, Sol has two, and Luna
-and Gemini 3.8 Flash are unlimited. Sonnet 5, Opus 5, Opus 5.5, and Fable 5.1
-have one turn each. GLM 5.3 Flash is unlimited. Unlimited means no turn limit; provider
-charges and rate limits still apply.
-
-To change limits, open **Settings > Providers > T3 orchestration layer limits** on web
-or desktop, or **Settings > Maintenance** on mobile. Monthly maintenance refreshes
-model catalogs and output pricing while the server runs. Unnamed models above
-$10 per million output tokens get one turn; below $1, unlimited; from $1 through
-$10, four turns. Named defaults and your overrides take precedence. Unpriced
-models need an override. Refreshes affect future workflows; active budgets stay
-fixed.
+When a thread hits a usage limit and **Auto-resume limited threads** is on, T3
+can resume it on another model instead of waiting for the reset. Configure the
+ordered fallbacks and the quota threshold in the same settings section. The
+defaults map Sol to Opus, Astra to Fable, and Luna to Gemini Flash High, with a
+95% threshold. T3 picks the first fallback whose provider is signed in and whose
+quota is below the threshold. If none qualifies, the thread waits for its reset
+as usual. Leave the fallbacks blank to always wait.
 
 ## Quote an assistant response
 

@@ -1,7 +1,8 @@
 # Personal fork notes
 
 This folder records the changes to the personal T3 Code fork. The latest
-recorded release is Personal 0.3.2.
+recorded release is Personal 0.3.3. On October 13, 2026 the fork was synced
+onto upstream's orchestration-v2; see the [changelog](./CHANGELOG.md).
 
 - [Verification record](./VERIFICATION.md) is the canonical record of the latest
   audit, per-item verdicts, revisions, evidence and missing coverage. The latest
@@ -14,7 +15,8 @@ recorded release is Personal 0.3.2.
 - [Modifications](./MODIFICATIONS.md) describes the current fork behavior and
   constraints without duplicating release test counts.
 - [Session handoff](./SESSION_HANDOFF.md) retains historical workflow and provider
-  investigation evidence. Its dated state is not current release status.
+  investigation evidence, including the removed orchestration layers. Its dated
+  state is not current release status.
 - [Provider allowance benchmark](./PROVIDER_USAGE_TRACKING.md) preserves the
   September 18 measurements and the rates used then.
 - [Upstream sync guide](./UPSTREAM_SYNC.md) describes maintainer sync procedures.

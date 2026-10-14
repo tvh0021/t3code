@@ -4,6 +4,26 @@ Last changelog audit: October 11, 2026. Last complete cross-client,
 cross-provider runtime test: **not established by the retained evidence**.
 Do not treat this audit date as a full-app PASS.
 
+## Upstream orchestration-v2 sync, October 13, 2026
+
+The fork moved onto upstream's orchestration-v2. The T3 orchestration layers,
+worker tools, coordination reactor and fork Antigravity quota converter were
+removed. Rows 041, 043-053 and 077 describe that removed code. Their verdicts
+are historical, and their PASS results do not cover upstream `delegate_task` or
+the rebuilt quota handoff. Row 042's named limits and price bands survive as
+`delegate_task` turn budgets.
+
+Source checks: server, contracts, web, client-runtime, provider-core and
+desktop typechecks passed. More than 700 focused tests passed, including the
+new delegation-guard, recovery-worker fallback, usage-cache and Zed tests.
+Migrations ran cleanly against a read-only copy of Personal state. Two
+upstream AntigravityAdapterV2 client-file tests fail on macOS because of the
+`/var` versus `/private/var` path. That failure exists on upstream and is not
+from the fork.
+
+Not yet exercised: a desktop runtime pass, a live `delegate_task` child with a
+turn budget or review snapshot, and a live quota fallback.
+
 ## Personal 0.3.3 release verification, October 13, 2026
 
 The signed macOS arm64 candidate reports 0.3.3 and source `10a17c581b5c`
@@ -894,8 +914,8 @@ Inventory: 51 PASS, 11 FAIL, 2 BLOCKED, 29 Historical / not applicable.
 ## Coverage still needed
 
 Native iOS/Android, hosted web, remote/relay/tunnel, multiple environments,
-command-palette workflow actions, full provider-native workflows, live quota
-exhaustion/reset, and fresh authenticated ChatLLM/Zed/Antigravity turns are not
+live `delegate_task` budgets and review snapshots, live quota fallback and
+upstream reset recovery, and fresh authenticated ChatLLM/Zed/Antigravity turns are not
 established by this pass. Backend tests and desktop rendering cannot substitute
 for those checks. Original historical backfill totals were not remeasured.
 Stable signing across reinstall, inaccessible Keychain recovery and original

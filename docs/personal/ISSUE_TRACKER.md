@@ -1,6 +1,6 @@
 # Issue tracker
 
-Updated October 13, 2026.
+Updated October 13, 2026, after the upstream orchestration-v2 sync.
 
 Latest audit and per-item verdicts: [VERIFICATION.md](./VERIFICATION.md).
 This tracker owns open defects and verification work; dated release history
@@ -69,32 +69,6 @@ This is separate from resolved effort normalization in USAGE-001.
 Evidence: Day screenshot (local evidence: /private/tmp/t3-changelog-audit-20261011/usage-day.png),
 accessibility output (local evidence: /private/tmp/t3-changelog-audit-20261011/usage-day.txt), and
 controlled observations (local evidence: /private/tmp/t3-changelog-audit-20261011/quality-probes.json).
-
-### AG-QUOTA-001: Usable Claude models still lose their quota windows
-
-Status: Open source-confirmed gap. Controlled converter diagnostic recorded
-October 11, 2026; the current live Claude quota response remains unexamined.
-
-Personal 0.3.0 enabled account-discovered Claude models through Antigravity.
-`antigravityQuotaSummaryToLimits` still discards every group whose name contains
-Claude/GPT and every `3p` bucket. Its comment assumes only Gemini can run.
-The test suite still requires this exclusion.
-
-With Gemini at 10% used and a Claude bucket at 99% used, the converter returns
-only the Gemini window. This proves the supplied Claude reading is lost, not
-that a real Claude turn or quota handoff failed during this pass. The initial isolated
-app had no provisioned Antigravity runtime/profile. The October 12 continuation
-provisioned an isolated managed profile, completed native Gemini and Sonnet turns,
-and observed live Gemini quota updates. It did not establish Claude pool mapping.
-
-Acceptance: inspect the current account response and establish which supported
-models share each quota pool. Represent supported Claude quota without assigning
-unsupported GPT models or Gemini quotas to it. Check Limits and orchestration
-threshold decisions against both pools. Update the obsolete Gemini-only comment
-and regression expectation when that policy is settled.
-
-Evidence: controlled observations (local evidence: /private/tmp/t3-changelog-audit-20261011/quality-probes.json),
-`apps/server/src/provider/Layers/antigravityUsageLimits.ts`, and its focused test.
 
 ### QUALITY-001: Abacus driver-list regression still omits Zed
 
@@ -211,31 +185,6 @@ substitute prompt-length estimates for measured token counts.
 Evidence: continuation report (local evidence: /private/tmp/t3-blocked-continuation-20261012/REPORT.md)
 and native usage summary (local evidence: /private/tmp/t3-antigravity-native-20261012/summary.json).
 
-### QUOTA-RESET-001: Automatic quota interrupt cancels reset continuation
-
-Status: Open. Reproduced twice October 12, 2026 through real source servers,
-the ChatLLM driver and controlled account responses. No live quota exhaustion.
-
-An opt-in parent at 96% enters `waiting-reset` when no eligible fallback is
-available. The `quota:wait:<id>:interrupt` command then pauses the parent and
-changes its quota status to `paused`, with `Canceled by user activity.` The
-client sent no user interrupt. The reactor only checks reset continuation for
-`waiting-reset`, so its own interrupt removes the state it needs to resume.
-
-The controlled fallback instances report authentication as unknown, so their
-ineligibility is expected. This finding concerns the no-fallback reset path,
-not ordered switching. Both original probe scripts waited on coordination
-events absent from the thread detail stream and timed out. The persisted
-command/event chain independently establishes the defect; the fixture timeout
-is not the product failure.
-
-Acceptance: distinguish automatic quota interrupts from user interrupts,
-preserve reset-wait state, and verify continuation after a controlled reset.
-Keep manual interruption able to cancel the pending action.
-
-Evidence: runtime event checker (local evidence: /private/tmp/t3-zero-quota-20261012/check-defect.py)
-and two-run command chains (local evidence: /private/tmp/t3-zero-20261012/quota-defect.json).
-
 ### CHATLLM-WRITE-001: Worker file tools follow links outside the workspace
 
 Status: Open. Observed October 12, 2026 through a real source server and
@@ -320,25 +269,6 @@ not reproduce the original project auto-pull workload or establish why the
 The backend-manager and Zed ACP support suites passed all 28 focused tests.
 Local evidence is in the verification report (local evidence: /private/tmp/t3-verify-desktop-zed-20261011/REPORT.md).
 
-### COORD-001: Coordination quota and spawn edge cases found during cleanup
-
-Status: Open. Found by source review while splitting `planCoordination`,
-October 13, 2026. Not reproduced at runtime.
-
-- A parent quota handoff reparents every child of the old parent, including
-  deleted ones, and emits coordination events for them. The `children` list
-  used elsewhere excludes deleted threads.
-- The two `quota-settle` paths disagree. A parent destination resets the quota
-  object to `{ enabled, switchCount, status }`; a child destination returns the
-  parent to `watching` but keeps `affectedThreadId`, `destinationThreadId`,
-  `sourceModel` and related fields.
-- `spawn`'s separate-worktree check counts completed and cancelled children,
-  so a finished child's worktree is never reused by a new editing child. This
-  may be intended.
-
-Acceptance: decide the intended behavior for each case and cover it in
-`ThreadCoordination.test.ts`.
-
 ### CODEX-CREDIT-001: A repeated token payload's newer balance is dropped
 
 Status: Open, pre-existing. Found October 13, 2026.
@@ -350,9 +280,10 @@ Totals are unchanged; per-turn and per-day attribution can shift.
 
 ### PERMISSION-001: Orchestration triggers unrelated macOS folder prompts
 
-Status: Open. Observed September 28, 2026.
+Status: Open. Observed September 28, 2026, under the removed T3 orchestration
+layers. Recheck with upstream `delegate_task` before investigating further.
 
-While a T3 orchestration layer runs, macOS repeatedly asks for access to
+While a T3 orchestration layer ran, macOS repeatedly asked for access to
 Downloads, Documents, Desktop, and Apple Music. The agent should already have
 access to the folders explicitly granted for the task. These unrelated prompts
 interrupt orchestration.
@@ -370,66 +301,12 @@ unrelated locations.
 - A prompt for another protected location appears only when a task operation
   actually needs that location.
 
-### WORKFLOW-001: Finish client and native-provider verification
-
-Status: Isolated desktop workflow verified; mobile and remote flows pending.
-
-Completed: 219 backend tests, six client tests, live Sol/Luna workflow,
-real MCP HTTP transport, scoped lint, and server/mobile/contracts/client-runtime
-typechecks. Receipt ordering, restart recovery, disconnect cleanup, fixed review
-revisions, child-history isolation, and parent session restart have regressions.
-GPT 6 Sol at low reasoning reviewed the latest changes.
-An ordinary Sol desktop thread and a four-child Sol workflow ran in an isolated
-desktop app. Two Luna and two Gemini children returned findings; the parent
-used all four and the fixture passed 10/10 tests. A child-start command ID fix
-and completed report-label fix passed 13 focused coordination tests.
-
-Remaining: mobile interactions, command-palette actions,
-remote and multiple-environment flows, and native Zed parent MCP discovery and tool use with a
-compatible companion binary. The historical HAST errors were fixed in Personal
-0.3.1; the October 11 audit reran web typechecking successfully.
-
-The desktop pass used Computer Use against `vp run dev:desktop`. See
-[the historical handoff](./SESSION_HANDOFF.md) for evidence and
-[the verification matrix](./VERIFICATION.md) for current coverage.
-
-### WORKFLOW-002: Enable strict Antigravity workflows
-
-Status: Parent startup verified with the managed Antigravity runtime. A full
-Gemini parent and child report cycle remains unverified. The September 28
-quota-handoff evidence proves a Gemini child report and parent resumption,
-not a complete Gemini-parent assignment cycle.
-
-The managed Antigravity ACP runtime received T3 MCP tools in an isolated dev
-thread. Gemini 3.8 Flash High called `read_thread` and then
-`start_orchestration_layer`; the latter persisted an active parent with quota
-handoff enabled. The provider policy now allows Antigravity as either role.
-The server still rejects attempts by any child to start another layer or create
-T3 threads. Cursor, Grok, and OpenCode remain unavailable as strict workflow
-children and parents.
-
-Focused tests cover the role gate and nested-thread rejection. A live Sol parent
-assigned substantive work to two Gemini children and received their reports.
-An attempted nested spawn stopped at Codex provider approval before reaching
-T3; the server guard passed a focused MCP toolkit test. The policy, MCP
-coordination, and Luna-to-Gemini parent routing tests passed 13 focused cases
-after the Antigravity parent change. The server typecheck passed.
-
-Remaining: run a Gemini parent through child assignment, report, and parent
-wake. Confirm quota-triggered parent handoff to Gemini with a real provider
-turn. Older or custom Antigravity binaries have not been checked for MCP tool
-forwarding.
-
-ChatLLM now forwards parent coordination tools; its tool loop and the real MCP
-HTTP protocol are tested. Zed forwards the scoped server and restricts worker
-MCP tools explicitly. Compilation passed; actual native discovery remains in
-WORKFLOW-001. Model-limit entries alone do not make a model available.
-
 ### WORKFLOW-003: Gemini onboarding fails on the eduroam IPv6 path
 
 Status: Network-specific failure observed October 6 in installed Personal 0.1.5.
 A standalone full-adapter Gemini turn passed October 8 on the working network.
-Current orchestration recovery and concurrency remain unverified.
+The orchestration layers in the observed failure were replaced by upstream
+`delegate_task` on October 13; the native IPv6 timeout is unrelated to them.
 
 #### Observed failure
 
@@ -530,8 +407,8 @@ are historical evidence, not a retained launch recipe.
 
 Acceptance:
 
-- A real Codex parent starts Gemini children, receives substantive reports and
-  resumes/completes on a working network.
+- A real Codex parent delegates tasks to Gemini and receives substantive
+  results on a working network.
 - Failed authentication reports provider, operation and actionable secret-free
   detail; a subsequent retry succeeds after cleanup.
 - UI states distinguish queued/startup/failure from actual execution.
@@ -633,6 +510,27 @@ publish a zeroed bar, and ACP session cost is never labeled as account spend.
   unavailable state, not a zeroed bar.
 - Tests cover account scope, billing-period boundaries, failed reads, and
   repeated cumulative session updates.
+
+## Closed by the upstream sync, October 13, 2026
+
+The fork's T3 orchestration layers, coordination reactor and Antigravity quota
+converter were replaced by upstream code. See
+[Delegated tasks](./MODIFICATIONS.md#delegated-tasks) and
+[Quota handoff](./MODIFICATIONS.md#quota-handoff). These entries describe removed
+code; their history is in git and the [verification record](./VERIFICATION.md).
+
+- **AG-QUOTA-001** (Claude quota windows dropped): upstream reports Antigravity
+  Claude and GPT models as one "Claude & GPT (shared)" bucket. A live account
+  response has still not been inspected.
+- **QUOTA-RESET-001** (automatic interrupt cancelled reset continuation): the
+  fork reactor is gone. Reset-based retry is upstream's usage-limit recovery;
+  quota handoff only adds a fallback choice in front of it.
+- **COORD-001** (reparenting, settle and worktree-reuse edge cases): the
+  `ThreadCoordination` planner no longer exists.
+- **WORKFLOW-001** and **WORKFLOW-002** (layer client/native verification and
+  strict Antigravity workflows): `start_orchestration_layer`, `spawn_child`,
+  `wait_for_children` and `report_to_parent` were removed in favor of
+  `delegate_task`.
 
 ## Verification scope
 

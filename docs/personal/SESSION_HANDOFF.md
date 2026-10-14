@@ -5,6 +5,14 @@ Current status and last-test coverage are in [VERIFICATION.md](./VERIFICATION.md
 and [ISSUE_TRACKER.md](./ISSUE_TRACKER.md). Statements below describe their
 recorded revisions, not the currently installed release.
 
+October 13, 2026: the upstream orchestration-v2 sync removed the T3
+orchestration layers, coordination reactor and worker tools this handoff
+describes. Agents now use upstream `delegate_task` with the fork's turn budgets
+and review snapshots; quota handoff runs on upstream usage-limit recovery. See
+[Delegated tasks](./MODIFICATIONS.md#delegated-tasks) and
+[Quota handoff](./MODIFICATIONS.md#quota-handoff). The layer-specific decisions,
+evidence and remaining gaps below are history, not open work.
+
 Current scope, October 12, 2026: mobile verification is excluded by the developer.
 Follow the [mobile verification restriction](../../AGENTS.md#verifying), even
 where this historical handoff lists mobile checks as pending.
@@ -51,9 +59,8 @@ steering, and respect pending human requests. Any supported model may parent.
 - Reviews use detached checkouts of resolved Git commits. Editing children use
   separate existing registered worktrees; the parent integrates changes.
 
-[Capabilities](./MODIFICATIONS.md#agent-created-threads-and-t3-orchestration-layers),
-[invocation example](../user/composer.md#start-a-t3-orchestration-layer), and
-[open issues](./ISSUE_TRACKER.md#open-issues) carry the current details outside this historical record.
+Current behavior is in [MODIFICATIONS.md](./MODIFICATIONS.md) and
+[open issues](./ISSUE_TRACKER.md#open-issues), not in this historical record.
 
 ## Latest work
 
@@ -146,7 +153,9 @@ worktree's `.t3/userdata/state.sqlite` under thread
 state. Do not use the copied provider credentials or pairing URL as public
 evidence.
 
-## Remaining verification and capability gaps
+## Remaining verification and capability gaps (September 28, superseded)
+
+Items 2-5 concern the removed layers and quota reactor.
 
 1. Mobile UI, command-palette actions, remote and multiple-environment flows.
    Desktop child roster, reports and completion were inspected with Computer Use.
