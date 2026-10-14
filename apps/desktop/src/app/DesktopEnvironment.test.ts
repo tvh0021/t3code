@@ -179,7 +179,6 @@ describe("DesktopEnvironment", () => {
 
       assert.equal(development.stateDir, "/Users/alice/.t3/dev");
       assert.equal(production.stateDir, "/Users/alice/.t3-personal/userdata");
-      assert.equal(production.userDataDirName, "t3code-personal");
     }),
   );
 

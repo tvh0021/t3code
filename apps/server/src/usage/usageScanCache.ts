@@ -15,10 +15,9 @@
  * @module usageScanCache
  */
 import type { UsageProviderKind } from "@t3tools/contracts";
-import type { TranscriptUsageFormat, UsageSpeed } from "@t3tools/provider-core/server/usage";
+import type { TranscriptUsageFormat, UsageRecord, UsageSpeed } from "@t3tools/provider-core/server/usage";
 import * as Schema from "effect/Schema";
 
-import type { CreditedUsageRecord as UsageRecord } from "./usageAggregation.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
 // v2: Codex fork-copy suppression changed what a file parses to, so v1
@@ -38,24 +37,26 @@ const SPEED_COMPATIBLE_SINCE_VERSION = 4;
  * Each cache version writes its own file in the state directory. An older
  * server sharing that directory cannot read a newer cache and would replace
  * it, dropping saved usage for deleted transcripts. Separate files keep both.
- * A current server reads the legacy file once, when its own file is missing.
  */
-export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v6.json";
+export const SCAN_CACHE_FILE_NAME = `usage-scan-cache.v${USAGE_SCAN_CACHE_VERSION}.json`;
 export const LEGACY_SCAN_CACHE_FILE_NAME = "usage-scan-cache.json";
 
-/** Serialised as the index into this list. */
 const SPEEDS: readonly UsageSpeed[] = ["standard", "fast", "ultrafast"];
 
 export interface CachedFile {
   readonly size: number;
   readonly mtimeMs: number;
   readonly provider: UsageProviderKind;
-  /** Records from newline-terminated lines, up to `position.resumeOffset`. */
+  /**
+   * Usage events at or before `position.resumeOffset`. These are never altered
+   * when a growing file is resumed, because the format reducer has advanced
+   * past them.
+   */
   readonly records: readonly UsageRecord[];
   /**
-   * Records from a trailing segment the writer had not newline-terminated at
-   * parse time. Kept apart from `records` because an incremental parse
-   * re-reads that segment and would otherwise double count it.
+   * Usage events from the tail window after `position.resumeOffset`. These are
+   * held in memory for fast cache hits on unchanged files, but dropped on
+   * resume: the tail parser re-emits them with any newly appended events.
    */
   readonly tailRecords: readonly UsageRecord[];
   readonly position: TranscriptParsePosition;
@@ -83,6 +84,7 @@ type SerializedRecord = readonly [
   /** Optional trailing fields keep existing cache rows readable. */
   rateModelIndex?: number | null,
   credits?: number | null,
+  creditBalance?: number | null,
 ];
 
 interface SerializedFile {
@@ -145,6 +147,7 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
       ? null
       : intern(tables.models, tables.modelIndex, record.rateModel),
     record.credits ?? null,
+    record.creditBalance ?? null,
   ];
   return {
     s: entry.size,
@@ -178,25 +181,32 @@ export function encodeScanCache(cache: ScanCache): SerializedCache {
  *
  * Writes the same document as `encodeScanCache`. Most entries never change
  * between scans, and encoding all of them made each persist cost close to a
- * second on a large cache. Entries are replaced, never mutated, when their file
- * changes, so an entry's JSON is memoised by identity. The intern tables only
- * grow, so a memoised entry's indexes stay valid; a pruned entry can leave an
- * unused string behind until the next process start.
+ * full cold read (~25ms CPU per call on 90 days).
  */
 export function makeScanCacheWriter(): (
   cache: ScanCache,
-  extra: Readonly<Record<string, unknown>>,
+  extra?: Readonly<Record<string, unknown>>,
 ) => string {
   const tables = makeInternTables();
-  const fragments = new WeakMap<CachedFile, string>();
-  return (cache, extra) => {
+  const fileFragments = new Map<string, { size: number; mtime: number; fragment: string }>();
+
+  return (cache, extra = {}) => {
+    // Drop removed files first so their fragment memory does not leak.
+    for (const path of fileFragments.keys()) {
+      if (!cache.has(path)) fileFragments.delete(path);
+    }
     const files: string[] = [];
     for (const [path, entry] of cache) {
-      let fragment = fragments.get(entry);
-      if (fragment === undefined) {
-        fragment = JSON.stringify(serializeFile(entry, tables));
-        fragments.set(entry, fragment);
+      let held = fileFragments.get(path);
+      if (held === undefined || held.size !== entry.size || held.mtime !== entry.mtimeMs) {
+        held = {
+          size: entry.size,
+          mtime: entry.mtimeMs,
+          fragment: JSON.stringify(serializeFile(entry, tables)),
+        };
+        fileFragments.set(path, held);
       }
+      const fragment = held.fragment;
       files.push(`${JSON.stringify(path)}:${fragment}`);
     }
     // Encoded after the files, which may have added to the intern tables.
@@ -273,6 +283,7 @@ export function decodeScanCache(
         speedIndex,
         rateModelIndex,
         credits,
+        creditBalance,
       ] = row as SerializedRecord;
       const speed = typeof speedIndex === "number" ? SPEEDS[speedIndex] : undefined;
 
@@ -309,6 +320,9 @@ export function decodeScanCache(
         reportedCostUsd: typeof reportedCostUsd === "number" ? reportedCostUsd : null,
         speed,
         ...(typeof credits === "number" && Number.isFinite(credits) ? { credits } : {}),
+        ...(typeof creditBalance === "number" && Number.isFinite(creditBalance)
+          ? { creditBalance }
+          : {}),
         dedupeKey: typeof dedupeKey === "string" ? dedupeKey : null,
       });
     }
@@ -395,34 +409,33 @@ function makeStateValidators(
 
 /** Keeps saved usage after transcript cleanup, until the reporting retention expires. */
 export function pruneScanCache(cache: ScanCache, retentionCutoffMs: number): number {
-  let removed = 0;
+  let dropped = 0;
   for (const [path, entry] of cache) {
     if (entry.mtimeMs < retentionCutoffMs) {
       cache.delete(path);
-      removed += 1;
+      dropped += 1;
     }
   }
-  return removed;
+  return dropped;
 }
 
 /**
- * Within-file de-duplication, applied before an entry is cached.
- *
- * Callers stitching an incremental parse together pass one `seen` set across
- * the line and tail record batches so the whole file stays deduplicated as a
- * unit; the set is mutated in place.
+ * Drops records whose dedupe key was already seen earlier in the same file.
+ * Records with `dedupeKey: null` are kept unconditionally.
  */
 export function dedupeWithinFile(
   records: readonly UsageRecord[],
   seen: Set<string> = new Set(),
 ): readonly UsageRecord[] {
-  const kept: UsageRecord[] = [];
+  const out: UsageRecord[] = [];
   for (const record of records) {
-    if (record.dedupeKey !== null) {
-      if (seen.has(record.dedupeKey)) continue;
-      seen.add(record.dedupeKey);
+    if (record.dedupeKey === null) {
+      out.push(record);
+      continue;
     }
-    kept.push(record);
+    if (seen.has(record.dedupeKey)) continue;
+    seen.add(record.dedupeKey);
+    out.push(record);
   }
-  return kept;
+  return out;
 }

@@ -3,7 +3,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { expect, it } from "vite-plus/test";
 import { withPersonalSigningIdentity } from "./personal-mac-signing.ts";
 
@@ -13,7 +13,7 @@ const run = (command: string, args: string[]) =>
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-it.skipIf(HostProcessPlatform.defaultValue() !== "darwin")(
+it.skipIf(HostProcess.Platform.defaultValue() !== "darwin")(
   "recognizes a rebuilt binary, rejects another signer, and cleans up the signing keychain",
   async () => {
     const temporary = await NodeFSP.mkdtemp(

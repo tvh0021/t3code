@@ -50,26 +50,26 @@ describe("usage pricing", () => {
     ["gemini-pro-agent", 16.2],
     ["gemini-3.1-pro-preview", 16.2],
   ])("prices %s offline at official standard rates", (model, expected) => {
-    const priced = priceUsage(new Map(), model, totals, null);
+    const priced = priceUsage(new Map(), record(model));
     expect(priced.costSource).toBe("modelPriced");
     expect(priced.costUsd).toBeCloseTo(expected, 9);
   });
 
   it("uses verified rates ahead of stale public rates while honoring custom and reported costs", () => {
     const table = parseRateTable({ "claude-sonnet-5-5": rate(1) });
-    expect(priceUsage(table, "claude-sonnet-5-5-medium", totals, null).costUsd).toBeCloseTo(14.6);
-    expect(priceUsage(table, "claude-sonnet-5-5-low", totals, 7).costUsd).toBe(7);
+    expect(priceUsage(table, record("claude-sonnet-5-5-medium")).costUsd).toBeCloseTo(14.6);
+    expect(priceUsage(table, record("claude-sonnet-5-5-low", 7)).costUsd).toBe(7);
     const overrides = createOverrideRateTable({
       "claude-sonnet-5-5": { inputCostPerMillionTokens: 1, outputCostPerMillionTokens: 2 },
       "claude-sonnet-5-5-high": { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 4 },
     });
-    expect(priceUsage(table, "claude-sonnet-5-5-low", totals, 7, overrides).costUsd).toBe(5);
-    expect(priceUsage(table, "claude-sonnet-5-5-high", totals, 7, overrides).costUsd).toBe(10);
+    expect(priceUsage(table, record("claude-sonnet-5-5-low", 7), overrides).costUsd).toBe(5);
+    expect(priceUsage(table, record("claude-sonnet-5-5-high", 7), overrides).costUsd).toBe(10);
     const variantOnly = createOverrideRateTable({
       "claude-sonnet-5-5-high": { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 4 },
     });
     expect(
-      priceUsage(table, "claude-sonnet-5-5-low", totals, null, variantOnly).costUsd,
+      priceUsage(table, record("claude-sonnet-5-5-low"), variantOnly).costUsd,
     ).toBeCloseTo(14.6);
   });
 
@@ -178,7 +178,7 @@ describe("usage pricing", () => {
 
   it("splits cost by category and prices the speed premium", () => {
     const table = parseRateTable({
-      "claude-opus-5-5": {
+      "fast-model": {
         ...rate(4e-6, 4e-7),
         cache_creation_input_token_cost: 5e-6,
         provider_specific_entry: { fast: 2 },
@@ -191,14 +191,14 @@ describe("usage pricing", () => {
       output: expect.closeTo(output),
     });
 
-    expect(priceUsage(table, record("claude-opus-5-5", null, "fast"))).toEqual({
+    expect(priceUsage(table, record("fast-model", null, "fast"))).toEqual({
       costUsd: expect.closeTo(58.8),
       costSource: "modelPriced",
       categoryCostUsd: split(8, 0.8, 10, 40),
       speedPremiumUsd: expect.closeTo(29.4),
     });
     // A reported cost keeps its total and splits in proportion to list rates.
-    expect(priceUsage(table, record("claude-opus-5-5", 29.4, "fast"))).toEqual({
+    expect(priceUsage(table, record("fast-model", 29.4, "fast"))).toEqual({
       costUsd: 29.4,
       costSource: "providerReported",
       categoryCostUsd: split(4, 0.4, 5, 20),
