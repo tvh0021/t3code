@@ -4,6 +4,36 @@ Last changelog audit: October 11, 2026. Last complete cross-client,
 cross-provider runtime test: **not established by the retained evidence**.
 Do not treat this audit date as a full-app PASS.
 
+## Personal 0.5.1 release verification, October 14, 2026
+
+The first installed candidate exposed a second startup gap after the supplied
+model-setting fix: the bridge rejects model selection until authenticated model
+discovery runs. A native no-inference probe reproduced `Model not available`
+without `--model` and passed with the same Sonnet 5.5 ID supplied at startup.
+The final implementation passes the thread model into bridge startup and applies
+model selection before reading and setting thinking effort.
+
+The corrected candidate reports 0.5.1 in native About and Settings. Retained
+history loaded. A fresh thread in the disposable
+`/private/tmp/t3-personal-0.5.0-probe` project completed two real Zed Sonnet 5.5
+Low turns, returning `PERSONAL_051_ZED_FIXED_OK` and
+`PERSONAL_051_ZED_FOLLOWUP_OK`. Navigating to Limits and reopening the thread
+between turns preserved history and model selection. Native request logs show
+successful session creation, model and effort configuration, and both prompts.
+Limits displayed account spend of $9.43 of $10.00 with a reset in about two days.
+
+94 focused tests, server and provider-acp typechecks, scoped lint and formatting
+passed. The startup regression failed before the fix and passed afterward.
+Deep signature and candidate DMG integrity checks passed. Final commit metadata,
+artifact checks and the short smoke pass are recorded in the local release
+report at `/private/tmp/t3-personal-0.5.1-release/verify/REPORT.md`.
+The previous 0.5.0 app is retained under that release directory's `backup/`.
+
+Mid-thread model changes may still restart the provider session. Remote runtime,
+live quota fallback, session lifetime and direct dashboard comparison were not
+verified. Mobile verification remains outside this fork's scope. Earlier 0.4.0
+provider-list checks did not establish successful Zed inference after the sync.
+
 ## Personal 0.5.0 release verification, October 14, 2026
 
 The installed arm64 candidate reports 0.5.0 in native About. It retains the

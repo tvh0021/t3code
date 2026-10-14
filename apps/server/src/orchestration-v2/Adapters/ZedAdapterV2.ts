@@ -1,4 +1,5 @@
 import {
+  type ModelSelection,
   ProviderApprovalOption,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -79,6 +80,45 @@ interface ZedFlavorServices {
   readonly host: ProviderHost.ProviderHost["Service"];
 }
 
+/** Selects the model, then the thinking effort the bridge reports for that model. */
+export const applyZedModelSelection = Effect.fnUntraced(function* (
+  runtime: Pick<
+    AcpSessionRuntime.AcpSessionRuntime["Service"],
+    "setModel" | "getConfigOptions" | "setConfigOption"
+  >,
+  modelSelection: ModelSelection,
+) {
+  const requestedModel = modelSelection.model;
+  if (requestedModel && requestedModel !== "default" && requestedModel !== "auto") {
+    // zed-acp-server accepts the "model" config id without advertising it,
+    // and only reports thinking effort once a model is set.
+    yield* runtime.setModel(requestedModel);
+  }
+  const configOptions = yield* runtime.getConfigOptions;
+  const effortDescriptor = configOptions.find((option) => option.id === "thinking_effort");
+  const requestedEffort = modelSelection.options?.find(
+    (opt) => opt.id === "thinking_effort",
+  )?.value;
+  if (!effortDescriptor || effortDescriptor.type !== "select") {
+    if (requestedEffort) {
+      return yield* EffectAcpErrors.AcpRequestError.invalidParams(
+        "This Zed bridge or model does not support thinking effort. Refresh the model catalog or rebuild zed-acp-server.",
+      );
+    }
+  } else {
+    const nativeDefault = (effortDescriptor._meta as Record<string, unknown> | undefined)?.[
+      "defaultValue"
+    ];
+    const value =
+      (typeof requestedEffort === "string" ? requestedEffort : undefined) ??
+      (typeof nativeDefault === "string" ? nativeDefault : effortDescriptor.currentValue);
+    if (value && value !== effortDescriptor.currentValue) {
+      yield* runtime.setConfigOption(effortDescriptor.id, value);
+    }
+  }
+  return requestedModel;
+});
+
 export function makeZedAcpAdapterFlavor(
   options: ZedAdapterV2Options & ZedFlavorServices,
 ): AcpAdapterV2Flavor {
@@ -118,42 +158,7 @@ export function makeZedAcpAdapterFlavor(
     supportsCompaction: true,
     ...(options.onSessionEvent === undefined ? {} : { onSessionEvent: options.onSessionEvent }),
     applyModelSelection: ({ runtime, modelSelection }) =>
-      Effect.gen(function* () {
-        const configOptions = yield* runtime.getConfigOptions;
-        const requestedModel = modelSelection.model;
-        if (requestedModel && requestedModel !== "default" && requestedModel !== "auto") {
-          const hasModelConfig = configOptions.some(
-            (option) => option.id === "model" || option.category === "model",
-          );
-          if (hasModelConfig) {
-            yield* runtime.setModel(requestedModel);
-          }
-        }
-        const effortDescriptor = configOptions.find((option) => option.id === "thinking_effort");
-        const requestedEffort = modelSelection.options?.find(
-          (opt) => opt.id === "thinking_effort",
-        )?.value;
-        if (!effortDescriptor || effortDescriptor.type !== "select") {
-          if (requestedEffort) {
-            return yield* Effect.fail(
-              EffectAcpErrors.AcpRequestError.invalidParams(
-                "This Zed bridge or model does not support thinking effort. Refresh the model catalog or rebuild zed-acp-server.",
-              ),
-            );
-          }
-        } else {
-          const nativeDefault = (effortDescriptor._meta as Record<string, unknown> | undefined)?.[
-            "defaultValue"
-          ];
-          const value =
-            (typeof requestedEffort === "string" ? requestedEffort : undefined) ??
-            (typeof nativeDefault === "string" ? nativeDefault : effortDescriptor.currentValue);
-          if (value && value !== effortDescriptor.currentValue) {
-            yield* runtime.setConfigOption(effortDescriptor.id, value);
-          }
-        }
-        return requestedModel;
-      }),
+      applyZedModelSelection(runtime, modelSelection),
     approvalOptions: (request) => {
       const options: ProviderApprovalOption[] = [];
       const optionWithKind = (kind: EffectAcpSchema.PermissionOption["kind"]) =>

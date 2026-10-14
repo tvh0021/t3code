@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - session updates are deduplicated synchronously.
 import * as NodeCrypto from "node:crypto";
 
-import type { ZedSettings, ProviderApprovalDecision } from "@t3tools/contracts";
+import type { ModelSelection, ZedSettings, ProviderApprovalDecision } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -31,6 +31,7 @@ export interface ZedAcpRuntimeInput extends Omit<
 > {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly zedSettings: ZedAcpRuntimeZedSettings | null | undefined;
+  readonly modelSelection?: ModelSelection;
   readonly environment?: NodeJS.ProcessEnv;
 }
 
@@ -38,6 +39,7 @@ export function buildZedAcpSpawnInput(
   zedSettings: ZedAcpRuntimeZedSettings | null | undefined,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
+  selectedModel?: string,
 ): AcpSessionRuntime.AcpSpawnInput {
   const binary = zedSettings?.binaryPath?.trim() || "zed-acp-server";
   const args: string[] = [];
@@ -47,9 +49,13 @@ export function buildZedAcpSpawnInput(
   if (zedSettings?.dataDir?.trim()) {
     args.push("--data-dir", zedSettings.dataDir.trim());
   }
-  if (zedSettings?.model?.trim()) {
-    args.push("--model", zedSettings.model.trim());
-  }
+  const model =
+    selectedModel && selectedModel !== "default" && selectedModel !== "auto"
+      ? selectedModel
+      : zedSettings?.model?.trim();
+  // The bridge authenticates and discovers cloud models before session/new
+  // only when a startup model is supplied.
+  if (model) args.push("--model", model);
   return {
     command: binary,
     args,
@@ -89,7 +95,12 @@ export const makeZedAcpRuntime = Effect.fn("makeZedAcpRuntime")(function* (
         completedSnapshots.set(key, digest);
         return normalized;
       },
-      spawn: buildZedAcpSpawnInput(input.zedSettings, input.cwd, input.environment),
+      spawn: buildZedAcpSpawnInput(
+        input.zedSettings,
+        input.cwd,
+        input.environment,
+        input.modelSelection?.model,
+      ),
       clientCapabilities: ZED_CLIENT_CAPABILITIES,
       clientInfo: {
         name: "t3-code",

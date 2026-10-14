@@ -3,6 +3,21 @@ import { describe, expect, it } from "vite-plus/test";
 import { buildZedAcpSpawnInput, selectAcpPermissionOptionId } from "./ZedAcpSupport.ts";
 
 describe("buildZedAcpSpawnInput", () => {
+  it("starts discovery with the thread's selected model instead of the provider default", () => {
+    const spawn = buildZedAcpSpawnInput(
+      { binaryPath: "/tmp/zed-acp-server", dataDir: "", model: "zed.dev/gpt-6-luna" },
+      "/tmp/project",
+      undefined,
+      "zed.dev/claude-sonnet-5-5",
+    );
+    expect(spawn.args).toEqual([
+      "--worktree",
+      "/tmp/project",
+      "--model",
+      "zed.dev/claude-sonnet-5-5",
+    ]);
+  });
+
   it("isolates the Zed server in the configured data directory", () => {
     const spawn = buildZedAcpSpawnInput(
       { binaryPath: "/tmp/zed-acp-server", dataDir: "/tmp/isolated-data", model: "" },

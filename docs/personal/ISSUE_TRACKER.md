@@ -419,7 +419,7 @@ Acceptance:
 
 ### ZED-001: Read Zed account usage from the billing service
 
-Status: Implemented October 14, 2026; awaiting a live signed-in read.
+Status: Implemented October 14, 2026; signed-in account spend displayed in installed 0.5.0. Dashboard comparison and session lifetime remain unverified.
 
 The Zed entry in Limits must show the account's actual spend for the current
 Zed billing period. It must not estimate account spend from one or more T3
@@ -471,7 +471,7 @@ Only the personal routes are read. Organization billing
 
 Installed Personal 0.5.0 verification confirmed the missing-session notice,
 secure field, Connect reaching GitHub sign-in for Zed Industries, and cancellation
-restoring Connect. No authenticated billing read was performed.
+restoring Connect. A later signed-in check displayed $9.43 of $10.00, with a reset in about two days. A direct dashboard comparison and session lifetime remain unverified.
 
 1. Sign in once on the installed desktop app. Confirm the cookie lifetime, that
    `spend_in_cents` matches the dashboard (does it include the Pro credit?),

@@ -236,3 +236,12 @@ Feature release of the upstream orchestration-v2 sync above.
 - The earlier installed 0.4.0 verification confirmed a `reviewRef` child uses a separate checkout at `HEAD~2`, preserves the parent worktree, and rejects an invalid ref. Live quota fallback remains untested.
 - Release checks passed: 278 focused tests, five affected package typechecks, formatting and scoped lint with existing warnings only. Installed 0.5.0 passed native About, retained history, Settings, model selection, two Codex Luna turns with thread reopen, the missing-session Limits notice, and Zed Connect opening GitHub sign-in and cancelling cleanly. Deep signature and DMG integrity checks passed.
 - Live Zed billing and session lifetime remain unverified; organization billing is unsupported. Remote/web runtime checks were not run. Mobile verification is outside this fork's scope. The separate ChatLLM cookie-storage issue is unchanged.
+
+### 2026-10-14: Personal 0.5.1
+
+- Fixed Zed turns failing after the October 13 upstream sync. The adapter now sends the selected model even when the bridge does not advertise a model setting, then reads that model's thinking-effort options before applying the requested effort.
+- The thread's selected model also reaches the bridge's startup `--model` argument, which initializes authenticated model discovery before session creation. A native no-inference probe reproduced `Model not available` without that argument and passed with it.
+- Added regressions for Sonnet 5.5 with Low effort against a bridge that advertises no model setting, and for passing the thread model instead of a different provider default at startup.
+- A signed-in 0.5.0 check confirmed Limits reads account spend, showing $9.43 of $10.00. That billing connection is separate from the turn-start failure.
+- Verification passed: 94 focused tests, server and provider-acp typechecks, scoped lint and formatting. Installed 0.5.1 completed two real Zed Sonnet 5.5 Low turns in a new thread, with a reopen between turns. Native logs confirm successful model and effort configuration and both prompts. Retained history, Settings and account spend in Limits loaded. Signature and DMG integrity checks passed.
+- Mid-thread model switching still follows the shared ACP adapter's capability check and may restart the session. Remote runtime checks were not run; mobile verification is outside this fork's scope. Session lifetime and direct dashboard comparison remain unverified.
