@@ -12,21 +12,26 @@ import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
-import * as Option from "effect/Option";
-import { ServerConfig } from "../../config.ts";
 import * as Schema from "effect/Schema";
 
-import { makeAbacusAdapter } from "../Layers/AbacusAdapter.ts";
-import { readAbacusModels } from "../Layers/abacusModels.ts";
-import { readAbacusUsageLimits } from "../Layers/abacusUsageLimits.ts";
-import { defaultProviderContinuationIdentity, type ProviderDriver } from "../ProviderDriver.ts";
+import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
+import { readAbacusModels } from "../abacusModels.ts";
+import { readAbacusUsageLimits } from "../abacusUsageLimits.ts";
+import {
+  defaultProviderContinuationIdentity,
+  type ProviderDriver,
+  type ProviderInstance,
+} from "@t3tools/provider-core/server/driver";
 import { ProviderDriverError } from "../Errors.ts";
-import { withInstanceIdentity } from "./instanceIdentity.ts";
-import type { ServerProviderShape } from "../Services/ServerProvider.ts";
-import type { ServerProviderDraft } from "../providerSnapshot.ts";
-import { applyUsageLimitsUpdate } from "../providerUsageLimits.ts";
-import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
-import type * as TextGeneration from "../../textGeneration/TextGeneration.ts";
+import { withInstanceIdentity } from "@t3tools/provider-core/server/instanceIdentity";
+import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapshot";
+import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
+import { applyUsageLimitsUpdate } from "@t3tools/provider-core/server/usageLimits";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
+import {
+  AbacusAdapterV2Driver,
+  type AbacusAdapterV2DriverEnv,
+} from "../../orchestration-v2/Adapters/AbacusAdapterV2.ts";
 
 const decodeAbacusSettings = Schema.decodeSync(AbacusSettings);
 
@@ -59,8 +64,9 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
   },
   configSchema: AbacusSettings,
   defaultConfig: (): AbacusSettings => decodeAbacusSettings({}),
-  create: ({ instanceId, displayName, accentColor, enabled, config, environment }) =>
+  create: (input) =>
     Effect.gen(function* () {
+      const { instanceId, displayName, accentColor, enabled, config, environment } = input;
       const resolvedDisplayName =
         displayName && displayName.trim().toLowerCase() !== "abacus" ? displayName : "ChatLLM";
       const continuationIdentity = defaultProviderContinuationIdentity({
@@ -175,7 +181,7 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
           );
         }).pipe(Effect.forkScoped);
       }
-      const snapshotShape: ServerProviderShape = {
+      const snapshotShape: ManagedServerProvider = {
         resolveMaintenance: () => Effect.succeed(MAINTENANCE_CAPABILITIES),
         getSnapshot: Ref.get(snapshotRef),
         refresh: Effect.gen(function* () {
@@ -193,33 +199,40 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
             usageLimits: freshLimits,
           };
           yield* Ref.set(snapshotRef, updated);
+          yield* PubSub.publish(changes, updated);
           return updated;
         }),
-        streamChanges: Stream.concat(
-          Stream.fromEffect(Ref.get(snapshotRef)),
-          Stream.fromPubSub(changes),
-        ),
+        get streamChanges() {
+          return Stream.concat(
+            Stream.fromEffect(Ref.get(snapshotRef)),
+            Stream.fromPubSub(changes),
+          );
+        },
         applyUsageLimits: (update) =>
-          Ref.update(snapshotRef, (current) => ({
-            ...current,
-            usageLimits: applyUsageLimitsUpdate({
-              previous: current.usageLimits,
-              checkedAt: update.checkedAt,
-              update,
-            }),
-          })),
+          Effect.gen(function* () {
+            const updated = yield* Ref.updateAndGet(snapshotRef, (current) => ({
+              ...current,
+              usageLimits: applyUsageLimitsUpdate({
+                previous: current.usageLimits,
+                checkedAt: update.checkedAt,
+                update,
+              }),
+            }));
+            yield* PubSub.publish(changes, updated);
+          }),
       };
 
-      const serverConfig = yield* Effect.serviceOption(ServerConfig);
-      const stateDir = Option.isSome(serverConfig) ? serverConfig.value.stateDir : undefined;
-
-      const adapter = yield* makeAbacusAdapter({
-        apiBaseUrl: config.apiBaseUrl || ABACUS_DEFAULT_API_BASE_URL,
-        apiKey,
-        defaultModel: "route-llm",
-        instanceId,
-        stateDir,
-      });
+      const orchestrationAdapter = yield* AbacusAdapterV2Driver.create(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: `Failed to create ChatLLM adapter: ${cause.message ?? String(cause)}`,
+              cause,
+            }),
+        ),
+      );
 
       const unsupportedTextGen = (operation: string) =>
         Effect.fail(
@@ -229,11 +242,12 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
           }),
         );
 
-      const textGeneration: TextGeneration.TextGeneration["Service"] = {
+      const textGeneration: ProviderTextGeneration = {
         generateCommitMessage: () => unsupportedTextGen("generateCommitMessage"),
         generatePrContent: () => unsupportedTextGen("generatePrContent"),
         generateBranchName: () => unsupportedTextGen("generateBranchName"),
         generateThreadTitle: () => unsupportedTextGen("generateThreadTitle"),
+        generateReviewGuide: () => unsupportedTextGen("generateReviewGuide"),
       };
 
       return {
@@ -245,8 +259,8 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
         enabled,
         snapshot: snapshotShape,
         refreshModels,
-        adapter,
+        orchestrationAdapter,
         textGeneration,
-      };
+      } satisfies ProviderInstance;
     }),
 };

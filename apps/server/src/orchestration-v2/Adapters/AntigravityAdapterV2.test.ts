@@ -125,6 +125,32 @@ describe("AntigravityAdapterV2 flavor", () => {
       ["accept", "decline", "cancel"],
     );
   });
+
+  it("extracts background task id from tool calls", () => {
+    const taskId = flavor.extractBackgroundTaskId?.({
+      toolCallId: "tool-1",
+      title: "Run command",
+      detail: "Running session-123/task-42 in background",
+      data: {},
+    });
+    assert.equal(taskId, "session-123/task-42");
+  });
+
+  it("extracts background task completion notifications", () => {
+    const text = `<task_notification>
+Task session-123/task-42 completed with status: SUCCESS.
+Task output:
+Done building artifact.
+</task_notification>`;
+    const mutations = flavor.extractBackgroundToolMutation?.(text);
+    assert.deepEqual(mutations, [
+      {
+        taskId: "session-123/task-42",
+        status: "completed",
+        appendOutput: "Done building artifact.\n",
+      },
+    ]);
+  });
 });
 
 const layerSession = Layer.mergeAll(
@@ -516,5 +542,114 @@ describe("AntigravityAdapterV2 client file system under restrictive policies", (
         assert.isFalse(yield* fileSystem.exists(path.join(outside, "x.ts")), name);
       }
     }).pipe(Effect.provide(layerSession), Effect.scoped),
+  );
+});
+
+describe("AntigravityAdapterV2 Claude chat", () => {
+  it.effect.each([
+    { name: "Gemini", model: "gemini-test-low" },
+    { name: "Claude Opus 5.5", model: "claude-opus-5-5-medium" },
+    { name: "Claude Sonnet 5.5", model: "claude-sonnet-5-5-medium" },
+  ] as const)(
+    "runs chat turn through ACP transport with $name",
+    ({ model }) =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const crypto = yield* Crypto.Crypto;
+        const mockAgentPath = yield* path.fromFileUrl(
+          new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+        );
+        const workspace = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-agy-claude-",
+        });
+        const instanceId = ProviderInstanceId.make("antigravity-claude-test");
+        const adapter = yield* makeAntigravityAdapterV2({
+          instanceId,
+          selfInvocation: yield* resolveSelfInvocation(),
+          makeRuntime: (input) =>
+            makeAntigravityAcpRuntime({
+              ...input,
+              childProcessSpawner,
+              spawn: {
+                command: process.execPath,
+                args: [mockAgentPath],
+                cwd: input.cwd,
+                env: { T3_ACP_ANTIGRAVITY: "1" },
+              },
+            }).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+          withProcess: (_stop, task) => task,
+          defaultModel: Effect.succeed(undefined),
+        });
+        const threadId = ThreadId.make(`thread-agy-claude-${model}`);
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: workspace,
+        });
+        const modelSelection = { instanceId, model } as const;
+        const session = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make(`session-agy-claude-${model}`),
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = yield* session.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const now = yield* DateTime.now;
+        yield* session
+          .startTurn({
+            appThread: {
+              createdBy: "user",
+              creationSource: "web",
+              id: threadId,
+              projectId: ProjectId.make("project-agy-claude"),
+              title: "Claude chat test",
+              providerInstanceId: instanceId,
+              modelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: workspace,
+              activeProviderThreadId: providerThread.id,
+              lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+              forkedFrom: null,
+              createdAt: now,
+              updatedAt: now,
+              archivedAt: null,
+              settledOverride: null,
+              settledAt: null,
+              lastVisitedAt: null,
+              deletedAt: null,
+            },
+            threadId,
+            runId: RunId.make("run-agy-claude"),
+            runOrdinal: 1,
+            providerTurnOrdinal: 1,
+            attemptId: RunAttemptId.make("attempt-agy-claude"),
+            rootNodeId: NodeId.make("node-agy-claude"),
+            providerThread,
+            message: {
+              createdBy: "user",
+              creationSource: "web",
+              messageId: MessageId.make("message-agy-claude"),
+              text: "Hello",
+              attachments: [],
+            },
+            modelSelection,
+            runtimePolicy,
+          })
+          .pipe(Effect.forkScoped);
+
+        const terminalEvent = yield* session.events.pipe(
+          Stream.filter((event) => event.type === "turn.terminal"),
+          Stream.runHead,
+        );
+        assert.isDefined(terminalEvent);
+      }).pipe(Effect.provide(layerSession), Effect.scoped),
   );
 });

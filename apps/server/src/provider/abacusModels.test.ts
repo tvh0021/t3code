@@ -4,7 +4,7 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { TestClock } from "effect/testing";
 
-import { AbacusDriver } from "../Drivers/AbacusDriver.ts";
+import { AbacusDriver } from "./Drivers/AbacusDriver.ts";
 import { abacusModelsUrl, readAbacusModels } from "./abacusModels.ts";
 
 it.effect("reads exact model IDs from the configured RouteLLM endpoint", () =>

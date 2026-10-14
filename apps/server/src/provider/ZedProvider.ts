@@ -2,6 +2,7 @@ import {
   type ModelCapabilities,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
+  type ServerProviderUsageLimits,
   type ZedSettings,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
@@ -9,7 +10,8 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import {
   buildServerProvider,
@@ -18,9 +20,8 @@ import {
   providerModelsFromSettings,
   spawnAndCollect,
   type ServerProviderDraft,
-} from "../providerSnapshot.ts";
-import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
-import { buildZedAcpSpawnInput } from "../acp/ZedAcpSupport.ts";
+} from "@t3tools/provider-core/server/snapshotProbe";
+import { buildZedAcpSpawnInput } from "./acp/ZedAcpSupport.ts";
 
 export const ZED_PRESENTATION = {
   displayName: "Zed",
@@ -37,12 +38,16 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
 const ZED_ACCOUNT_USAGE_UNAVAILABLE_MESSAGE =
   "Zed account spend is unavailable here. Check the Zed dashboard.";
 
-function unavailableZedAccountUsage(checkedAt: string) {
-  return makeUnavailableUsageLimits({
+function unavailableZedAccountUsage(checkedAt: string): ServerProviderUsageLimits {
+  return {
     checkedAt,
-    reason: "probeFailed",
-    message: ZED_ACCOUNT_USAGE_UNAVAILABLE_MESSAGE,
-  });
+    windows: [],
+    unavailable: {
+      reason: "unsupported" as const,
+      message: ZED_ACCOUNT_USAGE_UNAVAILABLE_MESSAGE,
+    },
+    externalUsage: { label: "Zed dashboard", url: "https://dashboard.zed.dev" },
+  };
 }
 
 export const ZED_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
@@ -91,8 +96,7 @@ function parseZedCatalog(output: string) {
       optionDescriptors:
         levels.length > 0
           ? [
-              {
-                id: "thinking_effort",
+              {                id: "thinking_effort",
                 label: "Thinking effort",
                 type: "select",
                 ...(defaultValue ? { currentValue: defaultValue } : {}),
@@ -208,6 +212,11 @@ export function buildInitialZedProviderSnapshot(
   });
 }
 
+type CatalogDiscoveryResult = {
+  discovered: ReadonlyArray<ServerProviderModel>;
+  catalog: ReturnType<typeof parseZedCatalog>;
+};
+
 export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(function* (
   zedSettings: ZedSettings,
   environment: NodeJS.ProcessEnv = process.env,
@@ -270,7 +279,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
     ),
   ).pipe(
     Effect.flatMap((result) =>
-      Effect.try(() => {
+      Effect.try<CatalogDiscoveryResult>(() => {
         if (result.code !== 0) throw new Error("Zed model discovery failed");
         const discovered = parseLatestZedModels(result.stdout);
         if (discovered.length !== 2)

@@ -252,6 +252,7 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
       : yield* fetchWindows("fetchAvailableModels", (response) =>
           decodeModels(response).pipe(Effect.map(modelWindows)),
         );
+    windows.sort((a, b) => (a.windowDurationMins ?? 0) - (b.windowDurationMins ?? 0));
     if (windows.length === 0) {
       return makeUnavailableUsageLimits({
         checkedAt,
