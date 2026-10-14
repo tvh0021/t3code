@@ -60,7 +60,7 @@ import type {
   UsageRecord,
 } from "@t3tools/provider-core/server/usage";
 import { resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
-import { codexUsageFormat, type CodexScanState } from "../provider/Drivers/codexUsage.ts";
+import { codexUsageFormat, reconcileCodexCreditUsage, type CodexScanState } from "../provider/Drivers/codexUsage.ts";
 import {
   createOverrideRateTable,
   OFFICIAL_MODEL_RATES,
@@ -133,12 +133,15 @@ function asAbacusRecords(
   parsed: () => unknown,
 ): readonly UsageRecord[] {
   if (records.length === 0) return records;
-  const credits = abacusCredits(parsed());
-  return records.map((record): UsageRecord => ({
-    ...record,
-    provider: "abacus",
-    ...(credits === null ? {} : { credits }),
-  }));
+  const parsedCredits = abacusCredits(parsed());
+  return records.map((record): UsageRecord => {
+    const credits = parsedCredits ?? record.credits;
+    return {
+      ...record,
+      provider: "abacus",
+      ...(credits != null ? { credits } : {}),
+    };
+  });
 }
 
 /**
@@ -850,7 +853,9 @@ export const make = Effect.gen(function* () {
           continue;
         retainedFiles.push({ path: filePath, records: [...entry.records, ...entry.tailRecords] });
       }
-      return retainedFiles;
+      return provider === "codex"
+        ? reconcileCodexCreditUsage(retainedFiles)
+        : retainedFiles;
     });
     const crossFileSessions = sharedSessions(filesByDir.flat());
 

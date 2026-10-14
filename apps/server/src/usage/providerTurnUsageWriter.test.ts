@@ -5,7 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { appendProviderTurnUsage } from "./providerTurnUsageWriter.ts";
-import { initialCodexScanState, parseCodexLine } from "./usageTranscripts.ts";
+import { initialCodexScanState, parseCodexLine } from "../provider/Drivers/codexUsage.ts";
 
 describe("providerTurnUsageWriter", () => {
   it("writes valid jsonl for antigravity and abacus that can be parsed by parseCodexLine", async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { initialCodexScanState, parseCodexLine } from "./codexUsage.ts";
+import { initialCodexScanState, parseCodexLine, reconcileCodexCreditUsage } from "./codexUsage.ts";
 
 describe("parseCodexLine", () => {
   const sessionMeta = JSON.stringify({
@@ -89,6 +89,140 @@ describe("parseCodexLine", () => {
     expect(speedAfter(settings({ service_tier: "priority" }), 3)).toBe("fast");
     // Codex omits the field when no tier was requested.
     expect(speedAfter(settings({ model: "gpt-6-astra" }), 4)).toBe("standard");
+  });
+
+  it("carries the credit balance through to reconciliation, which prices the drop", () => {
+    const state = initialCodexScanState();
+    parseCodexLine(sessionMeta, state);
+    parseCodexLine(turnContext, state);
+
+    const tokenCountWithCredits = (inputTokens: number, outputTokens: number, balance: string) =>
+      JSON.stringify({
+        timestamp: "2026-08-01T05:00:00.000Z",
+        payload: {
+          type: "token_count",
+          rate_limits: {
+            credits: {
+              hasCredits: true,
+              unlimited: false,
+              balance,
+            },
+          },
+          info: {
+            last_token_usage: {
+              input_tokens: inputTokens,
+              cached_input_tokens: 0,
+              cache_write_input_tokens: 0,
+              output_tokens: outputTokens,
+              reasoning_output_tokens: 0,
+            },
+          },
+        },
+      });
+
+    const first = parseCodexLine(tokenCountWithCredits(100, 10, "1175.3435"), state);
+    const second = parseCodexLine(tokenCountWithCredits(200, 20, "1175.3083"), state);
+    expect(first?.creditBalance).toBe(1175.3435);
+    expect(second?.creditBalance).toBe(1175.3083);
+
+    // The first balance is the baseline; the second turn consumed 0.0352 credits.
+    const [file] = reconcileCodexCreditUsage([
+      { path: "rollout.jsonl", records: [first!, second!] },
+    ]);
+    expect(file?.records.map((record) => record.credits)).toEqual([0, 0.0352]);
+    expect(file?.records[0]?.reportedCostUsd).toBeNull();
+    expect(file?.records[1]?.reportedCostUsd).toBeCloseTo(0.0352 * 0.04);
+  });
+
+  it("skips a repeated token payload even when its balance changed", () => {
+    const state = initialCodexScanState();
+    parseCodexLine(turnContext, state);
+    const tokenCountWithCredits = (inputTokens: number, balance: string) =>
+      JSON.stringify({
+        type: "event_msg",
+        timestamp: "2026-08-01T05:00:00.000Z",
+        payload: {
+          type: "token_count",
+          rate_limits: { credits: { balance } },
+          info: {
+            last_token_usage: {
+              input_tokens: inputTokens,
+              cached_input_tokens: 0,
+              cache_write_input_tokens: 0,
+              output_tokens: 10,
+              reasoning_output_tokens: 0,
+            },
+          },
+        },
+      });
+
+    expect(parseCodexLine(tokenCountWithCredits(100, "100"), state)).not.toBeNull();
+    expect(parseCodexLine(tokenCountWithCredits(100, "90"), state)).toBeNull();
+    expect(parseCodexLine(tokenCountWithCredits(200, "80"), state)?.creditBalance).toBe(80);
+  });
+
+  it("reconciles one account balance across concurrent rollouts and excludes auto-review", () => {
+    const makeRecord = (model: string, timestampMs: number, creditBalance: number) => ({
+      provider: "codex" as const,
+      timestampMs,
+      model,
+      sessionId: model,
+      totals: {
+        uncachedInputTokens: 1,
+        cachedInputTokens: 0,
+        cacheCreationTokens: 0,
+        outputTokens: 1,
+        reasoningTokens: 0,
+      },
+      reportedCostUsd: null,
+      credits: null,
+      creditBalance,
+      speed: "standard" as const,
+      dedupeKey: null,
+    });
+
+    const reconciled = reconcileCodexCreditUsage([
+      {
+        path: "parent.jsonl",
+        records: [makeRecord("gpt-5.6-sol", 1, 2500), makeRecord("gpt-5.6-sol", 2, 2000)],
+      },
+      {
+        path: "child.jsonl",
+        records: [
+          makeRecord("gpt-5.6-sol", 2, 2000),
+          makeRecord("codex-auto-review", 3, 2000),
+          makeRecord("gpt-5.6-sol", 4, 1169),
+        ],
+      },
+    ]);
+
+    const records = reconciled.flatMap((file) => file.records);
+    expect(records.map((record) => record.credits)).toEqual([0, 500, 0, 0, 831]);
+    expect(records[0]?.reportedCostUsd).toBeNull();
+    expect(records[2]?.reportedCostUsd).toBeNull();
+    expect(records.find((record) => record.model === "codex-auto-review")).toMatchObject({
+      credits: 0,
+      reportedCostUsd: 0,
+    });
+    expect(records.reduce((sum, record) => sum + (record.credits ?? 0), 0)).toBe(1331);
+    expect(records.reduce((sum, record) => sum + (record.reportedCostUsd ?? 0), 0)).toBeCloseTo(
+      1331 * 0.04,
+    );
+  });
+
+  it("excludes codex-auto-review turns at parse time", () => {
+    const state = initialCodexScanState();
+    const autoReviewContext = JSON.stringify({
+      type: "turn_context",
+      timestamp: "2026-08-01T05:17:42.694Z",
+      payload: { type: "turn_context", model: "codex-auto-review" },
+    });
+    parseCodexLine(autoReviewContext, state);
+    const record = parseCodexLine(tokenCount(100, 0, 10, 0), state);
+    expect(record).not.toBeNull();
+    expect(record?.model).toBe("codex-auto-review");
+    expect(record?.credits).toBe(0);
+    expect(record?.reportedCostUsd).toBe(0);
   });
 
   // A forked/subagent rollout opens with the parent's history copied in and

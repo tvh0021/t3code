@@ -4,7 +4,12 @@
  *
  * @module provider/Drivers/codexUsage
  */
-import type { CodexSettings } from "@t3tools/contracts";
+import {
+  codexCreditsToUsd,
+  type CodexSettings,
+  type UsageProviderKind,
+  type UsageTokenTotals,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -18,7 +23,6 @@ import {
   type UsageRecord,
   type UsageSpeed,
 } from "@t3tools/provider-core/server/usage";
-import type { UsageTokenTotals } from "@t3tools/contracts";
 
 import { resolveCodexHomeLayout } from "./CodexHomeLayout.ts";
 
@@ -86,17 +90,25 @@ function isForkedSessionMeta(payload: Record<string, unknown>): boolean {
  * reconciles with the session's final `total_token_usage`, provided
  * consecutive duplicate events are dropped, which this does.
  */
-export function parseCodexLine(line: string, state: CodexScanState): UsageRecord | null {
+export function parseCodexLine(
+  line: string,
+  state: CodexScanState,
+  provider: UsageProviderKind = "codex",
+): UsageRecord | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
   } catch {
     return null;
   }
-  return parseCodexRecord(parsed, state);
+  return parseCodexRecord(parsed, state, provider);
 }
 
-function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord | null {
+function parseCodexRecord(
+  parsed: unknown,
+  state: CodexScanState,
+  provider: UsageProviderKind = "codex",
+): UsageRecord | null {
   if (typeof parsed !== "object" || parsed === null) return null;
 
   const record = parsed as Record<string, unknown>;
@@ -182,21 +194,147 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
     reasoningTokens: Math.min(outputTokens, tokenCount(lastRecord["reasoning_output_tokens"])),
   };
 
-  if (totalTokens(totals) === 0) return null;
+  const rawRateLimits = payloadRecord["rate_limits"];
+  let creditBalance: number | null = null;
+  if (typeof rawRateLimits === "object" && rawRateLimits !== null) {
+    const rateLimits = rawRateLimits as Record<string, unknown>;
+    const credsObj = rateLimits["credits"];
+    if (typeof credsObj === "object" && credsObj !== null) {
+      const balStr = (credsObj as Record<string, unknown>)["balance"];
+      if (typeof balStr === "string") {
+        const bal = parseFloat(balStr);
+        if (Number.isFinite(bal) && bal > 0) creditBalance = bal;
+      }
+    }
+  }
+
+  const rawCredits = lastRecord["credits"];
+  let credits =
+    typeof rawCredits === "number" && Number.isFinite(rawCredits) && rawCredits >= 0
+      ? rawCredits
+      : null;
+
+  if (totalTokens(totals) === 0 && (credits === null || credits === 0)) return null;
+
+  let reportedCostUsd: number | null = null;
+  if (state.model === "codex-auto-review") {
+    credits = 0;
+    reportedCostUsd = 0;
+  }
 
   return {
-    provider: "codex",
+    provider,
     timestampMs,
     model: state.model,
     sessionId: state.sessionId,
     totals,
     // Codex does not report cost in the rollout.
-    reportedCostUsd: null,
+    reportedCostUsd,
     speed: state.speed,
+    ...(credits !== null ? { credits } : {}),
+    ...(creditBalance !== null ? { creditBalance } : {}),
     // Events surviving the fork-copy suppression above are unique to this
     // rollout, so they need no global dedup.
     dedupeKey: null,
   };
+}
+
+/**
+ * Reconciles Codex account-level credit balances across the chronological
+ * timeline of all rollout files.
+ *
+ * `rate_limits.credits.balance` in Codex rollouts is a snapshot of the user's
+ * global OpenAI account balance. When subagents or parallel sessions run
+ * concurrently, computing balance drops per-file multiplies credit usage by
+ * the number of concurrent threads.
+ *
+ * Chronological reconciliation tracks the monotonic decline of the global
+ * account balance, cleanly attributing credit drops to the turn that actually
+ * consumed them without double counting across subagents.
+ */
+export function reconcileCodexCreditUsage(
+  files: ReadonlyArray<{ readonly path: string; readonly records: readonly UsageRecord[] }>,
+): ReadonlyArray<{ readonly path: string; readonly records: readonly UsageRecord[] }> {
+  type RecordEntry = {
+    readonly record: UsageRecord;
+    readonly fileIdx: number;
+    readonly recordIdx: number;
+  };
+
+  const entries: RecordEntry[] = [];
+  for (let fIdx = 0; fIdx < files.length; fIdx++) {
+    const file = files[fIdx]!;
+    for (let rIdx = 0; rIdx < file.records.length; rIdx++) {
+      const rec = file.records[rIdx]!;
+      if (rec.provider === "codex" && typeof rec.creditBalance === "number") {
+        entries.push({ record: rec, fileIdx: fIdx, recordIdx: rIdx });
+      }
+    }
+  }
+
+  entries.sort((a, b) => a.record.timestampMs - b.record.timestampMs);
+
+  let runningMinBalance: number | null = null;
+  const updates = new Map<string, { credits: number; reportedCostUsd: number | null }>();
+
+  for (const entry of entries) {
+    const bal = entry.record.creditBalance;
+    if (typeof bal !== "number" || bal <= 0) continue;
+
+    const key = `${entry.fileIdx}:${entry.recordIdx}`;
+    if (runningMinBalance === null) {
+      runningMinBalance = bal;
+      updates.set(key, {
+        credits: 0,
+        reportedCostUsd: entry.record.model === "codex-auto-review" ? 0 : null,
+      });
+      continue;
+    }
+
+    if (entry.record.model === "codex-auto-review") {
+      updates.set(key, { credits: 0, reportedCostUsd: 0 });
+      if (bal > runningMinBalance + 100) runningMinBalance = bal;
+      // Keep the previous baseline on a drop so a concurrent paid turn is
+      // counted once on the next paid record.
+      continue;
+    }
+
+    if (bal < runningMinBalance) {
+      const diff = runningMinBalance - bal;
+
+      runningMinBalance = bal;
+      if (diff > 0.000001) {
+        const credits = Math.round(diff * 1_000_000) / 1_000_000;
+        updates.set(key, {
+          credits,
+          reportedCostUsd: codexCreditsToUsd(credits),
+        });
+      } else {
+        updates.set(key, { credits: 0, reportedCostUsd: null });
+      }
+    } else if (bal > runningMinBalance + 100) {
+      // Balance refill / top-up
+      runningMinBalance = bal;
+      updates.set(key, { credits: 0, reportedCostUsd: null });
+    } else {
+      updates.set(key, { credits: 0, reportedCostUsd: null });
+    }
+  }
+
+  return files.map((file, fIdx) => ({
+    path: file.path,
+    records: file.records.map((rec, rIdx) => {
+      const update = updates.get(`${fIdx}:${rIdx}`);
+      if (update !== undefined) {
+        return {
+          ...rec,
+          credits: update.credits,
+          reportedCostUsd: update.reportedCostUsd,
+        };
+      }
+      return rec;
+    }),
+  }));
 }
 
 /**
@@ -227,6 +365,7 @@ export const codexUsageFormat: TranscriptUsageFormat<CodexScanState> = {
       forked_from_id: true,
       source: { subagent: { thread_spawn: { parent_thread_id: true } } },
       info: { last_token_usage: true },
+      rate_limits: { credits: { balance: true } },
     },
   },
   // `turn_context`, `thread_settings_applied` and `session_meta` lines hold no

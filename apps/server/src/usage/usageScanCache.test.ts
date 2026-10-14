@@ -9,7 +9,7 @@ import {
   type CachedFile,
   type ScanCache,
 } from "./usageScanCache.ts";
-import type { CreditedUsageRecord as UsageRecord } from "./usageAggregation.ts";
+import type { UsageRecord } from "@t3tools/provider-core/server/usage";
 
 import { TEST_FORMAT_MAP } from "./usageTestFormats.ts";
 
@@ -87,7 +87,13 @@ describe("scan cache round trip", () => {
       mtimeMs: 400,
       provider: "codex",
       records: [
-        record({ provider: "codex", model: "gpt-6-astra", dedupeKey: null, speed: "ultrafast" }),
+        record({
+          provider: "codex",
+          model: "gpt-6-astra",
+          dedupeKey: null,
+          speed: "ultrafast",
+          creditBalance: 1175.3435,
+        }),
       ],
       tailRecords: [],
       position: position({
@@ -248,39 +254,33 @@ describe("scan cache round trip", () => {
 describe("pruneScanCache", () => {
   const retentionCutoffMs = 1000;
 
-  it("drops entries older than retention", () => {
-    const cache = cacheWith([["/old.jsonl", 500, [record()]]]);
+  it("drops files not touched since retentionCutoffMs", () => {
+    const cache = cacheWith([
+      ["/cold.jsonl", retentionCutoffMs - 1, []],
+      ["/boundary.jsonl", retentionCutoffMs, []],
+      ["/warm.jsonl", retentionCutoffMs + 1, []],
+    ]);
 
-    const removed = pruneScanCache(cache, retentionCutoffMs);
-
-    expect(removed).toBe(1);
-    expect(cache.size).toBe(0);
-  });
-
-  it("keeps entries whose file has disappeared", () => {
-    const cache = cacheWith([["/gone.jsonl", 5000, [record()]]]);
-
-    pruneScanCache(cache, retentionCutoffMs);
-
-    expect(cache.size).toBe(1);
+    expect(pruneScanCache(cache, retentionCutoffMs)).toBe(1);
+    expect(cache.has("/cold.jsonl")).toBe(false);
+    expect(cache.has("/boundary.jsonl")).toBe(true);
+    expect(cache.has("/warm.jsonl")).toBe(true);
   });
 });
 
 describe("dedupeWithinFile", () => {
-  it("keeps the first record per dedupe key", () => {
-    const kept = dedupeWithinFile([
-      record({ totals: { ...record().totals, outputTokens: 1 } }),
-      record({ totals: { ...record().totals, outputTokens: 999 } }),
-      record({ dedupeKey: "msg_2:" }),
-    ]);
+  it("drops later records sharing a dedupeKey", () => {
+    const a = record({ dedupeKey: "same" });
+    const b = record({ dedupeKey: "same", model: "different" });
+    const c = record({ dedupeKey: "other" });
 
-    expect(kept).toHaveLength(2);
-    expect(kept[0]?.totals.outputTokens).toBe(1);
+    expect(dedupeWithinFile([a, b, c])).toEqual([a, c]);
   });
 
-  it("keeps every record that has no dedupe key", () => {
-    expect(
-      dedupeWithinFile([record({ dedupeKey: null }), record({ dedupeKey: null })]),
-    ).toHaveLength(2);
+  it("keeps every null dedupeKey record", () => {
+    const a = record({ dedupeKey: null });
+    const b = record({ dedupeKey: null });
+
+    expect(dedupeWithinFile([a, b])).toEqual([a, b]);
   });
 });

@@ -26,6 +26,7 @@ import {
   type DailyTotals,
   type HourlyTotals,
   type MergedUsage,
+  type ModelTotals,
 } from "@t3tools/shared/usageMerge";
 
 import { isElectron } from "../../env";
@@ -110,6 +111,19 @@ function isUsageWindowDays(value: number): value is UsagePagePreferences["window
 }
 
 const providerLabel = (provider: UsageProviderKind) => PROVIDER_PRESENTATION[provider].label;
+
+export function organizeUsageModels(models: readonly ModelTotals[]): {
+  readonly subscriptionModels: readonly ModelTotals[];
+  readonly creditModels: readonly ModelTotals[];
+} {
+  const sorted = [...models].sort(
+    (a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens,
+  );
+  return {
+    subscriptionModels: sorted.filter((model) => !model.isCreditBased),
+    creditModels: sorted.filter((model) => Boolean(model.isCreditBased)),
+  };
+}
 
 export function UsagePage() {
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
@@ -225,12 +239,8 @@ export function UsagePage() {
   );
   // Models stay in cost order for both metrics. Credit-based models (ChatLLM)
   // get their own table so credits never blend into subscription token usage.
-  const subscriptionModels = useMemo(
-    () => merged.models.filter((model) => !model.isCreditBased),
-    [merged.models],
-  );
-  const creditModels = useMemo(
-    () => merged.models.filter((model) => model.isCreditBased),
+  const { subscriptionModels, creditModels } = useMemo(
+    () => organizeUsageModels(merged.models),
     [merged.models],
   );
   const providersWithData = useMemo(() => providersWithUsage(merged.providers), [merged.providers]);

@@ -26,8 +26,7 @@ import { EMPTY_TOTALS, type UsageRecord } from "@t3tools/provider-core/server/us
 import { cacheSavingsUsd, priceUsage, type RateTable } from "./usagePricing.ts";
 
 /**
- * Formats an instant as a `YYYY-MM-DD` day in `timeZone`.
- *
+ * Formats an instant as a `YYYY-MM-DD` day in `timeZone`.\n *
  * `en-CA` yields ISO-ordered parts, which is why it is used here rather than
  * assembling the day from `Date` getters (those are host-local only).
  */
@@ -87,10 +86,9 @@ interface MutableBucket {
 }
 
 /**
- * Credit-billed records (ChatLLM, Codex credits) carry the credits spent.
- * Credit and subscription usage of one model land in separate buckets.
+ * UsageRecord carrying optional credits directly on the provider-core type.
  */
-export type CreditedUsageRecord = UsageRecord & { readonly credits?: number | null };
+export type CreditedUsageRecord = UsageRecord;
 
 export interface AggregateOptions {
   readonly timeZone: string;
@@ -181,7 +179,7 @@ export class UsageAggregator {
    * can derive per-window facts (distinct sessions, for one) from the records
    * that landed rather than everything the mtime prefilter happened to admit.
    */
-  add(input: CreditedUsageRecord, sourcePath?: string): boolean {
+  add(input: UsageRecord, sourcePath?: string): boolean {
     const record = this.#mapModel(input);
     if (record.dedupeKey !== null) {
       if (this.#seen.has(record.dedupeKey)) {
@@ -275,7 +273,7 @@ export class UsageAggregator {
   }
 
   /** The target's own rate applies, so a provider-specific `rateModel` is dropped. */
-  #mapModel(record: CreditedUsageRecord): CreditedUsageRecord {
+  #mapModel(record: UsageRecord): UsageRecord {
     const model = this.#options.modelAliases?.get(record.model);
     if (model === undefined) return record;
     const { rateModel: _rateModel, ...rest } = record;
@@ -409,3 +407,5 @@ function resolveCostSource(bucket: MutableBucket): UsageBucket["costSource"] {
   if (bucket.providerReportedRecords === bucket.records) return "providerReported";
   return "modelPriced";
 }
+
+export { reconcileCodexCreditUsage } from "../provider/Drivers/codexUsage.ts";
