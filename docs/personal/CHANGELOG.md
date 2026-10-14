@@ -205,3 +205,14 @@ Maintenance release of the fork code cleanup, with no intended behavior change.
 - Removed the per-file Codex credit delta. Cross-rollout reconciliation already replaced it for every record with a balance, so reported credits and costs are unchanged. Old usage scan caches still load.
 - Recorded edge cases found during the cleanup as COORD-001 and CODEX-CREDIT-001 in the issue tracker. Neither is fixed here.
 - Verification: 1,117 focused tests passed across 57 files, plus affected package typechecks. The release lint fix uses `it.effect` in `coordinationIds.test.ts`; its two tests passed again before installation. Scoped lint retains two pre-existing errors in `antigravityUsageLimits.ts`. Installed macOS arm64 0.3.3 passed About, retained project/thread loading, Settings, model selection, two Codex Luna turns, thread reopen, Usage refresh and inline/display math rendering. Native mobile and remote/relay/tunnel paths were not exercised. Full coordination workflows and fresh Antigravity inference were not replayed.
+
+### 2026-10-13: Upstream sync to orchestration-v2
+
+Merged upstream `42160f2925`. Upstream had replaced the server orchestration
+with orchestration-v2 and moved providers into `packages/provider-*`.
+
+- Replaced T3 orchestration layers with upstream's `delegate_task`, adding the fork's per-model turn budgets and read-only review snapshots as guards.
+- Rebuilt quota handoff on upstream's usage-limit recovery worker. A limited thread resumes on the first mapped fallback model whose quota is fresh and below the threshold.
+- Adopted upstream's Antigravity quota probe, its shared "Claude & GPT" bucket and its SQLite usage scanner. ChatLLM keeps the live turn-usage writer.
+- Ported the Zed and ChatLLM providers to orchestration-v2 adapters and drivers. Kept upstream's usage scan cache and added the Codex credit balance to its v6 rows.
+- Verification: server, contracts, client-runtime, provider-core, web and desktop typechecks passed. 700+ focused tests passed across the touched areas. Migrations ran cleanly on a read-only copy of the personal V1 database. Two upstream Antigravity client-file tests fail on macOS: new files under not-yet-created directories in a symlinked temp path are rejected. That code is upstream's and unchanged here. Mobile, the installed app and live delegation and quota handoff were not exercised.

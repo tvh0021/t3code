@@ -59,9 +59,10 @@ Historical counts are dated measurements, not permanent totals.
 
 ChatLLM credits use $0.0005 per credit. Turn usage accumulates all agent-loop
 steps; compute-point deltas measure credits with a pricing fallback when needed.
-Codex credits use $0.04 each. Scan-cache v5 reconciles account balance snapshots
-in timestamp order across duplicate/forked rollouts instead of charging the same
-balance drop once per transcript. `codex-auto-review` contributes no paid credits
+Codex credits use $0.04 each. The usage scan cache (v6) keeps each record's
+account balance, so reconciliation orders balance snapshots by timestamp across
+duplicate/forked rollouts instead of charging the same balance drop once per
+transcript. `codex-auto-review` contributes no paid credits
 or USD and does not move the paid baseline. Its original guessed token rate has
 been removed from current accounting.
 
@@ -94,18 +95,15 @@ catalog takes precedence. Unauthenticated/disabled providers do not gain models
 merely because a budget policy names them.
 
 The September Gemini-only ACP restriction is historical. Personal 0.3.0 added
-Claude support. Quota code still filters Claude/GPT groups and `3p` buckets;
-that earlier policy is now tracked as AG-QUOTA-001 rather than justified by an
-obsolete claim that Claude cannot run. Session/Weekly windows are sorted by
-duration. Real quota-pool mapping needs an account-backed check.
+Claude support. Quota probing and usage scanning are upstream's: Claude and GPT
+share one "Claude & GPT (shared)" bucket, and historical Antigravity tokens
+come from upstream's SQLite scanner. The fork only keeps its shortest-window-first
+sort. ChatLLM still writes live turn usage.
 
 Antigravity uses Full access at new-session/resume boundaries. Web/desktop/mobile
 selectors expose that effective mode while retaining the saved thread/draft
 preference for a later provider switch. Existing turns continue. Provider policy
-compares effective modes, avoiding redundant restarts. GPT review/edit children
-inherit their parent's saved mode. Coordination still distinguishes GPT model names
-from other models when selecting review permissions; that decision has not moved
-entirely to the provider boundary.
+compares effective modes, avoiding redundant restarts.
 
 Native task notifications produce work-trace results without finishing the prompt.
 Ordinary, quoted, incomplete and foreign-session content remains chat text.
@@ -148,77 +146,43 @@ for account billing. Limits explicitly links the dashboard without showing a
 zeroed or invented account bar. ZED-001 owns billing access; earlier approval,
 streaming and effort verification remains dated evidence.
 
-## Agent-created threads and T3 orchestration layers
+## Delegated tasks
 
-Included in installed releases through Personal 0.3.2. Current verification
-limits are recorded separately, rather than inferred from installation.
+Since the October 2026 upstream sync, agents delegate through upstream's
+`delegate_task` MCP tool. The fork's orchestration-layer tools, layer UI and
+coordination state are gone. Child threads created by earlier layers import as
+ordinary threads without parent links.
 
-Thread MCP tools expose model listing, creation, reading, messaging and interruption.
-Selections can cross models/providers; omitted selections inherit model/options.
-Handoffs start with fresh history, so assignments must carry needed context.
+The fork adds two guards to `delegate_task` (`orchestration-v2/delegationGuards.ts`):
 
-Layers expose `start_orchestration_layer`, `spawn_child`, `assign_child`,
-`report_to_parent`, `wait_for_children`, `read_orchestration_layer`,
-`control_orchestration_layer` and `refresh_coordination_policy`.
-Four children run concurrently and overflow persists. Initial assignments wait
-for the planning turn to end. Reports persist while the parent is busy and wake
-an idle parent subject to budgets and pending human requests. `wait_for_children`
-records intent to end the turn; later coordination calls in that turn are rejected.
+- **Per-model turn budgets.** Each parent may start a limited number of
+  app-owned children per canonical model, across aliases and provider
+  instances. The count never resets, so a parent cannot regain budget by waiting
+  for children to finish. Provider-native subagents are not counted. Named
+  defaults and overrides take precedence over price bands: above $10 per million
+  output tokens gets one turn, below $1 is unlimited, and $1 through $10 gets
+  four. Unpriced models need overrides. Settings shows the live policy, so don't
+  copy the table here.
+- **Review snapshots.** A `reviewRef` gives the child a detached local clone of
+  that commit instead of the parent's live worktree. StorageCleanup removes
+  orphaned snapshots.
 
-Pause blocks starts; resume preserves counters. Complete retains late reports
-without waking the parent. Cancel interrupts owned children and queued work.
-Manual parent activity pauses coordination. Restart recovery pauses uncertain
-work rather than replaying paid turns. Active members cannot be archived and
-active children cannot be deleted; parent deletion cancels its layer first.
-Turn correlation, receipt ordering and persisted reconciliation handle early
-completion and stale/disconnected sessions.
-
-Reviews use detached snapshots of resolved Git commits. Editing children require
-separate existing registered worktrees for parent integration. Read-only execution
-is not a general restriction on reading every host path. Provider-native subagents
-are allowed; children cannot create nested T3 layers or reset budgets by creating
-T3 threads. Migration 054 persists coordination; shell snapshots omit full assignment
-and report bodies, which remain in thread detail.
-
-### Model budgets and maintenance
-
-One round is one automatic provider turn start. Initial user planning is excluded.
-Canonical model counters are shared across parent wakeups, child assignments,
-aliases and provider instances. Named defaults and overrides precede price bands.
-Above $10 per million output tokens gets one turn, below $1 is unlimited, and
-$1 through $10 gets four. Unpriced models need overrides. The live policy is
-shown in Settings; avoid maintaining a second model-budget table here.
-
-Monthly maintenance refreshes available models/pricing for future layers while
-active layers retain captured budgets/counters. Failed refreshes preserve prior
-cache. Unlimited does not imply free usage or absence of provider quotas.
-Web/desktop uses Settings > Providers; mobile uses Settings > Maintenance.
-
-### Provider enforcement
-
-Codex/Claude have native worker restrictions; ChatLLM uses execution/read
-containment. Zed requires worker/thread metadata support, forwards scoped HTTP
-MCP tools and fails closed with old companion binaries. Antigravity can parent
-or join a layer. Cursor, Grok and OpenCode remain excluded from strict roles
-until support is established. Ordinary handoffs remain separate.
-
-WORKFLOW-001/002 own missing client/native-provider and complete Gemini-parent
-checks. A Gemini child quota handoff and a Zed review child previously passed;
-neither proves a complete native parent cycle on the current release.
+The coordination policy refreshes models and prices daily and on demand from
+Settings > Providers. Mobile uses Settings > Maintenance.
 
 ## Quota handoff
 
-Opted-in layers use an environment threshold, default 95%, and ordered model
-fallbacks. A qualifying target needs ready/authenticated status, fresh quota
-below threshold, role support and remaining budget. Automatic routing switches
-providers at most once. Without a fallback, a known reset permits a fresh source
-reading before continuation. Unknown quota/reset pauses work with a reason;
-manual activity cancels pending routing.
+Quota handoff is built on upstream's usage-limit recovery. When a thread hits a
+usage limit and auto-resume is on, the recovery worker looks up the thread's
+model in the environment's ordered fallback map. It skips the limited source
+instance and picks the first mapped model whose provider is ready and whose
+quota windows are fresh and below the threshold (95% by default). If none
+qualifies, it refreshes the candidates' quota once. A qualifying fallback
+resumes the thread on that model; otherwise upstream's reset-based retry
+applies unchanged.
 
-Linked handoff threads receive partial history and a summary before continuation.
-Simulated probes corrected lost effort options and stale reset details. Historical
-live Codex-to-Gemini child handoff evidence is in the changelog/handoff; actual
-quota exhaustion/reset and current complete parent cycles remain separate checks.
+Earlier live evidence of Codex-to-Gemini child handoffs predates this design
+and does not verify it.
 
 ## Desktop startup and macOS access
 

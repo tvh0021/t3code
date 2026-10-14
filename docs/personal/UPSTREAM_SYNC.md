@@ -67,6 +67,8 @@ git diff upstream/main -- <conflicted-file>
 
 - `packages/client-runtime/src/state/providerInstanceDisplay.ts`: a sync silently reverted upstream #9899's badge helper signature, module doc and tests.
 - `docs/README.md`: merge 69bbd365f dropped upstream's Runbooks section.
+- Fork features that upstream tests don't provide (`DelegationGuards`, the recovery worker's `ProviderRegistry`) are read with `Effect.serviceOption`, so upstream test call sites need no edits. Keep new fork dependencies behind the same kind of optional seam.
+- The fork's verified official rates outrank the LiteLLM table, so upstream usage tests that set a custom rate for an officially priced model fail. Retarget the test model; don't weaken the official-rate rule.
 
 Run focused checks on changed files:
 
