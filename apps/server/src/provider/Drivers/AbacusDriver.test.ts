@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { ProviderInstanceId, ProviderSessionId, ThreadId } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
 
@@ -14,6 +14,9 @@ it("registers Abacus without replacing the existing built-in drivers", () => {
     "grok",
     "opencode",
     "antigravity",
+    "pi",
+    "muse",
+    "acpRegistry",
     "abacus",
     "zed",
   ]);
@@ -60,15 +63,18 @@ it.effect("enables configured Abacus text chat and exposes configured model IDs"
       },
     ]);
 
-    const session = yield* instance.adapter.startSession({
-      threadId: ThreadId.make("abacus-text-chat"),
-      provider: AbacusDriver.driverKind,
-      providerInstanceId: instance.instanceId,
-      cwd: process.cwd(),
-      runtimeMode: "full-access",
+    const sessionRuntime = yield* instance.orchestrationAdapter.openSession({
+      threadId: ThreadId.make("thread-abacus-1"),
+      providerSessionId: ProviderSessionId.make("session-abacus-1"),
+      modelSelection: { instanceId: instance.instanceId, model: "route-llm" },
+      runtimePolicy: {
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      },
     });
-    expect(session).toMatchObject({
-      provider: "abacus",
+    expect(sessionRuntime.providerSession).toMatchObject({
+      id: "session-abacus-1",
       status: "ready",
       model: "route-llm",
     });

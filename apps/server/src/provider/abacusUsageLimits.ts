@@ -8,7 +8,7 @@ import {
   clampPercent,
   makeUnavailableUsageLimits,
   makeUsageLimits,
-} from "../providerUsageLimits.ts";
+} from "@t3tools/provider-core/server/usageLimits";
 
 const ABACUS_COMPUTE_POINTS_URL = "https://apps.abacus.ai/api/_getOrganizationComputePoints";
 
