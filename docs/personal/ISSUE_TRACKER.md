@@ -419,97 +419,75 @@ Acceptance:
 
 ### ZED-001: Read Zed account usage from the billing service
 
-Status: Blocked by Zed billing authentication.
+Status: Implemented October 14, 2026; awaiting a live signed-in read.
 
 The Zed entry in Limits must show the account's actual spend for the current
 Zed billing period. It must not estimate account spend from one or more T3
 sessions.
 
-#### Observed behavior
+#### Why earlier attempts failed
 
-The previous implementation built a `$10` monthly bar from ACP
-`usage_update.cost` values. ACP reports cumulative cost for one session. It does
-not report the account total shown by `dashboard.zed.dev`. A fresh provider
-snapshot also showed `$0 / $10` before any session reported a cost.
-
-#### Why the usage tracker does not work
-
-T3 has no authenticated source for Zed account spend. The headless Zed provider
-uses the stored native credential. Zed accepts that credential for
-`/client/users/me`, but all tested billing routes return `401`:
-
-- `/frontend/organizations/{id}/billing/usage`
-- `/frontend/organizations/{id}/subscription`
-- `/frontend/billing/usage`
-- `/frontend/billing/subscriptions/current`
-
-The dashboard sends a browser-session cookie to these routes. T3 does not have
-that cookie and must not copy a private dashboard cookie into server state.
-
-The native `/client/users/me` response includes the billing-period start and
-end. It does not include token spend. Its usage fields contain request counts
-and edit-prediction usage. Native account-update events fetch the same response,
-so waiting for an update does not supply the missing spend value.
-
-ACP `usage_update.cost` is also unsuitable. It is the cumulative cost of one
-ACP session, not the account total for the billing period. Adding those values
-across T3 sessions would omit usage from Zed and other clients, and repeated
-cumulative updates could count the same session cost more than once.
-
-The signed-in Safari dashboard showed `$5.20` used of `$10`. T3 cannot read
-that value with the credential available to the provider. The usage tracker
-therefore has no trustworthy value to display.
-
-#### Billing response details
-
-The organization dashboard reads
-`/frontend/organizations/{id}/billing/usage` and
-`/frontend/organizations/{id}/subscription`. The older account routes are
-`/frontend/billing/usage` and `/frontend/billing/subscriptions/current`.
-The organization usage response contains
-`current_usage.token_spend.spend_in_cents`, `limit_in_cents`, and `updated_at`.
-Any future implementation must preserve organization scope and use the billing
-period from the same account.
+Zed's native credential reaches `/client/users/me` but gets `401` from every
+billing route. `/client/users/me` has the billing period but no token spend.
+ACP `usage_update.cost` is the cumulative cost of one ACP session. Summing it
+across T3 sessions omits usage from Zed and other clients and double-counts
+repeated updates. An earlier `$10` bar built from it showed `$0 / $10` on fresh
+snapshots. Only the dashboard's cookie session for `cloud.zed.dev` can read
+spend.
 
 #### Implemented behavior
 
-`ZedProvider.ts` publishes a `probeFailed` usage state with no windows and the
-message `Zed account spend is unavailable here. Check the Zed dashboard.` The
-Limits view shows that message instead of a zeroed or session-derived bar.
+The user approved storing that session on October 14, which reverses the
+earlier rule against copying a dashboard cookie into server state. It is the
+Zed provider's `dashboardSession` setting, a secret field held in the host's
+secret store and redacted for clients. Desktop users get it from **Connect** in
+Zed provider settings. The button opens a Zed sign-in window in its own
+`persist:t3code-zed-dashboard` partition and saves the resulting Cookie header.
+Other clients paste the header into the field.
 
-`ZedProvider.test.ts` checks that the initial provider snapshot has no usage
-windows and reports the explicit unavailable state. Provider-refresh tests
-cover successful and nonzero-exit CLI probes. A failing probe previously marked
-the provider ready. It now reports an error. Both paths keep account spend
-unavailable. The unused `ServerProvider` import is removed.
+`zedAccountUsage.ts` reads `/frontend/billing/usage` and
+`/frontend/billing/subscriptions/current`. It publishes one monthly window
+labeled `Spend $X of $Y`, with the reset and duration taken from the
+subscription period. A null or zero limit shows `no limit` with an empty bar.
 
-Verification: 18 focused Zed tests pass, with the hosted smoke test skipped.
-Targeted lint, the server typecheck, and `git diff --check` pass. Installed Personal 0.4.0 computer use on October 14 confirmed that Usage
-shows the unavailable-spend message and dashboard action for Zed. This checks
-the display, not authenticated billing access.
+The user asked not to poll. The driver reads once when it starts with a session,
+which includes after a settings change, then once after every Zed prompt
+settles. Reads are serialized. The periodic status probe reuses the last
+reading and never contacts Zed. The read publishes through the managed
+provider's `replaceUsageLimits`, so an expired session replaces live windows
+with an explicit state.
+
+States shown instead of a bar:
+
+- no session: an `unsupported` notice asking for one
+- session set but not read yet: "has not been read yet"
+- `401`, `403` or a redirect: the session expired, replace it
+- any other failure: could not read spend
+
+Only the personal routes are read. Organization billing
+(`/frontend/organizations/{id}/billing/usage`) is not supported.
 
 #### Remaining work
 
-1. Obtain a Zed billing API that accepts native credentials, or design an
-   explicit dashboard sign-in integration. A local bridge change cannot grant
-   access to Zed's hosted billing service.
-2. Add a server-side provider read with explicit loading, failure, and stale
-   data behavior.
-3. Use the returned billing-period end time for the reset date.
+Installed Personal 0.5.0 verification confirmed the missing-session notice,
+secure field, Connect reaching GitHub sign-in for Zed Industries, and cancellation
+restoring Connect. No authenticated billing read was performed.
 
-Until that work lands, T3 reports Zed account spend as unavailable. It does not
-publish a zeroed bar, and ACP session cost is never labeled as account spend.
+1. Sign in once on the installed desktop app. Confirm the cookie lifetime, that
+   `spend_in_cents` matches the dashboard (does it include the Pro credit?),
+   and the reset date.
+2. If the session proves short-lived, consider the Orb `portal_url` from the
+   usage response. Whether it carries a longer-lived token is unverified.
 
 #### Acceptance criteria
 
 - The displayed amount matches the value from the supported Zed billing
   response.
-- The reset date comes from the same response.
+- The reset date comes from the same account's billing period.
 - The UI identifies the value as account spend and shows when it was checked.
-- Missing authentication or an unavailable endpoint produces an explicit
-  unavailable state, not a zeroed bar.
-- Tests cover account scope, billing-period boundaries, failed reads, and
-  repeated cumulative session updates.
+- Missing or expired authentication or an unavailable endpoint produces an
+  explicit unavailable state, not a zeroed bar.
+- Zed's billing routes are read only at startup and after Zed turns.
 
 ## Closed by the upstream sync, October 13, 2026
 

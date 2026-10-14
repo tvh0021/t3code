@@ -36,10 +36,7 @@ import {
   type AcpAdapterV2Flavor,
   type AcpAdapterV2RuntimeInput,
 } from "@t3tools/provider-acp/server/adapter";
-import {
-  makeZedAcpRuntime,
-  type ZedAcpRuntimeInput,
-} from "../../provider/acp/ZedAcpSupport.ts";
+import { makeZedAcpRuntime, type ZedAcpRuntimeInput } from "../../provider/acp/ZedAcpSupport.ts";
 
 const ZED_PROVIDER = ProviderDriverKind.make("zed");
 const decodeZedSettings = Schema.decodeSync(ZedSettings);
@@ -69,6 +66,8 @@ export interface ZedAdapterV2Options {
     cwd: string,
   ) => Effect.Effect<void>;
   readonly onSessionEvent?: AcpAdapterV2Flavor["onSessionEvent"];
+  /** Runs after every prompt settles, whatever its outcome. Must not block. */
+  readonly onPromptSettled?: Effect.Effect<void>;
   readonly nativeLogging?: Parameters<typeof makeAcpAdapterV2>[0]["nativeLogging"];
   readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
 }
@@ -91,6 +90,8 @@ export function makeZedAcpAdapterFlavor(
         .pipe(Effect.provideService(Scope.Scope, scope));
       return {
         ...runtime,
+        prompt: (...args: Parameters<typeof runtime.prompt>) =>
+          runtime.prompt(...args).pipe(Effect.ensuring(options.onPromptSettled ?? Effect.void)),
         start: () =>
           runtime
             .start()
@@ -204,51 +205,54 @@ export type ZedAdapterV2DriverEnv =
   | ProviderEventLoggers.ProviderEventLoggers
   | ProviderHost.ProviderHost;
 
-export const ZedAdapterV2Driver: ProviderAdapterDriver<
-  ZedSettings,
-  ZedAdapterV2DriverEnv
-> = {
+export const createZedAdapterV2 = Effect.fn("ZedAdapterV2Driver.create")(
+  function* (
+    input: ProviderAdapterDriverCreateInput<ZedSettings>,
+    hooks: Pick<ZedAdapterV2Options, "onPromptSettled"> = {},
+  ) {
+    const crypto = yield* Crypto.Crypto;
+    const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const hostEnvironment = yield* HostProcess.Environment;
+    const selfInvocation = yield* resolveSelfInvocation();
+    const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
+    const makeNativeLogger = yield* makeAcpNativeLoggerFactory();
+    const processEnv = yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment);
+    return yield* makeZedAdapterV2({
+      instanceId: input.instanceId,
+      selfInvocation,
+      ...hooks,
+      makeRuntime: (runtimeInput) =>
+        makeZedAcpRuntime({
+          ...runtimeInput,
+          childProcessSpawner,
+          zedSettings: input.config,
+          environment: processEnv,
+        }).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+      nativeLogging: (threadId) =>
+        makeNativeLogger({
+          nativeEventLogger: providerEventLoggers.native,
+          provider: ZED_PROVIDER,
+          threadId,
+        }),
+    });
+  },
+  (effect, input, _hooks) =>
+    effect.pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderAdapterDriverCreateError({
+            driver: ZED_PROVIDER,
+            instanceId: input.instanceId,
+            detail: "Failed to create Zed adapter.",
+            cause,
+          }),
+      ),
+    ),
+);
+
+export const ZedAdapterV2Driver: ProviderAdapterDriver<ZedSettings, ZedAdapterV2DriverEnv> = {
   driverKind: ZED_PROVIDER,
   configSchema: ZedSettings,
   defaultConfig: (): ZedSettings => decodeZedSettings({}),
-  create: Effect.fn("ZedAdapterV2Driver.create")(
-    function* (input: ProviderAdapterDriverCreateInput<ZedSettings>) {
-      const crypto = yield* Crypto.Crypto;
-      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const hostEnvironment = yield* HostProcess.Environment;
-      const selfInvocation = yield* resolveSelfInvocation();
-      const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
-      const makeNativeLogger = yield* makeAcpNativeLoggerFactory();
-      const processEnv = yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment);
-      return yield* makeZedAdapterV2({
-        instanceId: input.instanceId,
-        selfInvocation,
-        makeRuntime: (runtimeInput) =>
-          makeZedAcpRuntime({
-            ...runtimeInput,
-            childProcessSpawner,
-            zedSettings: input.config,
-            environment: processEnv,
-          }).pipe(Effect.provideService(Crypto.Crypto, crypto)),
-        nativeLogging: (threadId) =>
-          makeNativeLogger({
-            nativeEventLogger: providerEventLoggers.native,
-            provider: ZED_PROVIDER,
-            threadId,
-          }),
-      });
-    },
-    (effect, input) =>
-      effect.pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderAdapterDriverCreateError({
-              driver: ZED_PROVIDER,
-              instanceId: input.instanceId,
-              detail: "Failed to create Zed adapter.",
-              cause,
-            }),
-        ),
-      ),
-  ),
+  create: (input) => createZedAdapterV2(input, {}),
 };

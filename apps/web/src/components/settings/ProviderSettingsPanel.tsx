@@ -98,6 +98,7 @@ import { UsageProviderSettings } from "./UsageProviderSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
 import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSection";
+import { ZedDashboardSection } from "./ZedDashboardSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
 import { providerClients } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
@@ -150,6 +151,13 @@ const PROVIDER_SETTINGS = providerClients.definitions.map((definition) => ({
 function configuredBinaryPath(config: unknown): string {
   if (config === null || typeof config !== "object" || !("binaryPath" in config)) return "";
   return typeof config.binaryPath === "string" ? config.binaryPath.trim() : "";
+}
+
+// The server redacts a saved session to a placeholder, which still reads as set.
+function configuredDashboardSession(config: unknown): boolean {
+  if (config === null || typeof config !== "object" || !("dashboardSession" in config))
+    return false;
+  return typeof config.dashboardSession === "string" && config.dashboardSession.trim() !== "";
 }
 
 function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
@@ -1019,6 +1027,21 @@ export function EnvironmentProviderSettings({
                       : {}),
                     enabled: true,
                     setupMode,
+                  },
+                })
+              }
+            />
+          ) : mode === "editor" && !readOnly && row.driver === "zed" ? (
+            <ZedDashboardSection
+              connected={configuredDashboardSession(row.instance.config)}
+              onConnect={(dashboardSession) =>
+                updateProviderInstance(row, {
+                  ...row.instance,
+                  config: {
+                    ...(row.instance.config !== null && typeof row.instance.config === "object"
+                      ? row.instance.config
+                      : {}),
+                    dashboardSession,
                   },
                 })
               }

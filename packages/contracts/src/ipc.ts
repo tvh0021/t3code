@@ -1209,6 +1209,8 @@ export interface DesktopBridge {
   /** Receives a local OAuth code for a sign-in owned by a remote environment. */
   receiveProviderAuthCallback?: (authorizationUrl: string) => Promise<string>;
   cancelProviderAuthCallback?: (authorizationUrl: string) => Promise<void>;
+  /** Signs in to Zed's dashboard and returns its Cookie header, or null if cancelled. */
+  connectZedDashboard?: () => Promise<string | null>;
   openExternal: (url: string) => Promise<boolean>;
   /**
    * Open a System Settings pane by identifier. Optional: older desktop builds

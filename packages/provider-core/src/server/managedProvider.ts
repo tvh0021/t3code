@@ -54,7 +54,16 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   readonly refreshOnInterval?: boolean;
   readonly checkProviderOnSettingsChange?: (previous: Settings, next: Settings) => boolean;
 }): Effect.fn.Return<
-  ManagedServerProvider,
+  ManagedServerProvider & {
+    /**
+     * Publish limits a driver read outside the status probe, replacing the
+     * current ones outright. For account reads that must also be able to say
+     * "unavailable" between probes, which a sparse window update cannot.
+     */
+    readonly replaceUsageLimits: (
+      usageLimits: ServerProvider["usageLimits"],
+    ) => Effect.Effect<void>;
+  },
   ServerSettingsError,
   Scope.Scope | ProviderHost.ProviderHost
 > {
@@ -221,6 +230,19 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       }
     });
 
+  const replaceUsageLimits = (usageLimits: ServerProvider["usageLimits"]) =>
+    Ref.modify(snapshotStateRef, (state) => {
+      const snapshot = withUsageLimits(state.snapshot, usageLimits);
+      return snapshot === state.snapshot
+        ? ([null, state] as const)
+        : ([snapshot, { ...state, snapshot }] as const);
+    }).pipe(
+      Effect.flatMap((snapshot) =>
+        snapshot === null ? Effect.void : PubSub.publish(changesPubSub, snapshot),
+      ),
+      Effect.asVoid,
+    );
+
   const refreshSnapshot = Effect.fn("refreshSnapshot")(function* () {
     const nextSettings = yield* input.getSettings;
     return yield* applySnapshot(nextSettings, { forceRefresh: true });
@@ -305,8 +327,9 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     getSnapshot: Ref.get(snapshotStateRef).pipe(Effect.map((state) => state.snapshot)),
     refresh: refreshSnapshot().pipe(Effect.tapError(Effect.logError), Effect.orDie),
     applyUsageLimits,
+    replaceUsageLimits,
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
     },
-  } satisfies ManagedServerProvider;
+  };
 });

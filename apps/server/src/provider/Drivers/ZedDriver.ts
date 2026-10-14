@@ -1,7 +1,11 @@
 import { ZedSettings, ProviderDriverKind, TextGenerationError } from "@t3tools/contracts";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Effect from "effect/Effect";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import * as DateTime from "effect/DateTime";
+import { HttpClient } from "effect/http";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
@@ -25,7 +29,12 @@ import {
   ZED_BUILT_IN_MODELS,
 } from "../ZedProvider.ts";
 import {
-  ZedAdapterV2Driver,
+  readZedAccountUsage,
+  zedUsageNotYetRead,
+  zedUsageWithoutSession,
+} from "../zedAccountUsage.ts";
+import {
+  createZedAdapterV2,
   type ZedAdapterV2DriverEnv,
 } from "../../orchestration-v2/Adapters/ZedAdapterV2.ts";
 
@@ -37,7 +46,7 @@ const MAINTENANCE_CAPABILITIES = makeManualOnlyProviderMaintenanceCapabilities({
   packageName: null,
 });
 
-export type ZedDriverEnv = ZedAdapterV2DriverEnv;
+export type ZedDriverEnv = ZedAdapterV2DriverEnv | HttpClient.HttpClient;
 
 export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
   driverKind: DRIVER_KIND,
@@ -51,6 +60,7 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
     Effect.gen(function* () {
       const { instanceId, displayName, accentColor, enabled, config } = input;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const httpClient = yield* HttpClient.HttpClient;
       const host = yield* ProviderHost.ProviderHost;
       const { cwd } = host.paths;
 
@@ -66,18 +76,6 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies ZedSettings;
-
-      const orchestrationAdapter = yield* ZedAdapterV2Driver.create(input).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderDriverError({
-              driver: DRIVER_KIND,
-              instanceId,
-              detail: `Failed to create Zed adapter: ${cause.message ?? String(cause)}`,
-              cause,
-            }),
-        ),
-      );
 
       const unsupportedTextGen = (operation: string) =>
         Effect.fail(
@@ -95,10 +93,23 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         generateReviewGuide: () => unsupportedTextGen("generateReviewGuide"),
       };
 
+      // Account spend is read only at startup and after Zed prompts, never by
+      // the periodic status probe, so Zed's billing routes see real usage only.
+      const dashboardSession = effectiveConfig.dashboardSession;
+      const startedAt = DateTime.formatIso(yield* DateTime.now);
+      const accountUsage = yield* Ref.make(
+        dashboardSession ? zedUsageNotYetRead(startedAt) : zedUsageWithoutSession(startedAt),
+      );
       let latestModels = ZED_BUILT_IN_MODELS;
       const checkZed = (workspaceCwd: string) =>
         Effect.suspend(() =>
-          checkZedProviderStatus(effectiveConfig, process.env, workspaceCwd, latestModels),
+          checkZedProviderStatus(
+            effectiveConfig,
+            process.env,
+            workspaceCwd,
+            latestModels,
+            Ref.get(accountUsage),
+          ),
         ).pipe(
           Effect.tap((draft) =>
             Effect.sync(() => {
@@ -127,6 +138,38 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
               driver: DRIVER_KIND,
               instanceId,
               detail: `Failed to build Zed snapshot: ${cause.message ?? String(cause)}`,
+              cause,
+            }),
+        ),
+      );
+
+      const readSemaphore = yield* Semaphore.make(1);
+      const refreshAccountUsage = readSemaphore.withPermits(1)(
+        readZedAccountUsage(dashboardSession).pipe(
+          Effect.provideService(HttpClient.HttpClient, httpClient),
+          Effect.tap((usage) => Ref.set(accountUsage, usage)),
+          Effect.flatMap(snapshot.replaceUsageLimits),
+        ),
+      );
+      const scope = yield* Effect.scope;
+      const refreshAccountUsageInBackground = refreshAccountUsage.pipe(
+        Effect.forkIn(scope),
+        Effect.asVoid,
+      );
+      if (effectiveConfig.enabled && dashboardSession) {
+        yield* refreshAccountUsageInBackground;
+      }
+
+      const orchestrationAdapter = yield* createZedAdapterV2(
+        input,
+        dashboardSession ? { onPromptSettled: refreshAccountUsageInBackground } : {},
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: `Failed to create Zed adapter: ${cause.message ?? String(cause)}`,
               cause,
             }),
         ),

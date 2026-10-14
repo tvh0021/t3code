@@ -598,6 +598,46 @@ describe("makeManagedServerProvider", () => {
     ).pipe(Effect.provide(layerAlwaysRunTest)),
   );
 
+  it.effect("replaces usage wholesale, including with an unavailable state", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const provider = yield* makeManagedServerProvider<TestSettings>({
+          resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+          getSettings: Effect.succeed({ enabled: true }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
+          initialSnapshot: () => Effect.succeed(initialSnapshot),
+          checkProvider: Effect.succeed({
+            ...refreshedSnapshot,
+            usageLimits: {
+              checkedAt: "2026-04-10T00:00:01.000Z",
+              windows: [{ id: "spend", kind: "monthly", label: "Spend", usedPercent: 40 }],
+            },
+          } satisfies ServerProvider),
+          refreshInterval: "1 hour",
+        });
+        yield* Stream.take(provider.streamChanges, 1).pipe(Stream.runDrain);
+
+        const updatesFiber = yield* Stream.take(provider.streamChanges, 1).pipe(
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+
+        const expired = {
+          checkedAt: "2026-04-10T00:05:00.000Z",
+          windows: [],
+          unavailable: { reason: "probeFailed", message: "Session expired." },
+        } as const;
+        yield* provider.replaceUsageLimits(expired);
+
+        const [update] = Array.from(yield* Fiber.join(updatesFiber));
+        assert.deepStrictEqual(update?.usageLimits, expired);
+        assert.deepStrictEqual(yield* provider.getSnapshot, update);
+      }),
+    ).pipe(Effect.provide(layerAlwaysRunTest)),
+  );
+
   it.effect("keeps live usage windows across a failed probe and a stale enrichment", () =>
     Effect.scoped(
       Effect.gen(function* () {

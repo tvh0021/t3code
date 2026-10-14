@@ -17,7 +17,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeSettings = Schema.decodeSync(ZedSettings);
 
 describe("buildInitialZedProviderSnapshot", () => {
-  it.effect("reports dashboard-only usage as unavailable instead of publishing a zeroed bar", () =>
+  it.effect("asks for a dashboard session instead of publishing a zeroed bar", () =>
     Effect.gen(function* () {
       const snapshot = yield* buildInitialZedProviderSnapshot(decodeSettings({ enabled: true }));
 
@@ -31,9 +31,21 @@ describe("buildInitialZedProviderSnapshot", () => {
         windows: [],
         unavailable: {
           reason: "unsupported",
-          message: "Zed account spend is unavailable here. Check the Zed dashboard.",
+          message: "Add a Zed dashboard session in Zed provider settings to see account spend.",
         },
         externalUsage: { label: "Zed dashboard", url: "https://dashboard.zed.dev" },
+      });
+    }),
+  );
+
+  it.effect("marks spend as pending until the first read when a session is set", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* buildInitialZedProviderSnapshot(
+        decodeSettings({ enabled: true, dashboardSession: "session=abc" }),
+      );
+      expect(snapshot.usageLimits).toMatchObject({
+        windows: [],
+        unavailable: { reason: "probeFailed", message: "Zed account spend has not been read yet." },
       });
     }),
   );

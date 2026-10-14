@@ -1464,6 +1464,46 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("stores and redacts the Zed dashboard session through settings updates", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const instanceId = ProviderInstanceId.make("zed_dashboard_secrets");
+      const saved = yield* service.updateProviderInstance({
+        operation: "upsert",
+        instanceId,
+        instance: {
+          driver: ProviderDriverKind.make("zed"),
+          config: { dashboardSession: "session=zed-test-secret" },
+        },
+      });
+      const client = ServerSettingsModule.redactServerSettingsForClient(saved);
+      assert.propertyVal(
+        client.providerInstances[instanceId]?.config,
+        "dashboardSession",
+        "••••••",
+      );
+      assert.notInclude(yield* fs.readFileString(config.settingsPath), "zed-test-secret");
+      const echoed = yield* service.updateProviderInstance({
+        operation: "upsert",
+        instanceId,
+        instance: { ...client.providerInstances[instanceId]!, displayName: "Renamed" },
+      });
+      assert.propertyVal(
+        echoed.providerInstances[instanceId]?.config,
+        "dashboardSession",
+        "session=zed-test-secret",
+      );
+      const cleared = yield* service.updateProviderInstance({
+        operation: "upsert",
+        instanceId,
+        instance: { ...client.providerInstances[instanceId]!, config: { dashboardSession: "" } },
+      });
+      assert.propertyVal(cleared.providerInstances[instanceId]?.config, "dashboardSession", "");
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect(
     "uses the same secret lifecycle for provider config, environment, host tokens, and quota keys",
     () =>

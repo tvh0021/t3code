@@ -22,6 +22,7 @@ import {
   type ServerProviderDraft,
 } from "@t3tools/provider-core/server/snapshotProbe";
 import { buildZedAcpSpawnInput } from "./acp/ZedAcpSupport.ts";
+import { zedUsageNotYetRead, zedUsageWithoutSession } from "./zedAccountUsage.ts";
 
 export const ZED_PRESENTATION = {
   displayName: "Zed",
@@ -34,21 +35,6 @@ export const ZED_PRESENTATION = {
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
-
-const ZED_ACCOUNT_USAGE_UNAVAILABLE_MESSAGE =
-  "Zed account spend is unavailable here. Check the Zed dashboard.";
-
-function unavailableZedAccountUsage(checkedAt: string): ServerProviderUsageLimits {
-  return {
-    checkedAt,
-    windows: [],
-    unavailable: {
-      reason: "unsupported" as const,
-      message: ZED_ACCOUNT_USAGE_UNAVAILABLE_MESSAGE,
-    },
-    externalUsage: { label: "Zed dashboard", url: "https://dashboard.zed.dev" },
-  };
-}
 
 export const ZED_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
@@ -179,7 +165,6 @@ function buildDisabledZedProviderSnapshot(
       status: "warning",
       auth: { status: "unknown" },
       message: "Zed is disabled in T3 Code settings.",
-      usageLimits: unavailableZedAccountUsage(checkedAt),
     },
   });
 }
@@ -207,7 +192,9 @@ export function buildInitialZedProviderSnapshot(
         status: "warning",
         auth: { status: "unknown" },
         message: "Zed discovery has not completed yet.",
-        usageLimits: unavailableZedAccountUsage(checkedAt),
+        usageLimits: zedSettings.dashboardSession
+          ? zedUsageNotYetRead(checkedAt)
+          : zedUsageWithoutSession(checkedAt),
       },
     });
   });
@@ -223,6 +210,10 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
   environment: NodeJS.ProcessEnv = process.env,
   cwd?: string,
   previousModels: ReadonlyArray<ServerProviderModel> = ZED_BUILT_IN_MODELS,
+  // The driver's last dashboard read; probes run on a timer and must not fetch it.
+  accountUsage: Effect.Effect<ServerProviderUsageLimits> = Effect.map(DateTime.now, (now) =>
+    zedUsageWithoutSession(DateTime.formatIso(now)),
+  ),
 ): Effect.fn.Return<ServerProviderDraft, never, ChildProcessSpawner.ChildProcessSpawner> {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   let models = zedModelsFromSettings(zedSettings.customModels, previousModels);
@@ -259,7 +250,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
         message: commandMissing
           ? `Zed ACP server binary '${spawnInput.command}' was not found. Configure binaryPath in Zed settings.`
           : "Failed to execute Zed ACP server probe.",
-        usageLimits: unavailableZedAccountUsage(checkedAt),
+        usageLimits: yield* accountUsage,
       },
     });
   }
@@ -322,7 +313,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
           }
         : {}),
       auth: { status: "authenticated" },
-      usageLimits: unavailableZedAccountUsage(checkedAt),
+      usageLimits: yield* accountUsage,
     },
   });
 });

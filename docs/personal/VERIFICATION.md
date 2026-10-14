@@ -4,6 +4,37 @@ Last changelog audit: October 11, 2026. Last complete cross-client,
 cross-provider runtime test: **not established by the retained evidence**.
 Do not treat this audit date as a full-app PASS.
 
+## Personal 0.5.0 release verification, October 14, 2026
+
+The installed arm64 candidate reports 0.5.0 in native About. It retains the
+Personal bundle ID and local signing identity. Deep signature and DMG integrity
+checks passed. The previous 0.4.0 bundle is retained in
+`/private/tmp/t3-personal-0.5.0-release/backup/`.
+
+Retained history, Settings, provider listing, Luna selection and two ordinary
+Codex turns passed in `/private/tmp/t3-personal-0.5.0-probe`, with a thread
+reopen between turns. Responses contained `PERSONAL_050_TURN_ONE_OK` and
+`PERSONAL_050_TURN_TWO_OK`. Limits shows the missing-session Zed notice.
+Zed settings shows the secure session field and Connect. Connect opened GitHub
+sign-in for Zed Industries; closing it restored the enabled Connect button.
+No credentials were entered or saved.
+
+278 focused tests passed, including the Antigravity new-directory regression,
+billing states and secret save/redaction/clear behavior. Five affected package
+typechecks, formatting and scoped lint passed with existing warnings. Three
+settings filesystem-watch tests timed out in the sandbox and passed with native
+filesystem access. An obsolete test under `apps/server/test/provider` imports
+removed V1 modules and cannot run; it is outside the current source test suite.
+Startup traces show readiness retries, unavailable optional CLI probes, missing
+`t3.json` in the empty probe folder, and unauthenticated Bitbucket access.
+No visible error blocked the tested flows.
+
+Live Zed billing, cookie lifetime, organization billing and quota fallback are
+not established by this pass. Organization billing is unsupported. Hosted web
+and remote connections were not exercised; mobile verification is outside this
+fork's scope. Final commit metadata and the short smoke pass are recorded with
+the release evidence. Local build logs and evidence are in `/private/tmp/t3-personal-0.5.0-release/`.
+
 ## Personal 0.4.0 release verification, October 14, 2026
 
 Native About reports 0.4.0 at `a97e3bb66ef8`. The installed app preserves the
@@ -28,8 +59,9 @@ The previous app and pre-migration database copies are in the release directory'
 
 The earlier isolated dev desktop pass covered a live `delegate_task` child.
 This installed-app pass did not repeat delegation or the legacy paused-layer
-MCP rejection checks. Live quota fallback and `reviewRef` review snapshots remain
-untested. Hosted web, remote connections, and fresh inference through other
+MCP rejection checks. A later installed 0.4.0 check confirmed a `reviewRef` child uses a separate
+checkout at `HEAD~2`, leaves the parent worktree untouched, and rejects an invalid
+ref. Live quota fallback remains untested. Hosted web, remote connections, and fresh inference through other
 providers were not tested. Mobile verification is outside this fork's scope.
 
 ## Upstream orchestration-v2 sync, October 13, 2026
@@ -45,13 +77,15 @@ Source checks: server, contracts, web, client-runtime, provider-core and
 desktop typechecks passed. More than 700 focused tests passed, including the
 new delegation-guard, recovery-worker fallback, usage-cache and Zed tests.
 Migrations ran cleanly against a read-only copy of Personal state. Two
-upstream AntigravityAdapterV2 client-file tests fail on macOS because of the
-`/var` versus `/private/var` path. That failure exists on upstream and is not
-from the fork.
+upstream AntigravityAdapterV2 client-file tests failed on macOS. Upstream's
+workspace check rejected new files in new directories when the workspace path
+went through a symlink, like `/var` to `/private/var`. The fork fixed this on
+October 14 in `AntigravityClientFiles.ts` and added a platform-independent
+regression test.
 
 The October 14 release checks above supersede the pending desktop runtime pass.
-A live `delegate_task` turn budget or review snapshot and a live quota fallback
-remain untested.
+A live `delegate_task` turn budget and quota fallback remain untested. The later
+installed 0.4.0 check above covers `reviewRef` snapshots.
 
 ## Personal 0.3.3 release verification, October 13, 2026
 

@@ -763,13 +763,27 @@ export const ZedSettings = makeProviderSettingsSchema(
         },
       }),
     ),
+    dashboardSession: TrimmedString.pipe(
+      secretSetting,
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Dashboard session",
+        description:
+          "Cookie header for cloud.zed.dev, used to read account spend after each Zed turn. Stored separately on the host.",
+        providerSettingsForm: {
+          control: "password",
+          placeholder: "Optional",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
     customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath", "model", "dataDir"],
+    order: ["binaryPath", "model", "dataDir", "dashboardSession"],
   },
 );
 export type ZedSettings = typeof ZedSettings.Type;
