@@ -175,6 +175,7 @@ import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
 } from "./serverRuntimeState.ts";
+import * as CoordinationPolicy from "./orchestration-v2/CoordinationPolicy.ts";
 import * as OrchestrationHttp from "./orchestration-v2/http.ts";
 import * as ProjectHttp from "./project/http.ts";
 import * as NetService from "@t3tools/shared/Net";
@@ -682,6 +683,7 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(RemoteOpenTargets.layer),
   Layer.provideMerge(DirectEndpoints.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
+  Layer.provideMerge(CoordinationPolicy.layer),
   Layer.provide(NetService.layer),
 );
 
