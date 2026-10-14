@@ -21,16 +21,19 @@ not prevent the agent from asking questions about the task.
 ## Provider differences
 
 Providers enforce permissions differently. Some read-only actions can proceed in **Supervised**.
-**Auto** uses automatic review on Codex, Claude, and Cursor; providers without an equivalent,
-including OpenCode, fall back to asking.
+**Auto** uses automatic review on Codex, Claude, Cursor, and Grok; providers without an equivalent,
+including OpenCode and Antigravity, fall back to asking. On Grok, commands its review blocks come
+to you for approval.
 
-Antigravity always uses **Full access**, including orchestration children and resumed threads.
-Existing threads use it on their next turn. Your previous permission choice is kept for switching
-back to another provider. GPT orchestration children inherit their parent's permission mode,
-including review assignments.
+Muse Code offers only **Supervised** and **Full access**. A Muse thread already set to another mode
+runs in **Supervised**.
 
-For Grok, **Always allow this session** remembers the matching command or tool input. Other
-actions still require approval.
+Grok offers no **Auto-accept edits**. A Grok thread already set to it runs in **Supervised**. Grok
+file-change approvals offer **Allow all edits this session**. Its command approvals have no
+session-wide choice, because Grok would remember that command for the whole project.
+
+ACP Registry agents run their own tools in their own mode; T3 Code answers their approval requests
+by the permission mode. See [ACP Registry permissions](./providers-acp.md#permissions-and-terminals).
 
 Antigravity can still send native approval requests in **Full access**. It only offers remembered
 approvals for actions that support them.

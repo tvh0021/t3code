@@ -5,24 +5,28 @@
  *
  * @module providerInstanceDisplay
  */
-import type { ServerProvider } from "@t3tools/contracts";
 import {
   defaultInstanceIdForDriver,
   PROVIDER_DISPLAY_NAMES,
   type ProviderDriverKind,
+  type ServerProvider,
 } from "@t3tools/contracts";
 
+/**
+ * Title-case a slug: splits on `_` / `-` and camelCase boundaries, so
+ * `codex_personal` becomes "Codex Personal" and `myCustomInstance` becomes
+ * "My Custom Instance".
+ */
 function humanizeSlug(slug: string): string {
   return slug
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-    .trim();
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 /**
- * Multiple instances of the same driver can be configured (e.g. Work and
- * Personal Codex). An instance is identified by its `instanceId`, but the UI
- * renders a human-readable label. The label resolution priority is:
+ * Resolve an instance's label with a tiered priority:
  *
  *   1. A snapshot `displayName` that differs from the driver's brand label —
  *      the server has explicitly named this instance, trust it.
@@ -36,6 +40,7 @@ export function resolveProviderInstanceDisplayName(
 ): string {
   const trimmedSnapshotName = snapshot.displayName?.trim();
   const kindLabel = PROVIDER_DISPLAY_NAMES[snapshot.driver] ?? humanizeSlug(snapshot.driver);
+  // Personal builds named the ChatLLM driver "Abacus"; show the current brand instead.
   const isLegacyDriverName =
     snapshot.driver === "abacus" && trimmedSnapshotName?.toLowerCase() === "abacus";
   if (trimmedSnapshotName && trimmedSnapshotName !== kindLabel && !isLegacyDriverName)
@@ -71,17 +76,32 @@ export function normalizeProviderAccentColor(value: string | undefined): string 
 
 /**
  * Whether an instance's icon carries the account badge: accent color set, or
- * several instances sharing a driver so the brand glyph alone is ambiguous.
+ * several instances sharing a provider so the brand glyph alone is ambiguous.
+ * ACP agents have distinct glyphs even though they share the registry driver.
  * Shared by the composer trigger, the picker rail, and sidebar/thread rows.
  */
 export function shouldShowInstanceBadge(
-  entry: { readonly driverKind: ProviderDriverKind; readonly accentColor?: string | undefined },
-  entries: Iterable<{ readonly driverKind: ProviderDriverKind }>,
+  entry: {
+    readonly driverKind: ProviderDriverKind;
+    readonly accentColor?: string | undefined;
+    readonly acpRegistryAgentId?: string | undefined;
+  },
+  entries: Iterable<{
+    readonly driverKind: ProviderDriverKind;
+    readonly acpRegistryAgentId?: string | undefined;
+  }>,
 ): boolean {
   if (entry.accentColor) return true;
-  let sharedDriverCount = 0;
+  let sharedProviderCount = 0;
   for (const candidate of entries) {
-    if (candidate.driverKind === entry.driverKind && ++sharedDriverCount > 1) return true;
+    if (candidate.driverKind !== entry.driverKind) continue;
+    if (
+      entry.driverKind === "acpRegistry" &&
+      candidate.acpRegistryAgentId !== entry.acpRegistryAgentId
+    ) {
+      continue;
+    }
+    if (++sharedProviderCount > 1) return true;
   }
   return false;
 }

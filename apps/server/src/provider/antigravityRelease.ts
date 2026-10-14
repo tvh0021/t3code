@@ -15,8 +15,8 @@ export interface AntigravityReleaseAsset {
   };
 }
 
-// URLs come from this official registry revision. Archive hashes and sizes were verified on 2026-10-07.
-// https://github.com/agentclientprotocol/registry/blob/f6c0f4e8357c7f28e84e3b883695c387b04ed2b9/antigravity-acp/agent.json
+// URLs come from the official registry. Hashes and sizes were checked on 2026-10-05.
+// https://github.com/agentclientprotocol/registry/blob/dc55a34900fdd60e5e97c1cbd7825c5a1df673fc/antigravity-acp/agent.json
 const releaseAssets = new Map<string, AntigravityReleaseAsset>([
   [
     "darwin-arm64",
@@ -27,6 +27,17 @@ const releaseAssets = new Map<string, AntigravityReleaseAsset>([
       archiveBytes: 111_456_962,
       executable: { name: "agy_acp_server.par", bytes: 278_535_456 },
       harness: { name: "localharness_external", bytes: 118_611_392 },
+    },
+  ],
+  [
+    "darwin-x64",
+    {
+      version: ANTIGRAVITY_RELEASE_VERSION,
+      url: "https://dl.google.com/agy-extensions/releases/macos/agy-acp-server-1.3.0-darwin-x86_64.zip",
+      sha256: "bb23956b89984bf5d354af2c3725e6c57f0cc1b7228e77a0e91c9c2bc1d47646",
+      archiveBytes: 117_245_544,
+      executable: { name: "agy_acp_server.par", bytes: 282_840_688 },
+      harness: { name: "localharness_external", bytes: 124_175_392 },
     },
   ],
   [

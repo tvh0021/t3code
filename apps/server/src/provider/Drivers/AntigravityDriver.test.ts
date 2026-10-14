@@ -3,15 +3,9 @@ import { expect, it } from "@effect/vitest";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   ProviderInstanceId,
-  ThreadId,
   type AntigravitySettings,
 } from "@t3tools/contracts";
-import {
-  HostProcessEnvironment,
-  HostProcessExecutablePath,
-  HostProcessIsExecutable,
-  HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -20,26 +14,26 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { HttpClient } from "effect/http";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
-import { ServerConfig } from "../../config.ts";
-import { ServerSettingsService } from "../../serverSettings.ts";
-import {
-  AntigravityInstallation,
-  AntigravityInstallationError,
-  type AntigravityExecutable,
-} from "../AntigravityInstallation.ts";
+import * as ServerConfig from "../../config.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import * as AntigravityInstallation from "../AntigravityInstallation.ts";
 import {
   ANTIGRAVITY_AUTH_STDOUT_PREFIX,
-  resolveAntigravityProfileDirectory,
-  resolveAntigravityRuntimeTempDirectory,
+  resolveAntigravityInstanceDirectories,
 } from "../antigravityAuthSupport.ts";
-import { NoOpProviderEventLoggers, ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
+import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ModelManifest from "../ModelManifest.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { AntigravityDriver } from "./AntigravityDriver.ts";
+import * as ProviderHostLive from "../ProviderHostLive.ts";
+import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 
-const hostPlatform = HostProcessPlatform.defaultValue();
+const hostPlatform = HostProcess.Platform.defaultValue();
 const windowsHost = hostPlatform === "win32";
 const decodeRequest = Schema.decodeEffect(
   Schema.fromJsonString(
@@ -82,17 +76,18 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const config = yield* ServerConfig;
+  const config = yield* ServerConfig.ServerConfig;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const nodePath = yield* HostProcessExecutablePath;
-  const baseEnv = yield* HostProcessEnvironment;
+  const nodePath = yield* HostProcess.ExecutablePath;
+  const baseEnv = yield* HostProcess.Environment;
   const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-antigravity-driver-" });
   const instanceId = ProviderInstanceId.make(path.basename(root));
   const mockAgentPath = yield* path.fromFileUrl(
     new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
   );
   const requestLog = path.join(root, "requests.jsonl");
-  const profileDirectory = resolveAntigravityProfileDirectory(config.stateDir, instanceId);
+  const directories = yield* resolveAntigravityInstanceDirectories(config.stateDir, instanceId);
+  const profileDirectory = directories.profile;
   const instancePath = `${path.join(root, "instance-bin")}:${baseEnv.PATH ?? ""}`;
 
   const makeExecutable = Effect.fn("AntigravityDriverTest.makeExecutable")(function* (
@@ -125,7 +120,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
       source: "managed",
       version: name,
       managedVersionDirectory: directory,
-    } satisfies AntigravityExecutable;
+    } satisfies AntigravityInstallation.AntigravityExecutable;
   });
 
   const first = yield* makeExecutable("runtime 'one");
@@ -148,12 +143,12 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
     handle: ChildProcessSpawner.ChildProcessHandle;
   }> = [];
 
-  const installation = Layer.mock(AntigravityInstallation)({
+  const layerInstallation = Layer.mock(AntigravityInstallation.AntigravityInstallation)({
     managedDirectory: root,
     resolve: () =>
       Effect.gen(function* () {
         if (controls.failResolution) {
-          return yield* new AntigravityInstallationError({
+          return yield* new AntigravityInstallation.AntigravityInstallationError({
             operation: "resolve",
             detail: "Fixture resolution failed.",
           });
@@ -165,7 +160,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
         acquisitions.push({ binaryPath, path: environment?.PATH });
         yield* controls.beforeAcquire;
         if (controls.failResolution) {
-          return yield* new AntigravityInstallationError({
+          return yield* new AntigravityInstallation.AntigravityInstallationError({
             operation: "resolve",
             detail: "Fixture resolution failed.",
           });
@@ -209,7 +204,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
   const instance = yield* AntigravityDriver.create({
     instanceId,
     displayName: "Google test account",
-    enabled: options.enabled ?? false,
+    enabled: options.enabled ?? true,
     config: { ...AntigravityDriver.defaultConfig(), ...options.config },
     environment: [
       { name: "PATH", value: instancePath },
@@ -230,7 +225,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
         : [{ name: "T3_ACP_SESSION_ID", value: options.sessionId }]),
     ].map((variable) => ({ ...variable, sensitive: false })),
   }).pipe(
-    Effect.provide(installation),
+    Effect.provide(layerInstallation),
     Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, observedSpawner),
   );
   const refresh = instance.refreshModels;
@@ -259,6 +254,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
     fs,
     path,
     profileDirectory,
+    directories,
     instancePath,
     first,
     second,
@@ -272,21 +268,38 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
   };
 });
 
-const testLayer = ServerConfig.layerTest(process.cwd(), {
+const layerDeps = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-antigravity-driver-config-",
 }).pipe(
   Layer.provideMerge(NodeServices.layer),
-  Layer.provideMerge(ServerSettingsService.layerTest()),
+  Layer.provideMerge(
+    Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make(() => Effect.die("Unexpected quota request")),
+    ),
+  ),
+  Layer.provideMerge(ServerSettings.layerTest()),
   Layer.provideMerge(
     Layer.mock(BackgroundPolicy.BackgroundPolicy)({
       shouldRunScopeWork: () => Effect.succeed(false),
     }),
   ),
-  Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
+  Layer.provideMerge(
+    Layer.succeed(
+      ProviderEventLoggers.ProviderEventLoggers,
+      ProviderEventLoggers.NoOpProviderEventLoggers,
+    ),
+  ),
   Layer.provideMerge(ModelManifest.layerTest),
+  Layer.provideMerge(IdAllocator.layer),
+  Layer.provideMerge(McpProviderSessions.layer),
+);
+const layerTest = ProviderHostLive.layer.pipe(
+  Layer.provideMerge(ServerSecretStore.layer),
+  Layer.provideMerge(layerDeps),
 );
 
-it.layer(testLayer)("AntigravityDriver", (it) => {
+it.layer(layerTest)("AntigravityDriver", (it) => {
   it.effect.skipIf(windowsHost)(
     "preserves the Node install message when starting a standalone provider",
     () =>
@@ -297,14 +310,14 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         expect(h.launches).toEqual([]);
       }).pipe(
         Effect.scoped,
-        Effect.provideService(HostProcessIsExecutable, true),
-        Effect.provideService(HostProcessEnvironment, { PATH: "" }),
+        Effect.provideService(HostProcess.IsExecutable, true),
+        Effect.provideService(HostProcess.Environment, { PATH: "" }),
       ),
   );
 
   it.effect.skipIf(windowsHost)("does not launch a process for a disabled instance", () =>
     Effect.gen(function* () {
-      const h = yield* makeHarness();
+      const h = yield* makeHarness({ enabled: false });
       const snapshot = yield* h.instance.snapshot.refresh;
       expect(snapshot.status).toBe("disabled");
       expect(h.acquisitions).toEqual([]);
@@ -334,13 +347,13 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
   );
 
   it.effect.skipIf(windowsHost)(
-    "refreshes a disabled instance through the selected executable and personal Google ACP",
+    "refreshes through the selected executable and personal Google ACP",
     () =>
       Effect.gen(function* () {
         const h = yield* makeHarness();
         yield* h.refresh();
         const snapshot = yield* h.instance.snapshot.getSnapshot;
-        expect(snapshot.status).toBe("disabled");
+        expect(snapshot.status).toBe("ready");
         expect(snapshot.auth.status).toBe("authenticated");
         expect(snapshot.models.map((model) => model.slug)).toEqual([
           "gemini-test-low",
@@ -348,20 +361,9 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
           ...claude55ModelIds,
         ]);
         expect(snapshot.models[0]?.aliases).toContain(ANTIGRAVITY_DEFAULT_MODEL);
-        // These mock Gemini IDs are absent from the current manifest, so they
-        // remain legacy while the Claude 5.5 rows are classified as current.
-        expect(
-          snapshot.models
-            .filter(
-              (model) => model.slug === "gemini-test-low" || model.slug === "gemini-test-high",
-            )
-            .every((model) => model.isLegacy === true),
-        ).toBe(true);
-        const claudeModels = snapshot.models.filter((model) =>
-          claude55ModelIds.includes(model.slug as (typeof claude55ModelIds)[number]),
-        );
-        expect(claudeModels).toHaveLength(claude55ModelIds.length);
-        expect(claudeModels.every((model) => model.isLegacy !== true)).toBe(true);
+        // Slugs the catalog does not list stay current, including the
+        // Claude 5.5 rows that only a recognized client receives.
+        expect(snapshot.models.every((model) => model.isLegacy !== true)).toBe(true);
         expect(snapshot.slashCommands.map((command) => command.name)).toEqual(["plan", "logout"]);
         expect(snapshot.supportsTextGeneration).toBe(true);
         h.controls.selected = h.second;
@@ -391,15 +393,15 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         const requests = yield* h.readRequests;
         expect(requests.map((request) => request.method)).toEqual([
           "initialize",
-          "authenticate",
+          "auth/login",
           "session/new",
           "initialize",
-          "authenticate",
+          "auth/login",
           "session/new",
         ]);
         expect(
           requests
-            .filter((request) => request.method === "authenticate")
+            .filter((request) => request.method === "auth/login")
             .map((request) => request.params?.methodId),
         ).toEqual(["oauth-personal", "oauth-personal"]);
         expect(
@@ -410,14 +412,14 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         expect(
           requests
             .filter((request) => request.method === "initialize")
-            .map((request) => decodeClientInfo(request.params?.clientInfo).name),
+            .map((request) => decodeClientInfo(request.params?.info).name),
         ).toEqual(["zed", "zed"]);
         yield* h.assertClosed();
       }).pipe(Effect.scoped),
   );
 
   it.effect.skipIf(windowsHost)(
-    "selects Claude 5.5 for chat and branch-name generation through the shared ACP identity",
+    "selects Claude 5.5 for branch-name generation through the shared ACP identity",
     () =>
       Effect.gen(function* () {
         const h = yield* makeHarness({
@@ -436,16 +438,6 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         const cwd = yield* h.fs.makeTempDirectoryScoped({
           prefix: "t3-antigravity-model-selection-",
         });
-        const chatModel = "claude-opus-5-5-medium";
-        const session = yield* h.instance.adapter.startSession({
-          threadId: ThreadId.make("antigravity-claude-chat"),
-          cwd,
-          runtimeMode: "full-access",
-          modelSelection: { instanceId: h.instance.instanceId, model: chatModel },
-        });
-        expect(session.model).toBe(chatModel);
-        yield* h.instance.adapter.stopSession(session.threadId);
-
         const helperModel = "claude-sonnet-5-5-medium";
         expect(
           yield* h.instance.textGeneration.generateBranchName({
@@ -459,15 +451,15 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         expect(
           requests
             .filter((request) => request.method === "initialize")
-            .map((request) => decodeClientInfo(request.params?.clientInfo).name),
-        ).toEqual(["zed", "zed", "zed"]);
+            .map((request) => decodeClientInfo(request.params?.info).name),
+        ).toEqual(["zed", "zed"]);
         expect(
           requests
             .filter((request) => request.method === "session/set_config_option")
             .map((request) => decodeModelConfigSelection(request.params))
             .filter((request) => request.configId === "model")
             .map((request) => request.value),
-        ).toEqual([chatModel, helperModel]);
+        ).toEqual([helperModel]);
         yield* h.assertClosed({ preservedCwd: cwd });
       }).pipe(Effect.scoped),
   );
@@ -492,7 +484,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
         const requests = yield* h.readRequests;
         expect(
           requests
-            .filter((request) => request.method === "authenticate")
+            .filter((request) => request.method === "auth/login")
             .map((request) => request.params?.methodId),
         ).toEqual(["gemini-api-key"]);
         yield* h.assertClosed();
@@ -574,7 +566,7 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
     () =>
       Effect.gen(function* () {
         const h = yield* makeHarness();
-        const tempRoot = resolveAntigravityRuntimeTempDirectory(h.profileDirectory);
+        const tempRoot = h.directories.runtimeTemp;
         yield* h.refresh();
         yield* h.refresh();
         const directories = h.launches.flatMap((launch) =>
@@ -595,14 +587,19 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const config = yield* ServerConfig;
+        const config = yield* ServerConfig.ServerConfig;
         const instanceId = ProviderInstanceId.make("antigravity-orphan-sweep");
-        const tempRoot = resolveAntigravityRuntimeTempDirectory(
-          resolveAntigravityProfileDirectory(config.stateDir, instanceId),
+        const directories = yield* resolveAntigravityInstanceDirectories(
+          config.stateDir,
+          instanceId,
         );
-        const orphan = path.join(tempRoot, "run-orphan", "_MEI123", "google3");
-        yield* fs.makeDirectory(orphan, { recursive: true });
-        yield* fs.writeFileString(path.join(orphan, "payload.bin"), "stale");
+        // Older builds unpacked inside the profile.
+        const legacyRoot = path.join(directories.profile, "antigravity-acp", "tmp");
+        for (const root of [directories.runtimeTemp, legacyRoot]) {
+          const orphan = path.join(root, "run-orphan", "_MEI123", "google3");
+          yield* fs.makeDirectory(orphan, { recursive: true });
+          yield* fs.writeFileString(path.join(orphan, "payload.bin"), "stale");
+        }
         yield* AntigravityDriver.create({
           instanceId,
           displayName: "Sweep",
@@ -611,14 +608,15 @@ it.layer(testLayer)("AntigravityDriver", (it) => {
           environment: [],
         }).pipe(
           Effect.provide(
-            Layer.mock(AntigravityInstallation)({
+            Layer.mock(AntigravityInstallation.AntigravityInstallation)({
               managedDirectory: config.stateDir,
               resolve: () => Effect.die("unused"),
               acquire: () => Effect.die("unused"),
             }),
           ),
         );
-        expect(yield* fs.exists(tempRoot)).toBe(false);
+        expect(yield* fs.exists(directories.runtimeTemp)).toBe(false);
+        expect(yield* fs.exists(legacyRoot)).toBe(false);
       }).pipe(Effect.scoped),
   );
 

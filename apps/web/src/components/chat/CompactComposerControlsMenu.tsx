@@ -1,10 +1,4 @@
-import {
-  getProviderRuntimeModes,
-  resolveProviderRuntimeMode,
-  type ProviderDriverKind,
-  ProviderInteractionMode,
-  RuntimeMode,
-} from "@t3tools/contracts";
+import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import { EllipsisIcon } from "lucide-react";
 import {
@@ -15,15 +9,17 @@ import {
   MenuSeparator as MenuDivider,
   MenuTrigger,
 } from "../ui/menu";
-import { runtimeModeConfig } from "./runtimeModeConfig";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
 import { useComposerMenuState } from "./useComposerMenuState";
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
-  providerDriver: ProviderDriverKind;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  runtimeModeOptions: ReadonlyArray<{
+    readonly mode: RuntimeMode;
+    readonly label: string;
+  }>;
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
   size?: "sm" | "xs";
@@ -38,7 +34,6 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const size = props.size ?? "sm";
-  const effectiveRuntimeMode = resolveProviderRuntimeMode(props.providerDriver, props.runtimeMode);
   const [open, setOpen] = useComposerMenuState(props.hidden);
 
   return (
@@ -47,8 +42,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         render={
           <ComposerControl
             size={size}
-            variant="ghost"
-            className={size === "xs" ? "shrink-0" : "shrink-0 px-2"}
+            className="shrink-0"
             aria-label="More composer controls"
             data-composer-shortcut={
               props.traitsMenuContent ? "composer.mode composer.effort" : "composer.mode"
@@ -83,15 +77,15 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
         ) : null}
         <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
         <MenuRadioGroup
-          value={effectiveRuntimeMode}
+          value={props.runtimeMode}
           onValueChange={(value) => {
-            if (!value || value === effectiveRuntimeMode) return;
+            if (!value || value === props.runtimeMode) return;
             props.onRuntimeModeChange(value as RuntimeMode);
           }}
         >
-          {getProviderRuntimeModes(props.providerDriver).map((mode) => (
-            <MenuRadioItem key={mode} value={mode}>
-              {runtimeModeConfig[mode].label}
+          {props.runtimeModeOptions.map((option) => (
+            <MenuRadioItem key={option.mode} value={option.mode}>
+              {option.label}
             </MenuRadioItem>
           ))}
         </MenuRadioGroup>

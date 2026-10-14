@@ -1,18 +1,15 @@
-import { ANTIGRAVITY_DEFAULT_MODEL, ProviderDriverKind } from "@t3tools/contracts";
-
-import * as ModelManifest from "../ModelManifest.ts";
-import type { ServerProviderDraft } from "../providerSnapshot.ts";
-
-const DRIVER = ProviderDriverKind.make("antigravity");
+import { ANTIGRAVITY_DEFAULT_MODEL } from "@t3tools/contracts";
+import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
+import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
 
 /**
- * Seeds the manifest's Antigravity models when the provider is authenticated
- * but has no active session to populate dynamic models. Falls back to the
- * bundled manifest when the live one has no Antigravity catalog.
+ * Seeds the catalog's Antigravity models when the provider is authenticated
+ * but has no active session to populate dynamic models. Callers pass the live
+ * catalog first and the bundled catalog as the fallback.
  */
 export function seedAntigravityModels(
   draft: ServerProviderDraft,
-  manifest: ModelManifest.ModelManifestData,
+  ...catalogs: ReadonlyArray<ModelCatalog.ProviderCatalog | undefined>
 ): ServerProviderDraft {
   if (
     draft.installed === false ||
@@ -22,20 +19,18 @@ export function seedAntigravityModels(
   ) {
     return draft;
   }
-  const catalog =
-    ModelManifest.resolveProviderCatalog(manifest, DRIVER) ??
-    ModelManifest.resolveProviderCatalog(ModelManifest.BUNDLED_MODEL_MANIFEST, DRIVER);
-  if (!catalog || catalog.models.length === 0) return draft;
+  const catalog = catalogs.find((candidate) => candidate && candidate.models.length > 0);
+  if (!catalog) return draft;
   return {
     ...draft,
     models: catalog.models.map((entry) => {
-      const isDefault = entry.model.isDefault;
-      const aliases = isDefault
-        ? [...new Set([...(entry.model.aliases ?? []), ANTIGRAVITY_DEFAULT_MODEL])]
-        : entry.model.aliases;
+      const model = ModelCatalog.catalogServerModel(catalog, entry);
+      const aliases = model.isDefault
+        ? [...new Set([...(model.aliases ?? []), ANTIGRAVITY_DEFAULT_MODEL])]
+        : model.aliases;
       return {
-        ...entry.model,
-        capabilities: entry.model.capabilities ?? { optionDescriptors: [] },
+        ...model,
+        capabilities: model.capabilities ?? { optionDescriptors: [] },
         ...(aliases ? { aliases } : {}),
       };
     }),
