@@ -39,6 +39,7 @@ import { shortcutLabelForCommand } from "../../keybindings";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
+  ALL_TIME_SINCE_DAY,
   enumerateDays,
   enumerateHourStarts,
   formatCount,
@@ -116,9 +117,7 @@ export function organizeUsageModels(models: readonly ModelTotals[]): {
   readonly subscriptionModels: readonly ModelTotals[];
   readonly creditModels: readonly ModelTotals[];
 } {
-  const sorted = [...models].sort(
-    (a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens,
-  );
+  const sorted = [...models].sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens);
   return {
     subscriptionModels: sorted.filter((model) => !model.isCreditBased),
     creditModels: sorted.filter((model) => Boolean(model.isCreditBased)),
@@ -220,9 +219,14 @@ export function UsagePage() {
     (environment) => environment.canReadDiagnostics,
   );
 
+  // All time starts at the first day with usage, not the window's fixed floor.
+  const shownSinceDay =
+    shownWindow.sinceDay === ALL_TIME_SINCE_DAY
+      ? (merged.daily[0]?.day ?? shownWindow.untilDay)
+      : shownWindow.sinceDay;
   const days = useMemo(
-    () => enumerateDays(shownWindow.sinceDay, shownWindow.untilDay),
-    [shownWindow.sinceDay, shownWindow.untilDay],
+    () => enumerateDays(shownSinceDay, shownWindow.untilDay),
+    [shownSinceDay, shownWindow.untilDay],
   );
   const hours = useMemo(
     () =>
@@ -478,7 +482,7 @@ export function UsagePage() {
   const windowLabel =
     shownHourly && shownWindow.sinceTime !== undefined && shownWindow.untilTime !== undefined
       ? `${formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone)} to ${formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone)}`
-      : `${formatDayShort(shownWindow.sinceDay)} to ${formatDayShort(shownWindow.untilDay)}`;
+      : `${formatDayShort(shownSinceDay)} to ${formatDayShort(shownWindow.untilDay)}`;
   const topbarContent = (
     <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-2 xl:flex">
       <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">

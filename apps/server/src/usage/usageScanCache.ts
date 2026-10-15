@@ -400,18 +400,6 @@ function makeStateValidators(
   );
 }
 
-/** Keeps saved usage after transcript cleanup, until the reporting retention expires. */
-export function pruneScanCache(cache: ScanCache, retentionCutoffMs: number): number {
-  let removed = 0;
-  for (const [path, entry] of cache) {
-    if (entry.mtimeMs < retentionCutoffMs) {
-      cache.delete(path);
-      removed += 1;
-    }
-  }
-  return removed;
-}
-
 /**
  * Within-file de-duplication, applied before an entry is cached.
  *

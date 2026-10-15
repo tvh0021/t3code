@@ -1,4 +1,5 @@
 import { UsageProviderKind } from "@t3tools/contracts";
+import { ALL_TIME_DAYS } from "@t3tools/shared/usageFormat";
 import * as Schema from "effect/Schema";
 
 import { getLocalStorageItem, setLocalStorageItem } from "../../hooks/useLocalStorage";
@@ -6,7 +7,7 @@ import { getLocalStorageItem, setLocalStorageItem } from "../../hooks/useLocalSt
 const STORAGE_KEY = "t3code:usage-page-preferences:v1";
 const UsagePagePreferencesSchema = Schema.Struct({
   metric: Schema.Literals(["cost", "tokens", "limits"]),
-  windowDays: Schema.Literals([1, 7, 30, 90]),
+  windowDays: Schema.Literals([1, 7, 30, 90, ALL_TIME_DAYS]),
   /** Providers filtered out of the page. Stored as hidden so new providers show by default. */
   hiddenProviders: Schema.optional(Schema.Array(UsageProviderKind)),
 });

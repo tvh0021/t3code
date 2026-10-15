@@ -50,7 +50,7 @@ describe("readZedAccountUsage", () => {
         {
           id: ZED_SPEND_WINDOW_ID,
           kind: "monthly",
-          label: "Spend $5.20 of $10.00",
+          label: "$5.20 of $10.00 spent",
           usedPercent: 52,
           resetsAt: "2026-10-31T00:00:00.000Z",
           windowDurationMins: 30 * 24 * 60,
@@ -72,7 +72,7 @@ describe("readZedAccountUsage", () => {
         {
           id: ZED_SPEND_WINDOW_ID,
           kind: "monthly",
-          label: "Spend $12.34, no limit",
+          label: "$12.34 spent, no limit",
           usedPercent: 0,
         },
       ]);

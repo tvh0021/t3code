@@ -117,8 +117,8 @@ export function zedSpendToUsageLimits(input: {
           kind: "monthly",
           label:
             limit !== null && limit > 0
-              ? `Spend ${dollars(spend.spend_in_cents)} of ${dollars(limit)}`
-              : `Spend ${dollars(spend.spend_in_cents)}, no limit`,
+              ? `${dollars(spend.spend_in_cents)} of ${dollars(limit)} spent`
+              : `${dollars(spend.spend_in_cents)} spent, no limit`,
           usedPercent:
             limit !== null && limit > 0 ? clampPercent((spend.spend_in_cents / limit) * 100) : 0,
           ...(Option.isSome(end) ? { resetsAt: DateTime.formatIso(end.value) } : {}),

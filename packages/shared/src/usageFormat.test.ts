@@ -22,6 +22,19 @@ describe("formatPercent", () => {
 });
 
 describe("hourly usage formatting", () => {
+  it("requests all recorded history through the current local day", () => {
+    try {
+      vi.stubEnv("TZ", "America/New_York");
+      const window = makeWindow(0, new Date("2026-10-15T02:00:00Z"));
+      expect(window.sinceDay).toBe("2000-01-01");
+      expect(window.untilDay).toBe("2026-10-14");
+      expect(window.resolution).toBe("day");
+      expect(window.sinceTime).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("keeps requested zones separate when formatting repeated calls", () => {
     const instant = "2026-08-11T12:37:00.000Z";
     for (const zone of ["UTC", "America/New_York", "Asia/Kathmandu", "UTC"]) {

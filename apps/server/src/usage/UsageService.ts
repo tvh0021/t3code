@@ -86,7 +86,6 @@ import {
   dedupeWithinFile,
   LEGACY_SCAN_CACHE_FILE_NAME,
   makeScanCacheWriter,
-  pruneScanCache,
   SCAN_CACHE_FILE_NAME,
   type CachedFile,
   type ScanCache,
@@ -109,10 +108,11 @@ const MTIME_SLACK_MS = 36 * 60 * 60 * 1000;
 const MAX_HOURLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
- * The longest window the UI offers, 90 days, plus its `MTIME_SLACK_MS`, rounded
- * up. Older entries are pruned.
+ * How far back account-backed scan sources (Cursor) keep fetched history.
+ * Parsed transcripts are never pruned: providers delete or compress old
+ * transcripts, and the saved records are then the only all-time history.
  */
-const CACHE_RETENTION_DAYS = 92;
+const ACCOUNT_RETENTION_DAYS = 92;
 
 /** Transcripts parsed at once. More gains little once the disk stays busy. */
 const TRANSCRIPT_READ_CONCURRENCY = 4;
@@ -429,7 +429,6 @@ export const make = Effect.gen(function* () {
   /** Resolves every transcript directory the usage readers point at. */
   const resolveTranscriptDirs = Effect.fn("UsageService.resolveTranscriptDirs")(function* (
     settings: ServerSettingsValue,
-    retentionCutoffMs: number,
   ) {
     const dirs: Array<TranscriptSource> = [];
     const seen = new Set<string>();
@@ -452,7 +451,6 @@ export const make = Effect.gen(function* () {
         .some(
           ([filePath, entry]) =>
             entry.provider === provider &&
-            entry.mtimeMs >= retentionCutoffMs &&
             entry.records.length + entry.tailRecords.length > 0 &&
             isWithinDirectory(filePath, dir),
         );
@@ -724,9 +722,7 @@ export const make = Effect.gen(function* () {
     retentionCutoffMs: number,
     awaitRefresh: boolean,
   ) {
-    const dirs = yield* resolveTranscriptDirs(settings, retentionCutoffMs).pipe(
-      Effect.provideContext(readerContext),
-    );
+    const dirs = yield* resolveTranscriptDirs(settings).pipe(Effect.provideContext(readerContext));
 
     const scans = Effect.forEach(
       scanReaders,
@@ -817,7 +813,7 @@ export const make = Effect.gen(function* () {
     const windowStartMs =
       (hourlyWindow?.sinceTimeMs ?? DateTime.toEpochMillis(windowStart.value)) - MTIME_SLACK_MS;
 
-    const retentionCutoffMs = startedAtMs - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const retentionCutoffMs = startedAtMs - ACCOUNT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
     // Pricing only matters once records are aggregated, so the rate table
     // loads while transcripts stream instead of gating them: a cold rates
@@ -847,14 +843,13 @@ export const make = Effect.gen(function* () {
     // contributes to its source through the normal aggregation and dedupe
     // path. Like the walk, skip files last written before the window: they
     // cannot hold records inside it.
-    const retainedSinceMs = Math.max(windowStartMs, retentionCutoffMs);
     const filesByDir = scannedDirs.map(({ provider, dir, files }) => {
       const retainedFiles = [...(files ?? [])];
       const livePaths = new Set(retainedFiles.map((file) => file.path));
       for (const [filePath, entry] of fileCache) {
         if (
           entry.provider !== provider ||
-          entry.mtimeMs < retainedSinceMs ||
+          entry.mtimeMs < windowStartMs ||
           livePaths.has(filePath) ||
           !isWithinDirectory(filePath, dir)
         )
@@ -924,9 +919,6 @@ export const make = Effect.gen(function* () {
         ...(refreshing ? { refreshing } : {}),
       });
     }
-
-    const pruned = pruneScanCache(fileCache, retentionCutoffMs);
-    if (pruned > 0) cacheDirty = true;
 
     const aggregated = aggregator.finish();
     const readAt = yield* DateTime.now;

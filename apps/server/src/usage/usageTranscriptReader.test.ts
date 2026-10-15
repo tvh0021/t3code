@@ -4,11 +4,16 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeZlib from "node:zlib";
 
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest";
 
 import { TEST_FORMATS } from "./usageTestFormats.ts";
-import { readTranscriptRecords, transcriptLineGate } from "./usageTranscriptReader.ts";
+import {
+  listTranscriptFiles,
+  readTranscriptRecords,
+  transcriptLineGate,
+} from "./usageTranscriptReader.ts";
 
 let dir: string;
 
@@ -245,6 +250,42 @@ describe("readTranscriptRecords resume", () => {
     assert.isNull(
       await readTranscriptRecords(NodePath.join(dir, "missing.jsonl"), TEST_FORMATS.claude),
     );
+  });
+});
+
+describe("compressed transcripts", () => {
+  const rollout = codexMetaLine() + codexModelLine("gpt-5.2-codex") + codexUsageLine(9, 5);
+
+  it("lists and parses a .jsonl.zst rollout like its plain form", async () => {
+    await NodeFSP.mkdir(NodePath.join(dir, "2026", "07"), { recursive: true });
+    const plainPath = NodePath.join(dir, "plain.jsonl");
+    const compressedPath = NodePath.join(dir, "2026", "07", "rollout.jsonl.zst");
+    await NodeFSP.writeFile(plainPath, rollout);
+    await NodeFSP.writeFile(compressedPath, NodeZlib.zstdCompressSync(rollout));
+
+    const { files } = await listTranscriptFiles(dir, 0);
+    assert.deepStrictEqual(files.map((file) => file.path).toSorted(), [compressedPath, plainPath]);
+
+    const plain = await readTranscriptRecords(plainPath, TEST_FORMATS.codex);
+    const compressed = await readTranscriptRecords(compressedPath, TEST_FORMATS.codex);
+    assert.isNotNull(compressed);
+    assert.strictEqual(compressed.records.length, 1);
+    assert.deepStrictEqual(compressed.records, plain?.records);
+
+    // Offsets count decompressed bytes, so a later read never resumes.
+    const again = await readTranscriptRecords(
+      compressedPath,
+      TEST_FORMATS.codex,
+      compressed.position,
+    );
+    assert.isFalse(again?.resumed);
+    assert.deepStrictEqual(again?.records, compressed.records);
+  });
+
+  it("returns null for a corrupt .jsonl.zst", async () => {
+    const path = NodePath.join(dir, "rollout.jsonl.zst");
+    await NodeFSP.writeFile(path, rollout);
+    assert.isNull(await readTranscriptRecords(path, TEST_FORMATS.codex));
   });
 });
 

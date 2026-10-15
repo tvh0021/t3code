@@ -1,6 +1,6 @@
 # Issue tracker
 
-Updated October 13, 2026, after the upstream orchestration-v2 sync.
+Updated October 15, 2026, for the Personal 0.6.0 usage release.
 
 Latest audit and per-item verdicts: [VERIFICATION.md](./VERIFICATION.md).
 This tracker owns open defects and verification work; dated release history
@@ -41,6 +41,23 @@ The installed candidate shows one priced Sonnet row with 193K tokens, one Opus
 row with 3.96M tokens, and Gemini 3.1 Pro in place of the old alias. Usage refresh
 and Model/Day switching pass. Native mobile and remote runtime verification
 remain untested.
+
+### USAGE-003: Older and archived Codex costs disappear
+
+Status: Fixed and verified in installed Personal 0.6.0 on October 15, 2026.
+
+Codex compresses older rollouts to `.jsonl.zst` and preserves their mtimes.
+The scanner only listed `.jsonl` files and did not read `archived_sessions`.
+At diagnosis, 558 of 640 active and 354 of 373 archived rollouts were compressed.
+The new reader parsed all 1,013 files without failures in the handoff audit.
+
+The scanner now reads both directories and compressed files, deduplicates
+sessions across files, and retains saved transcript usage without an age limit.
+Installed desktop verification shows Codex history back to May 27, both All time
+controls, the five shortcuts and persistence after reload. All time exposes
+that history on desktop and web. Cursor's account cache still
+retains 92 days. The saved cache grows with history, and transcripts deleted
+before their first scan cannot be recovered. USAGE-002 is a separate open issue.
 
 ## Open issues
 
@@ -447,7 +464,7 @@ Other clients paste the header into the field.
 
 `zedAccountUsage.ts` reads `/frontend/billing/usage` and
 `/frontend/billing/subscriptions/current`. It publishes one monthly window
-labeled `Spend $X of $Y`, with the reset and duration taken from the
+labeled `$X of $Y spent` since Personal 0.6.0, with the reset and duration taken from the
 subscription period. A null or zero limit shows `no limit` with an empty bar.
 
 The user asked not to poll. The driver reads once when it starts with a session,

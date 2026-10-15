@@ -18,6 +18,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeStringDecoder from "node:string_decoder";
+import * as NodeZlib from "node:zlib";
 
 import type {
   SelectedFields,
@@ -84,6 +85,7 @@ const NEWLINE = 0x0a;
 /** `stat` calls one transcript walk keeps in flight. The libuv pool has 4 threads. */
 const STAT_CONCURRENCY = 32;
 const CARRIAGE_RETURN = 0x0d;
+const COMPRESSED_SUFFIX = ".jsonl.zst";
 
 function selectUsageFields(fields: SelectedFields) {
   return (path: ReadonlyArray<string | number | null>): boolean => {
@@ -107,7 +109,8 @@ function fnv1a(buffer: Buffer): number {
 }
 
 /**
- * Lists `.jsonl` transcripts under `root` last modified at or after `sinceMs`.
+ * Lists `.jsonl` transcripts under `root` last modified at or after `sinceMs`,
+ * including zstd-compressed `.jsonl.zst` ones (Codex compresses older rollouts).
  *
  * Unreadable directories and files are counted in `failedPaths` rather than
  * failing the page, so the source can report incomplete usage. Files that
@@ -122,6 +125,10 @@ function fnv1a(buffer: Buffer): number {
  * one at a time each waits its own trip through the thread pool. Results keep
  * `readdir` order, which the aggregator's first-seen dedupe relies on.
  */
+function isTranscriptName(name: string): boolean {
+  return name.endsWith(".jsonl") || name.endsWith(COMPRESSED_SUFFIX);
+}
+
 export async function listTranscriptFiles(
   root: string,
   sinceMs: number,
@@ -141,7 +148,7 @@ export async function listTranscriptFiles(
     for (const entry of entries) {
       const child = NodePath.join(dir, entry.name);
       if (entry.isDirectory()) await walk(child);
-      else if (fileName !== undefined ? entry.name === fileName : entry.name.endsWith(".jsonl")) {
+      else if (fileName !== undefined ? entry.name === fileName : isTranscriptName(entry.name)) {
         candidates.push(child);
       }
     }
@@ -241,6 +248,9 @@ export function transcriptLineGate(markers: readonly [string, ...string[]]) {
  *
  * A stateful format resumes with the state saved at that position; a saved
  * state its schema rejects re-parses the file whole.
+ *
+ * A `.jsonl.zst` file is a finished transcript, so it is decompressed and
+ * parsed whole, and its position never allows a resume.
  */
 export async function readTranscriptRecords<State>(
   filePath: string,
@@ -268,7 +278,9 @@ export async function readTranscriptRecords<State>(
       resumeFrom === undefined || decodeState === undefined || resumeFrom.state === null
         ? Option.none()
         : decodeState(resumeFrom.state);
+    const compressed = filePath.endsWith(COMPRESSED_SUFFIX);
     if (
+      !compressed &&
       resumeFrom !== undefined &&
       resumeFrom.resumeOffset > 0 &&
       (codec === undefined || Option.isSome(savedState)) &&
@@ -340,11 +352,18 @@ export async function readTranscriptRecords<State>(
       streaming = undefined;
       decoder = undefined;
     };
-    const stream = handle.createReadStream({
+    const fileStream = handle.createReadStream({
       start,
       autoClose: false,
       highWaterMark: 256 * 1024,
-    }) as AsyncIterable<Buffer>;
+    });
+    let stream: AsyncIterable<Buffer> = fileStream;
+    if (compressed) {
+      const decompress = NodeZlib.createZstdDecompress();
+      // `pipe` does not forward read errors; the iterator must still throw.
+      fileStream.once("error", (error) => decompress.destroy(error));
+      stream = fileStream.pipe(decompress);
+    }
     for await (const chunk of stream) {
       let lineStart = 0;
       while (lineStart < chunk.length) {
@@ -376,7 +395,8 @@ export async function readTranscriptRecords<State>(
       tailRecords,
     );
 
-    const guardLength = Math.min(GUARD_LENGTH, resumeOffset);
+    // Offsets into a compressed file count decompressed bytes, so no guard.
+    const guardLength = compressed ? 0 : Math.min(GUARD_LENGTH, resumeOffset);
     let guardHash = 0;
     if (guardLength > 0) {
       const window = Buffer.alloc(guardLength);

@@ -5,7 +5,6 @@ import {
   dedupeWithinFile,
   encodeScanCache,
   makeScanCacheWriter,
-  pruneScanCache,
   type CachedFile,
   type ScanCache,
 } from "./usageScanCache.ts";
@@ -239,27 +238,6 @@ describe("scan cache round trip", () => {
 
     const restored = decodeScanCache(JSON.parse(JSON.stringify(poisoned)), TEST_FORMAT_MAP);
     expect(restored.has("/a.jsonl")).toBe(false);
-  });
-});
-
-describe("pruneScanCache", () => {
-  const retentionCutoffMs = 1000;
-
-  it("drops entries older than retention", () => {
-    const cache = cacheWith([["/old.jsonl", 500, [record()]]]);
-
-    const removed = pruneScanCache(cache, retentionCutoffMs);
-
-    expect(removed).toBe(1);
-    expect(cache.size).toBe(0);
-  });
-
-  it("keeps entries whose file has disappeared", () => {
-    const cache = cacheWith([["/gone.jsonl", 5000, [record()]]]);
-
-    pruneScanCache(cache, retentionCutoffMs);
-
-    expect(cache.size).toBe(1);
   });
 });
 

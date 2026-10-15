@@ -209,6 +209,10 @@ export function formatRelativeHourShort(
   return formatDateTimeShort(hourStart, timeZone);
 }
 
+/** The `days` of an all-time window, which starts at `ALL_TIME_SINCE_DAY`. */
+export const ALL_TIME_DAYS = 0;
+export const ALL_TIME_SINCE_DAY = "2000-01-01";
+
 /**
  * The window the page requests, expressed in the viewer's own time zone so days
  * line up with what they actually experienced.
@@ -263,7 +267,9 @@ export function makeWindow(
     .map((part) => Number.parseInt(part, 10));
   const start = new Date(Date.UTC(year, month - 1, dayOfMonth - (days - 1)));
   return {
-    sinceDay: UsageDay.make(start.toISOString().slice(0, 10)),
+    sinceDay: UsageDay.make(
+      days === ALL_TIME_DAYS ? ALL_TIME_SINCE_DAY : start.toISOString().slice(0, 10),
+    ),
     untilDay: UsageDay.make(untilDay),
     timeZone,
     resolution,
