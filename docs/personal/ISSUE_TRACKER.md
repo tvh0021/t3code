@@ -13,30 +13,6 @@ Cause: `mergeUsage` leaves credit buckets out of the day and hour totals but add
 Done when: provider columns, Total and charts use the same cost basis, or show subscription and credit values separately.
 History: Reproduced on installed 0.3.2 and through the shared merge with a $1 subscription bucket and a 25-credit bucket carrying $3: Codex $4, Total $1.
 
-### USAGE-005: Antigravity tokens counted about three times
-
-Open since 2026-10-16.
-Problem: Usage shows about 835M Antigravity tokens for 2026-10-09 to 10-16, where the native database holds about 281M.
-Cause: The reader emits two "generation" records next to each real "step" record, and without usage IDs the merge never joins them. The extra Gemini rows are unpriced, but Sonnet calls are priced three times.
-Done when: each Antigravity call counts once in tokens and cost.
-History: Found while rerunning the provider benchmark; not yet confirmed in the app.
-
-### USAGE-006: Codex credits counted twice
-
-Open since 2026-10-16.
-Problem: Usage reports 17.55 Codex credits for 2026-10-09 to 10-16, where the balance fell by 8.775.
-Cause: `reconcileCodexCreditUsage` runs separately on `sessions` and `archived_sessions`, so one balance drop is charged once per directory. Likely since 0.6.0, when archived sessions were added.
-Done when: credits are reconciled once across both directories.
-History: Found while rerunning the provider benchmark; not yet confirmed in the app.
-
-### CHATLLM-WRITE-001: ChatLLM file tools write outside the project through symlinks
-
-Open since 2026-10-12. Planned fix: the small real-path check below; command sandboxing is out of scope.
-Problem: Any ChatLLM thread's `write_file` and `edit_file` follow a symlink inside the project and change the file it points to outside the project.
-Cause: The workspace check compares path text, not the real path on disk.
-Done when: writes through symlinked files or folders are checked against their real path and refused outside the project. Antigravity's file tools already do this.
-History: A direct outside path was refused, but the same file through a symlink was written. `execute_command` can already write outside the project, so this check is not a security boundary.
-
 ### ZED-CATALOG-001: Failed discovery after restart restores retired Zed models
 
 Open since 2026-10-12.
@@ -71,6 +47,9 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 
 ## Resolved
 
+- **USAGE-005** (after 0.6.3): Antigravity tokens counted about 3×. Cause: id-less Gemini usage repeated in step, generation and retry records. Fix: identical id-less totals within a database count once.
+- **USAGE-006** (after 0.6.3): Codex credits counted twice. Cause: `sessions` and `archived_sessions` reconciled separately. Fix: each Codex home reconciles as one balance timeline.
+- **CHATLLM-WRITE-001** (after 0.6.3): ChatLLM `write_file`/`edit_file` followed symlinks outside the project. Fix: writes check the real path, as Antigravity's file tools do.
 - **ZED-001** (0.5.0): Zed Limits needed real account spend. Cause: native credential can't read billing. Fix: dashboard cookie session; user confirmed spend matches the dashboard.
 - **CODEX-CREDIT-001** (closed 2026-10-16, no fix): Parser skips a repeated `token_count` payload with a newer credit balance. Never observed; totals unaffected.
 - **MOBILE-002** (0.6.3): Phone Usage empty on App Store 2.0.0. Cause: unknown abacus provider fails the whole RPC decode. Fix: host drops ChatLLM entries for mobile.

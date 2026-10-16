@@ -121,6 +121,49 @@ describe("AbacusAdapterV2 unit helpers", () => {
     }
   });
 
+  it("refuses writes that a symlink redirects outside the workspace", () => {
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-test-links-"));
+    const workspace = NodePath.join(tempDir, "workspace");
+    const outsideDir = NodePath.join(tempDir, "outside");
+    const outsideFile = NodePath.join(outsideDir, "secret.txt");
+    const denied =
+      "Access denied: Write operations are only permitted inside the workspace directory.";
+    try {
+      NodeFS.mkdirSync(workspace);
+      NodeFS.mkdirSync(outsideDir);
+      NodeFS.writeFileSync(outsideFile, "original");
+      NodeFS.symlinkSync(outsideFile, NodePath.join(workspace, "file-link.txt"));
+      NodeFS.symlinkSync(outsideDir, NodePath.join(workspace, "dir-link"));
+      NodeFS.symlinkSync(NodePath.join(tempDir, "missing"), NodePath.join(workspace, "dangling"));
+
+      expect(handleWriteFile({ path: "file-link.txt", content: "hacked" }, workspace)).toBe(denied);
+      expect(
+        handleEditFile(
+          { path: "file-link.txt", old_string: "original", new_string: "x" },
+          workspace,
+        ),
+      ).toBe(denied);
+      expect(handleWriteFile({ path: "dir-link/new/file.txt", content: "x" }, workspace)).toBe(
+        denied,
+      );
+      expect(handleWriteFile({ path: "dangling", content: "x" }, workspace)).toBe(denied);
+      expect(NodeFS.readFileSync(outsideFile, "utf-8")).toBe("original");
+      expect(NodeFS.existsSync(NodePath.join(outsideDir, "new"))).toBe(false);
+      expect(NodeFS.existsSync(NodePath.join(tempDir, "missing"))).toBe(false);
+
+      // A workspace reached through a symlink still accepts writes, including
+      // into directories that don't exist yet.
+      const linkedWorkspace = NodePath.join(tempDir, "linked-workspace");
+      NodeFS.symlinkSync(workspace, linkedWorkspace);
+      expect(
+        handleWriteFile({ path: "src/new/file.txt", content: "ok" }, linkedWorkspace),
+      ).toContain("Successfully wrote");
+      expect(NodeFS.readFileSync(NodePath.join(workspace, "src/new/file.txt"), "utf-8")).toBe("ok");
+    } finally {
+      NodeFS.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("handles file read, write, edit, and directory listing", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-test-fs-"));
     try {

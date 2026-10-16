@@ -1,6 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { initialCodexScanState, parseCodexLine, reconcileCodexCreditUsage } from "./codexUsage.ts";
+import {
+  initialCodexScanState,
+  parseCodexLine,
+  reconcileCodexCreditUsage,
+  reconcileCodexCreditUsageByHome,
+} from "./codexUsage.ts";
 
 describe("parseCodexLine", () => {
   const sessionMeta = JSON.stringify({
@@ -208,6 +213,51 @@ describe("parseCodexLine", () => {
     expect(records.reduce((sum, record) => sum + (record.reportedCostUsd ?? 0), 0)).toBeCloseTo(
       1331 * 0.04,
     );
+  });
+
+  it("reconciles a home's live and archived sessions as one balance timeline", () => {
+    const makeRecord = (sessionId: string, timestampMs: number, creditBalance: number) => ({
+      provider: "codex" as const,
+      timestampMs,
+      model: "gpt-6-sol",
+      sessionId,
+      totals: {
+        uncachedInputTokens: 1,
+        cachedInputTokens: 0,
+        cacheCreationTokens: 0,
+        outputTokens: 1,
+        reasoningTokens: 0,
+      },
+      reportedCostUsd: null,
+      credits: null,
+      creditBalance,
+      speed: "standard" as const,
+      dedupeKey: null,
+    });
+    const dirs = [
+      { provider: "codex", dir: "/home/a/.codex/sessions" },
+      { provider: "codex", dir: "/home/a/.codex/archived_sessions" },
+      { provider: "codex", dir: "/home/b/.codex/sessions" },
+      { provider: "claude", dir: "/home/a/.claude/projects" },
+    ];
+    const claudeFiles = [{ path: "claude.jsonl", records: [] }];
+    const reconciled = reconcileCodexCreditUsageByHome(dirs, [
+      [{ path: "live.jsonl", records: [makeRecord("live", 2, 100), makeRecord("live", 4, 91)] }],
+      [{ path: "old.jsonl", records: [makeRecord("old", 1, 100), makeRecord("old", 3, 91)] }],
+      [{ path: "b.jsonl", records: [makeRecord("b", 1, 50), makeRecord("b", 2, 40)] }],
+      claudeFiles,
+    ]);
+
+    const credits = (index: number) =>
+      reconciled[index]!.flatMap((file) => file.records).reduce(
+        (sum, record) => sum + (record.credits ?? 0),
+        0,
+      );
+    // One 9-credit drop, seen from both directories of home a, counts once.
+    expect(credits(0) + credits(1)).toBe(9);
+    // Another home is another account with its own baseline.
+    expect(credits(2)).toBe(10);
+    expect(reconciled[3]).toBe(claudeFiles);
   });
 
   it("excludes codex-auto-review turns at parse time", () => {

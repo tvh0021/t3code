@@ -136,6 +136,51 @@ describe("readAntigravityUsage", () => {
       }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("counts an id-less Antigravity call once across its step, generation and retry", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const dir = yield* tempDir;
+      const usage = (input: number) => [...protoNumber(2, input), ...protoNumber(3, 7)];
+      // Gemini usage has no response id; the generation lists its final
+      // attempt again among its retries.
+      const generation = (input: number) =>
+        protoBytes(1, [
+          ...protoBytes(4, usage(input)),
+          ...protoBytes(17, protoBytes(2, usage(input))),
+          ...protoText(19, "Gemini 3 Pro"),
+        ]);
+      yield* seedDatabase(path.join(dir, "gemini.db"), (db) =>
+        Effect.gen(function* () {
+          yield* createTables(db);
+          yield* db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+            0,
+            new Uint8Array(generation(100)),
+          ]);
+          // A generation without a step still counts once.
+          yield* db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+            1,
+            new Uint8Array(generation(300)),
+          ]);
+          // Two separate calls can report identical totals.
+          for (const idx of [0, 1]) {
+            yield* db.run("INSERT INTO steps VALUES (?, ?)", [
+              idx,
+              new Uint8Array(protoBytes(9, usage(100))),
+            ]);
+          }
+        }),
+      );
+      const result = yield* readAntigravityUsage(dir, 0);
+      assert.deepStrictEqual(result.errors, []);
+      assert.deepStrictEqual(
+        records(result)
+          .map((record) => record.totals.uncachedInputTokens)
+          .toSorted((a, b) => a - b),
+        [100, 100, 300],
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("uses the matching Antigravity generation model for each model-less step", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;

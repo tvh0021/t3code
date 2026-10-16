@@ -36,8 +36,8 @@ Codex delivered $87 in a week against a $4.62 weekly share of its fee (18.8×).
   $20 before the change and about $60 after.
 - Antigravity and ChatLLM record no used-percent locally.
 
-These figures count each Antigravity call and each Codex credit drop once. The
-app's Usage page currently over-counts both (USAGE-005, USAGE-006).
+These figures count each Antigravity call and each Codex credit drop once.
+Builds up to 0.6.3 over-count both in Usage (USAGE-005, USAGE-006).
 
 ## Benchmark 1: 2026-09-18
 

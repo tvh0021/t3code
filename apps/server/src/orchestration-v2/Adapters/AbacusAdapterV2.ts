@@ -55,7 +55,6 @@ const decodeAbacusSettings = Schema.decodeSync(AbacusSettings);
 export function abacusMaxTurnSteps(model: string): number {
   return /flash/i.test(model) ? 200 : 50;
 }
-const READ_ONLY_TOOL_NAMES: ReadonlyArray<string> = ["read_file", "list_directory"];
 const makeToolCallId = () => `call_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 const MAX_TOOL_OUTPUT_BYTES = 30 * 1024;
 const MAX_HEAD_LINES = 200;
@@ -220,6 +219,37 @@ export function isInsideWorkspace(targetPath: string, workspaceDir: string): boo
   return !rel.startsWith("..") && !NodePath.isAbsolute(rel);
 }
 
+/**
+ * Resolves a write target to its real path, returning it only when it lies
+ * inside the workspace. Symlinks resolve before the check, so a link inside the
+ * workspace cannot redirect a write outside it. Missing segments are re-appended
+ * to the nearest existing ancestor; an entry that exists but cannot be resolved,
+ * like a dangling link, is refused.
+ */
+export function resolveWorkspaceWritePath(filePath: string, cwd: string): string | null {
+  const missing: Array<string> = [];
+  let existing = resolvePath(filePath, cwd);
+  let realExisting = realPathOrNull(existing);
+  while (realExisting === null) {
+    if (NodeFS.lstatSync(existing, { throwIfNoEntry: false })) return null;
+    const parent = NodePath.dirname(existing);
+    if (parent === existing) return null;
+    missing.unshift(NodePath.basename(existing));
+    existing = parent;
+    realExisting = realPathOrNull(existing);
+  }
+  const target = NodePath.join(realExisting, ...missing);
+  return isInsideWorkspace(target, realPathOrNull(cwd) ?? cwd) ? target : null;
+}
+
+function realPathOrNull(path: string): string | null {
+  try {
+    return NodeFS.realpathSync(path);
+  } catch {
+    return null;
+  }
+}
+
 export function truncateToolOutput(output: string): string {
   const lines = output.split("\n");
   if (lines.length > MAX_HEAD_LINES + MAX_TAIL_LINES) {
@@ -283,8 +313,8 @@ export function handleReadFile(
 }
 
 export function handleWriteFile(args: { path: string; content: string }, cwd: string): string {
-  const target = resolvePath(args.path, cwd);
-  if (!isInsideWorkspace(target, cwd)) {
+  const target = resolveWorkspaceWritePath(args.path, cwd);
+  if (target === null) {
     return "Access denied: Write operations are only permitted inside the workspace directory.";
   }
   try {
@@ -300,8 +330,8 @@ export function handleEditFile(
   args: { path: string; old_string: string; new_string: string },
   cwd: string,
 ): string {
-  const target = resolvePath(args.path, cwd);
-  if (!isInsideWorkspace(target, cwd)) {
+  const target = resolveWorkspaceWritePath(args.path, cwd);
+  if (target === null) {
     return "Access denied: Write operations are only permitted inside the workspace directory.";
   }
   if (!NodeFS.existsSync(target)) {

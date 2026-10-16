@@ -339,6 +339,39 @@ export function reconcileCodexCreditUsage(
   }));
 }
 
+type CodexUsageFile = Parameters<typeof reconcileCodexCreditUsage>[0][number];
+
+/**
+ * Runs `reconcileCodexCreditUsage` once per Codex home, across its `sessions`
+ * and `archived_sessions` together. Reconciling each directory alone charged
+ * the same balance drop once per directory. `filesByDir` lines up with `dirs`;
+ * non-Codex directories pass through unchanged.
+ */
+export function reconcileCodexCreditUsageByHome(
+  dirs: ReadonlyArray<{ readonly provider: string; readonly dir: string }>,
+  filesByDir: ReadonlyArray<ReadonlyArray<CodexUsageFile>>,
+): ReadonlyArray<ReadonlyArray<CodexUsageFile>> {
+  const homes = new Map<string, number[]>();
+  dirs.forEach(({ provider, dir }, index) => {
+    if (provider !== "codex") return;
+    const home = dir.replace(/[\\/]+[^\\/]+[\\/]*$/, "");
+    homes.set(home, [...(homes.get(home) ?? []), index]);
+  });
+  const result = [...filesByDir];
+  for (const indexes of homes.values()) {
+    // Directory order is kept so a record's first copy, the one aggregation
+    // keeps, is the copy that receives the credits.
+    const reconciled = reconcileCodexCreditUsage(indexes.flatMap((index) => filesByDir[index]!));
+    let offset = 0;
+    for (const index of indexes) {
+      const count = filesByDir[index]!.length;
+      result[index] = reconciled.slice(offset, offset + count);
+      offset += count;
+    }
+  }
+  return result;
+}
+
 /**
  * Maps a Codex `service_tier` to its billing speed. Codex omits the field when
  * no tier was requested, which bills as standard, as do `default` and

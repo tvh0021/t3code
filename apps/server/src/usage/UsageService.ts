@@ -66,7 +66,7 @@ import {
 } from "./usageAggregation.ts";
 import {
   codexUsageFormat,
-  reconcileCodexCreditUsage,
+  reconcileCodexCreditUsageByHome,
   type CodexScanState,
 } from "../provider/Drivers/codexUsage.ts";
 import {
@@ -843,7 +843,7 @@ export const make = Effect.gen(function* () {
     // contributes to its source through the normal aggregation and dedupe
     // path. Like the walk, skip files last written before the window: they
     // cannot hold records inside it.
-    const filesByDir = scannedDirs.map(({ provider, dir, files }) => {
+    const retainedByDir = scannedDirs.map(({ provider, dir, files }) => {
       const retainedFiles = [...(files ?? [])];
       const livePaths = new Set(retainedFiles.map((file) => file.path));
       for (const [filePath, entry] of fileCache) {
@@ -856,8 +856,9 @@ export const make = Effect.gen(function* () {
           continue;
         retainedFiles.push({ path: filePath, records: [...entry.records, ...entry.tailRecords] });
       }
-      return provider === "codex" ? reconcileCodexCreditUsage(retainedFiles) : retainedFiles;
+      return retainedFiles;
     });
+    const filesByDir = reconcileCodexCreditUsageByHome(scannedDirs, retainedByDir);
     const crossFileSessions = sharedSessions(filesByDir.flat());
 
     for (const [

@@ -241,6 +241,10 @@ function usageCandidates(
 ): UsageCandidate[] {
   const records: UsageCandidate[] = [];
   const generationModels = new Map(generations.map(({ idx, entry }) => [idx, entry.model]));
+  // Usage without response ids (Gemini) can't merge by key. A generation then
+  // repeats its step's usage, and its retry list repeats the final attempt, so
+  // identical id-less totals already read from this database are one call.
+  const unkeyedTotals = new Set<string>();
   for (const [source, entries] of [
     ["step", steps],
     ["generation", generations],
@@ -267,6 +271,11 @@ function usageCandidates(
           const id = textAt(usage, key);
           return id ? [`antigravity:${key}:${id}`] : [];
         });
+        if (keys.length === 0) {
+          const totalsKey = Object.values(totals).join(":");
+          if (source === "generation" && unkeyedTotals.has(totalsKey)) continue;
+          unkeyedTotals.add(totalsKey);
+        }
         const record: UsageRecord = {
           provider: "antigravity",
           sessionId,
