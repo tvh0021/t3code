@@ -1,6 +1,6 @@
 # Issue tracker
 
-Updated October 15, 2026, for the Personal 0.6.0 usage release.
+Updated October 16, 2026, for the Personal 0.6.3 mobile Usage fix.
 
 Latest audit and per-item verdicts: [VERIFICATION.md](./VERIFICATION.md).
 This tracker owns open defects and verification work; dated release history
@@ -26,6 +26,26 @@ response. No provider is relabeled to make those totals appear under another
 name.
 
 ## Resolved usage issues
+
+### MOBILE-002: App Store 2.0.0 Usage reports the host unavailable
+
+Status: Fixed and verified on the user's phone in Personal 0.6.3 on October 16, 2026.
+
+The App Store 2.0.0 Usage tab showed no activity in every window, with "This
+environment could not report usage." Limits worked. The server handler
+succeeded over both LAN and T3 Connect, so the phone was rejecting the reply.
+The 2.0.0 app follows upstream, whose provider list lacks `abacus`. Contract
+v6 marks `buckets` and `sources` as forward-compatible arrays meant to drop
+unknown entries, but the RPC client decodes the reply inside an `Exit` wrapper,
+and that wrapper validates the arrays strictly. One ChatLLM bucket or source
+therefore failed the whole response. Decoding real 24h, 7d and 30d payloads with
+upstream contracts and effect 4.0.5 reproduced the failure, and removing ChatLLM
+buckets and sources fixed it; the fork-only `credits` field is ignored.
+
+The host now removes ChatLLM entries from Usage responses for mobile releases
+after 1.3.x (`apps/server/src/usage/usageClientCompatibility.ts`). ChatLLM usage
+cannot appear in the phone's Usage tab until upstream recognizes the provider.
+Clients of app.t3.codes would fail the same way and are not projected.
 
 ### USAGE-001: Effort variants split model rows and miss pricing
 

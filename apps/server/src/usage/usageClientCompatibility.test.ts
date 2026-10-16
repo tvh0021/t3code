@@ -60,10 +60,17 @@ describe("projectUsageSummaryForClient", () => {
     ]);
   });
 
-  it("keeps the full response for newer mobile and desktop clients", () => {
-    expect(projectUsageSummaryForClient(summary, { surface: "mobile", appVersion: "1.4.0" })).toBe(
-      summary,
+  it.each(["1.4.0", "2.0.0"])("drops fork-only providers for mobile %s", (appVersion) => {
+    const projected = projectUsageSummaryForClient(summary, { surface: "mobile", appVersion });
+    const upstreamProviders = ["claude", "codex", "grok", "antigravity"];
+    expect(projected.contractVersion).toBe(6);
+    expect(projected.buckets.map((bucket) => bucket.provider)).toEqual(upstreamProviders);
+    expect(projected.sources.map((source) => source.fingerprint.provider)).toEqual(
+      upstreamProviders,
     );
+  });
+
+  it("keeps the full response for desktop clients", () => {
     expect(projectUsageSummaryForClient(summary, { surface: "desktop", appVersion: "1.3.0" })).toBe(
       summary,
     );

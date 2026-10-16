@@ -273,3 +273,9 @@ Feature release of the upstream orchestration-v2 sync above.
 - Verification: all eight Antigravity limit tests, the server typecheck, scoped lint and formatting pass. A live read-only query confirmed the two endpoints' different answers.
 - Installed arm64 0.6.2 passed native About, retained conversation content, Settings, Luna model selection, two Codex turns with a reopen, and Limits refresh. Antigravity shows both Gemini windows and both Claude & GPT windows. Deep signature, DMG integrity and ZIP checks pass with the existing Personal identity. Local build artifacts and backup are under `/private/tmp/t3-personal-0.6.2-release/`.
 - Standalone web and remote/relay/tunnel runtime checks were not run. Mobile verification is outside this fork's scope. The possible ChatLLM Usage incompatibility with 2.x phones remains unverified.
+
+### 2026-10-16: Personal 0.6.3
+
+- The App Store 2.0.0 Usage tab works with this host again. It rejected every Usage response because ChatLLM entries are unknown to upstream's provider list, and forward-compatible arrays do not drop unknown entries inside RPC replies. The host now removes ChatLLM entries for mobile releases after 1.3.x. See MOBILE-002.
+- Verification: six projection tests, the server typecheck, scoped lint and formatting pass. Upstream contracts with effect 4.0.5 decode the projected 24h, 7d and 30d payloads and reject the unprojected ones. Deep signature and DMG integrity pass with the existing Personal identity.
+- Installed arm64 0.6.3 relaunched with retained state, and the user confirmed the App Store 2.0.0 Usage tab now shows activity over the learned LAN route. Native desktop UI was not exercised by the agent because no computer-use tool was available. app.t3.codes clients are not projected and remain untested. Local artifacts and the 0.6.2 backup are under `/private/tmp/t3-personal-0.6.3-release/`.

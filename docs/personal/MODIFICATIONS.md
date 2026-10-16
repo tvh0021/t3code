@@ -53,8 +53,9 @@ tools are forwarded through the HTTP MCP bridge.
 Usage contract v6 includes Antigravity and ChatLLM. The personal server projects
 v5 for mobile 1.2.x/1.3.x, retaining only Claude, Codex and Grok entries that those
 clients understand. This restores older-client decoding; it cannot add missing
-providers to their Usage tab. Limits is independent. MOBILE-001 records the
-accepted limitation.
+providers to their Usage tab. Newer mobile releases keep v6 without ChatLLM
+entries, which upstream clients reject even inside forward-compatible arrays
+(MOBILE-002). Limits is independent. MOBILE-001 records the accepted limitation.
 
 Completed Antigravity/ChatLLM turns write usage JSONL atomically. Transcript
 scanning also reads native Antigravity SQLite conversation traces. The original
