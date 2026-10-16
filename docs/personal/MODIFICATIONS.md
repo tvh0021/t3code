@@ -48,7 +48,7 @@ destructive commands. A turn allows 200 tool calls on models whose id contains
   silent `completed`. The cap now depends on the model, the batch that would
   exceed it is skipped so history has no unanswered calls, and the turn ends
   with a visible message that delegated tasks report as their summary.
-- After 0.6.3 (CHATLLM-WRITE-001): writes compared path text, so a symlink
+- 0.6.4 (CHATLLM-WRITE-001): writes compared path text, so a symlink
   inside the project could redirect them outside it. They now check the real
   path (`resolveWorkspaceWritePath`). `execute_command` can still write
   anywhere, so this is not a sandbox.
@@ -91,10 +91,10 @@ database.
 - 0.6.1 (USAGE-004): speed comes from the provider's reported `usage.speed`,
   not the selected option. Claude Code silently drops Fast when the account
   can't serve it, so the Claude adapter adds one thread notice with the reason.
-- After 0.6.3 (USAGE-006): Codex balances are account-wide, so each Codex home
+- 0.6.4 (USAGE-006): Codex balances are account-wide, so each Codex home
   reconciles `sessions` and `archived_sessions` as one timeline. Reconciling
   each directory alone charged the same drop once per directory.
-- After 0.6.3 (USAGE-005): Gemini usage in Antigravity databases has no
+- 0.6.4 (USAGE-005): Gemini usage in Antigravity databases has no
   response id, and each call appears in its step, its generation and the
   generation's retry list. Identical id-less totals within one database count
   once (`antigravityUsageReader.ts`, upstream's file).
