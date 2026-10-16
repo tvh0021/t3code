@@ -108,7 +108,9 @@ The September Gemini-only ACP restriction is historical. Personal 0.3.0 added
 Claude support. Quota probing and usage scanning are upstream's: Claude and GPT
 share one "Claude & GPT (shared)" bucket, and historical Antigravity tokens
 come from upstream's SQLite scanner. The fork only keeps its shortest-window-first
-sort. ChatLLM still writes live turn usage.
+sort and asks both Google quota endpoints, merging their windows, because the
+daily endpoint can omit the Gemini group (AG-QUOTA-001). ChatLLM still writes
+live turn usage.
 
 Antigravity uses Full access at new-session/resume boundaries. Web/desktop/mobile
 selectors expose that effective mode while retaining the saved thread/draft

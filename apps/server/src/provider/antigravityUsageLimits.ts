@@ -223,26 +223,36 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     } else {
       accessToken = cached.accessToken;
     }
+    // Endpoints can each report only some quota groups (the daily endpoint has
+    // omitted Gemini), so ask all of them and merge windows by id.
     const fetchWindows = Effect.fn("AntigravityUsageProbe.fetchWindows")(function* <E>(
       operation: string,
       parse: (response: unknown) => Effect.Effect<ServerProviderUsageWindow[], E>,
     ) {
-      for (const endpoint of ENDPOINTS) {
-        const windows = yield* request(
-          HttpClientRequest.post(`${endpoint}/v1internal:${operation}`).pipe(
-            HttpClientRequest.setHeaders({
-              Authorization: `Bearer ${accessToken}`,
-              "User-Agent": `antigravity/hub/1.0.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`,
-            }),
-            HttpClientRequest.bodyJsonUnsafe(token.project_id ? { project: token.project_id } : {}),
+      const reported = yield* Effect.forEach(
+        ENDPOINTS,
+        (endpoint) =>
+          request(
+            HttpClientRequest.post(`${endpoint}/v1internal:${operation}`).pipe(
+              HttpClientRequest.setHeaders({
+                Authorization: `Bearer ${accessToken}`,
+                "User-Agent": `antigravity/hub/1.0.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`,
+              }),
+              HttpClientRequest.bodyJsonUnsafe(
+                token.project_id ? { project: token.project_id } : {},
+              ),
+            ),
+          ).pipe(
+            Effect.flatMap(parse),
+            Effect.orElseSucceed(() => []),
           ),
-        ).pipe(
-          Effect.flatMap(parse),
-          Effect.orElseSucceed(() => []),
-        );
-        if (windows.length > 0) return windows;
+        { concurrency: "unbounded" },
+      );
+      const windows = new Map<string, ServerProviderUsageWindow>();
+      for (const window of reported.flat()) {
+        if (!windows.has(window.id)) windows.set(window.id, window);
       }
-      return [];
+      return [...windows.values()];
     });
     const summary = yield* fetchWindows("retrieveUserQuotaSummary", (response) =>
       decodeSummary(response).pipe(Effect.map(summaryWindows)),

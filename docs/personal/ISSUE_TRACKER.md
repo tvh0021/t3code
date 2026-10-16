@@ -105,6 +105,22 @@ turns, discarding their history. It now applies per request. Regressions cover
 the per-model limit, the visible stop message, and a follow-up whose history has
 every tool call answered. A full delegated GLM review and a live 200-call run have not been repeated.
 
+### AG-QUOTA-001: Antigravity Limits omit the Gemini pool
+
+Status: Fixed and verified in installed Personal 0.6.2 on October 16, 2026.
+
+Usage → Limits showed only the "Claude & GPT (shared)" windows for Antigravity,
+on desktop and mobile. Google's two quota endpoints disagree: on October 16,
+`daily-cloudcode-pa` returned only the Claude and GPT group, while
+`cloudcode-pa` returned both that group and Gemini (98% weekly left). The probe,
+unchanged from upstream, asked the daily endpoint first and stopped at the first
+non-empty answer, so it never saw Gemini.
+
+The probe now asks both endpoints concurrently and merges their windows by
+bucket id. A regression gives the daily endpoint only the shared group and
+expects all four windows. Installed 0.6.2 shows all four windows after refresh.
+Mobile runtime verification is outside this fork's scope.
+
 ## Open issues
 
 ### USAGE-002: Day provider costs do not add to Total

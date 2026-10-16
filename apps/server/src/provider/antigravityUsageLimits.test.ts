@@ -50,6 +50,8 @@ const summary = {
 const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
   options: {
     summary?: unknown;
+    /** What the daily endpoint reports when it differs from the production endpoint. */
+    dailySummary?: unknown;
     models?: unknown;
     summaryStatus?: number;
     tokenStatus?: number;
@@ -96,7 +98,12 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
       return HttpClientResponse.fromWeb(
         request,
         request.url.endsWith(":retrieveUserQuotaSummary")
-          ? Response.json(options.summary ?? summary, { status: options.summaryStatus ?? 200 })
+          ? Response.json(
+              (request.url.includes("//daily-") ? options.dailySummary : undefined) ??
+                options.summary ??
+                summary,
+              { status: options.summaryStatus ?? 200 },
+            )
           : Response.json(options.models ?? { models: {} }),
       );
     }),
@@ -133,7 +140,23 @@ describe("Antigravity subscription limits", () => {
       expect(requests.filter((request) => request.url.endsWith("/token"))).toHaveLength(1);
       expect(
         requests.filter((request) => request.url.endsWith(":retrieveUserQuotaSummary")),
-      ).toHaveLength(2);
+      ).toHaveLength(4);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps Gemini limits when the daily endpoint reports only the shared pool", () =>
+    Effect.gen(function* () {
+      const { probe } = yield* fixture({ dailySummary: { groups: [summary.groups[1]] } });
+      const limits = yield* probe;
+      expect(limits.windows.map((window) => window.id).toSorted()).toEqual([
+        "3p-5h",
+        "3p-weekly",
+        "gemini-5h",
+        "gemini-weekly",
+      ]);
+      expect(limits.windows.find((window) => window.id === "gemini-weekly")?.label).toBe(
+        "Gemini · Weekly",
+      );
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
