@@ -1,646 +1,91 @@
 # Issue tracker
 
-Updated October 16, 2026, for the Personal 0.6.3 mobile Usage fix.
-
-Latest audit and per-item verdicts: [VERIFICATION.md](./VERIFICATION.md).
-This tracker owns open defects and verification work; dated release history
-lives in [CHANGELOG.md](./CHANGELOG.md).
-
-## Accepted mobile limitation
-
-### MOBILE-001: App Store 1.3.0 Usage omits Antigravity and ChatLLM
-
-Status: Accepted September 24, 2026.
-
-The App Store 1.3.0 Usage client decodes contract v5 and recognizes Claude,
-Codex, and Grok. The personal host's v6 response includes Antigravity and
-ChatLLM, which makes that older client report Usage unavailable. The host now
-projects v5 for mobile 1.2.x and 1.3.x connections, retaining only providers
-those clients can represent. A historical mobile schema decode accepted the
-projected response, and the user confirmed Codex usage billing works on the
-phone.
-
-Antigravity and ChatLLM usage cannot appear in this app version's Usage view
-without a mobile update. Their Limits view remains independent of this Usage
-response. No provider is relabeled to make those totals appear under another
-name.
-
-## Resolved usage issues
-
-### MOBILE-002: App Store 2.0.0 Usage reports the host unavailable
-
-Status: Fixed and verified on the user's phone in Personal 0.6.3 on October 16, 2026.
-
-The App Store 2.0.0 Usage tab showed no activity in every window, with "This
-environment could not report usage." Limits worked. The server handler
-succeeded over both LAN and T3 Connect, so the phone was rejecting the reply.
-The 2.0.0 app follows upstream, whose provider list lacks `abacus`. Contract
-v6 marks `buckets` and `sources` as forward-compatible arrays meant to drop
-unknown entries, but the RPC client decodes the reply inside an `Exit` wrapper,
-and that wrapper validates the arrays strictly. One ChatLLM bucket or source
-therefore failed the whole response. Decoding real 24h, 7d and 30d payloads with
-upstream contracts and effect 4.0.5 reproduced the failure, and removing ChatLLM
-buckets and sources fixed it; the fork-only `credits` field is ignored.
-
-The host now removes ChatLLM entries from Usage responses for mobile releases
-after 1.3.x (`apps/server/src/usage/usageClientCompatibility.ts`). ChatLLM usage
-cannot appear in the phone's Usage tab until upstream recognizes the provider.
-Clients of app.t3.codes would fail the same way and are not projected.
-
-### USAGE-001: Effort variants split model rows and miss pricing
-
-Status: Fixed and verified in Personal 0.3.2 on October 11, 2026.
-
-Claude Sonnet 5.5 Low and Medium and Opus 5.5 Medium appeared as separate,
-unpriced rows. Shared normalization now combines effort variants on every
-client. The server uses verified official API rates for the affected models.
-Antigravity's `gemini-pro-agent` maps to Gemini 3.1 Pro instead of Gemini 2.5 Pro.
-Exact effort overrides are priced before aggregation, and custom base prices
-apply to other effort levels. The 85 focused regressions and scoped checks pass.
-The installed candidate shows one priced Sonnet row with 193K tokens, one Opus
-row with 3.96M tokens, and Gemini 3.1 Pro in place of the old alias. Usage refresh
-and Model/Day switching pass. Native mobile and remote runtime verification
-remain untested.
-
-### USAGE-003: Older and archived Codex costs disappear
-
-Status: Fixed and verified in installed Personal 0.6.0 on October 15, 2026.
-
-Codex compresses older rollouts to `.jsonl.zst` and preserves their mtimes.
-The scanner only listed `.jsonl` files and did not read `archived_sessions`.
-At diagnosis, 558 of 640 active and 354 of 373 archived rollouts were compressed.
-The new reader parsed all 1,013 files without failures in the handoff audit.
-
-The scanner now reads both directories and compressed files, deduplicates
-sessions across files, and retains saved transcript usage without an age limit.
-Installed desktop verification shows Codex history back to May 27, both All time
-controls, the five shortcuts and persistence after reload. All time exposes
-that history on desktop and web. Cursor's account cache still
-retains 92 days. The saved cache grows with history, and transcripts deleted
-before their first scan cannot be recovered. USAGE-002 is a separate open issue.
-
-### USAGE-004: Claude fast mode never appears in Usage
-
-Status: Released in Personal 0.6.1 on October 15, 2026. The installed app
-shows the fallback notice when this account disables extra usage.
-
-Usage showed Codex Fast spend but no Claude Fast spend after a day of Claude
-turns with fast mode selected. Usage was correct: those requests ran at
-standard speed. T3 passed `fastMode: true` to the SDK on 118 runs since
-October 14. Claude Code opened each session with `fast_mode_state: "on"`, then
-reported `"off"` with `fast_mode_disabled_reason: "extra_usage_disabled"`. Fast
-mode on a subscription bills as extra usage, which is off for this account.
-Transcripts sent `speed: fast` on at most two requests per session and recorded
-every response as `usage.speed: "standard"`. Older sessions without fast mode
-report `sdk_opt_in_required`.
-
-The composer kept showing Fast with no sign of the fallback. The Claude adapter
-now adds one thread notice per Claude process when a fast-mode turn's init or
-result frame reports fast mode off, worded from the reason. `pending` is
-transient and shows nothing. The usage reader needed no change. Enabling extra
-usage on the Claude account is required before Claude Fast spend can appear.
-
-### CHATLLM-STEPS-001: Delegated ChatLLM runs stop silently after 20 tool calls
-
-Status: Released in Personal 0.6.1 on October 15, 2026. An installed GLM
-turn completed 24 file reads and a follow-up after reopening.
-
-Two delegated `zai-org/GLM-5.3-Flash` code reviews ended after exactly 20 tool
-calls with status `completed`, no error and no final answer. The parent saw
-only the model's last progress line as the task summary. Claude, Codex and
-Antigravity children started in the same minute ran normally. Incident notes:
-`/tmp/etk-review/abacus-glm-incident.md`.
-
-The adapter capped each turn at 20 tool calls. At the cap it wrote a ceiling
-message into the model's history but never emitted it, so nothing reached the
-thread. The batch that crossed the cap also stayed in history with no tool
-results, which a follow-up request could be rejected for.
-
-The cap is now 200 tool calls for models whose id contains `flash` and 50 for
-others. The batch that would cross the cap is skipped and the turn ends with a
-visible message, for example "Stopped after 50 tool calls: claude-opus-5-5 is
-limited to 50 per turn. Send a follow-up to continue." The 600-second
-`requestTimeoutMs` previously covered the whole turn and would have failed long
-turns, discarding their history. It now applies per request. Regressions cover
-the per-model limit, the visible stop message, and a follow-up whose history has
-every tool call answered. A full delegated GLM review and a live 200-call run have not been repeated.
-
-### AG-QUOTA-001: Antigravity Limits omit the Gemini pool
-
-Status: Fixed and verified in installed Personal 0.6.2 on October 16, 2026.
-
-Usage → Limits showed only the "Claude & GPT (shared)" windows for Antigravity,
-on desktop and mobile. Google's two quota endpoints disagree: on October 16,
-`daily-cloudcode-pa` returned only the Claude and GPT group, while
-`cloudcode-pa` returned both that group and Gemini (98% weekly left). The probe,
-unchanged from upstream, asked the daily endpoint first and stopped at the first
-non-empty answer, so it never saw Gemini.
-
-The probe now asks both endpoints concurrently and merges their windows by
-bucket id. A regression gives the daily endpoint only the shared group and
-expects all four windows. Installed 0.6.2 shows all four windows after refresh.
-Mobile runtime verification is outside this fork's scope.
+Open issues, known limitations, and a short record of resolved issues to check
+before diagnosing a new bug. Release history is in [CHANGELOG.md](./CHANGELOG.md).
 
 ## Open issues
 
-### USAGE-002: Day provider costs do not add to Total
-
-Status: Open. Reproduced October 11, 2026 in an isolated copy of installed
-Personal 0.3.2 and through the public shared usage merge.
-
-Open Usage > Tokens > Day with mixed subscription and credit-backed Codex
-history. October 11 shows Codex `$5.78`, Antigravity `$0.00`, and Total `$5.43`.
-October 7 shows `$11.02` and `$2.15`, with Total `$11.64`. Refreshing retains
-the mismatch. These differences exceed rounding.
-
-`mergeUsage` excludes credit buckets from `day.costUsd` and `hour.costUsd`, but
-adds their API-equivalent cost to `byProvider.costUsd`. The Day UI renders those
-incompatible totals together. A controlled public-interface probe with a $1
-subscription bucket and a 25-credit bucket carrying $3 API-equivalent cost
-returns Codex $4 and Total $1. The credit-model row correctly values 25 credits
-at $1; that is a separate calculation.
-
-Acceptance: provider columns, total, and charts must use the same stated cost
-basis, or separate subscription and credit values explicitly. Cover mixed and
-subscription-only days and hours. Verify web/desktop and shared mobile consumers.
-This is separate from resolved effort normalization in USAGE-001.
-
-Evidence: Day screenshot (local evidence: /private/tmp/t3-changelog-audit-20261011/usage-day.png),
-accessibility output (local evidence: /private/tmp/t3-changelog-audit-20261011/usage-day.txt), and
-controlled observations (local evidence: /private/tmp/t3-changelog-audit-20261011/quality-probes.json).
-
-### QUALITY-001: Abacus driver-list regression still omits Zed
-
-Status: Fixed in working tree, October 11, 2026. Both focused driver tests pass.
-
-`AbacusDriver.test.ts` expects seven built-in drivers. The actual registry also
-contains Zed, so `registers Abacus without replacing the existing built-in drivers`
-fails. The configured Abacus text-session test passes. This is a stale quality
-gate, not evidence that ChatLLM cannot execute a turn.
-
-Acceptance: update the registration expectation to reflect the intended registry
-without weakening its check that existing providers remain available. Rerun the
-focused driver test. The continuation added Zed to the exact registry expectation;
-both focused tests passed.
-
-Evidence: initial provider test log (local evidence: /private/tmp/t3-changelog-audit-20261011/provider-tests.log)
-and passing driver tests (local evidence: /private/tmp/t3-runtime-continuation-20261011/abacus-tests.log).
-
-### ACP-REVIEW-001: Read-only Antigravity reviews could write through client filesystem RPC
-
-Status: Fixed in working tree, October 12, 2026. Not installed or released.
-
-Five controlled review children successfully wrote inside their disposable review
-clones through native `fs/write_text_file`. The adapter now rejects filesystem
-writes when the coordination role is review. Reads still work; editing and
-ordinary sessions retain writes. This closes the reproduced filesystem bypass,
-not every native command/tool restriction across providers.
-
-Verification: the regression failed before the fix; all 42 adapter tests pass.
-The real mixed workflow rejects four review writes, allows one editing write,
-auto-allows 15 scoped MCP permissions and requires explicit client responses for
-five unrelated native tools. Server typecheck and scoped lint pass.
-
-Evidence: continuation report (local evidence: /private/tmp/t3-workable-verify-20261011/REPORT.md)
-and mixed workflow results (local evidence: /private/tmp/t3-mixed-workflow-20261012/results.json).
-
-### DOC-PERMISSIONS-001: The historical model-name override removal claim is inaccurate
-
-Status: Current guide corrected, October 12, 2026. Historical audit item 056 is FAIL.
-
-The public contracts helper still chooses different review modes for GPT and
-Claude with the same Zed driver and Full access parent. Existing tests explicitly
-require that behavior. `MODIFICATIONS.md` now describes it accurately. No
-permission semantics were changed to satisfy the historical changelog wording.
-
-Evidence: public-interface observations (local evidence: /private/tmp/t3-workable-verify-20261011/permissions-results.json).
-
-### ZED-CONTEXT-001: Native Zed token usage never reaches T3
-
-Status: Open. Reproduced October 12, 2026 with authenticated native Luna turns.
-
-Native Zed session storage contains nonzero input and output token counts,
-but the captured ACP stream contains no `usage_update` notifications. The T3
-adapter handles that notification when supplied, but receives none. This fails
-both row 032 and the usage portion of row 027. Native approvals do pass.
-
-Acceptance: emit current context use and capacity from the native bridge, verify
-updates through T3's real subscription and context meter, and preserve intact
-streaming. Check new and resumed sessions.
-
-### ZED-CATALOG-001: Failed discovery after restart restores retired seed models
-
-Status: Open. Reproduced twice October 12, 2026 in isolated source servers.
-
-Authenticated refresh persists Sonnet 5.5 and GPT-6 Luna. Restart with unchanged
-settings and deliberately failed native discovery returns Sonnet 5 and GPT-5.6
-Luna instead. The custom model remains. Same-process refresh failure retains
-the current inventory. A discovery failure reports ready/authenticated, which
-prevents the registry's failed-probe retention branch from applying.
-
-Acceptance: retain the last discovered built-ins during pending and failed
-startup discovery, preserve current custom settings, and replace retired models
-only after successful discovery. Verify an actual restart with disk cache.
-
-### CHATLLM-USAGE-001: First turn logs an estimate instead of its measured charge
-
-Status: Open. Reproduced October 12, 2026 with controlled account responses
-through the real ChatLLM driver and usage endpoints. No live charge induced.
-
-The account counter increases by 40 credits on each of two turns. The first
-turn logs 3.36 estimated credits, the second logs 40. Usage reports 43.36 credits
-and $0.02168 instead of 80 credits and $0.04. The first post-turn account reading
-establishes a baseline after the first charge, so that charge uses a token estimate.
-The second measured delta and $0.0005-per-credit conversion are correct.
-
-Acceptance: establish a valid baseline before the first charged turn or mark
-estimates explicitly. Keep account baselines isolated per instance and avoid
-attributing concurrent external spending to one turn. Verify the initial turn,
-a later turn, unavailable account readings and multiple configured instances.
-
-Evidence for these three defects: native-provider report (local evidence: /private/tmp/t3-verification-to30-20261012/REPORT.md)
-and filtered observations (local evidence: /private/tmp/t3-verification-to30-20261012/evidence-summary.json).
-
-### AG-TURN-001: Native Antigravity turns do not write T3 per-turn usage logs
-
-Status: Open. Native managed Gemini and Sonnet runs confirmed October 12, 2026.
-
-Two completed native turns have nonzero generation counters in their provider
-conversation databases. The public usage scan recovers one priced generation
-for each, but `usage/antigravity/sessions` does not exist in the isolated T3
-state. The adapter's per-turn writer requires usage in the ACP prompt response;
-the managed runtime's exercised responses do not provide it. The combined
-Antigravity/ChatLLM atomic logging claim fails for the Antigravity path.
-
-Historical database ingestion still recovers totals. This finding concerns the
-T3 turn-correlated log, not a loss of all usage accounting. ChatLLM's two-turn
-JSONL logging is separately verified.
-
-Acceptance: establish a measured native-runtime usage source for each T3 turn
-and persist it once with the T3 turn identity. Cover tool-loop generations,
-resume, cancellation and deduplication against native database ingestion. Do not
-substitute prompt-length estimates for measured token counts.
-
-Evidence: continuation report (local evidence: /private/tmp/t3-blocked-continuation-20261012/REPORT.md)
-and native usage summary (local evidence: /private/tmp/t3-antigravity-native-20261012/summary.json).
-
-### CHATLLM-WRITE-001: Worker file tools follow links outside the workspace
-
-Status: Open. Observed October 12, 2026 through a real source server and
-ChatLLM driver with controlled model responses. All paths were disposable
-fixtures under `/private/tmp`; no external account was charged.
-
-An edit worker's `write_file` rejects a direct path outside its assigned
-worktree. A symlink inside that worktree points to the same outside fixture.
-`write_file` and `edit_file` follow the link, return success and change the
-outside contents to `ESCAPED_EDIT`. The file tools check the lexical resolved
-path rather than the filesystem destination.
-
-Acceptance: keep successful writes inside the assigned worktree, including
-existing file links and linked parent directories. Preserve ordinary in-worktree
-write/edit behavior and the stricter review-worker policy.
-
-Evidence: captured runtime tool results (local evidence: /private/tmp/t3-zero-chatllm-worker-v3-20261012/defect.json).
-The fixture waited for a coordination receipt on the wrong stream after the
-worker finished. That timeout is not a product failure. No rerun is needed to
-establish the captured file change.
-
-### VERIFY-001: Complete current runtime coverage before calling the app fully tested
-
-Status: Open. The October 11 changelog audit covers every recorded bullet.
-The latest October 12 continuation leaves 2 BLOCKED claims, with 51 PASS,
-11 FAIL and 29 Historical / not applicable. Rows 004, 043 and 064 closed after
-first-party mark acceptance, native/provider worker restriction checks and
-compiled native child attachment regressions. Row 055 still needs desktop
-Antigravity switching, running-turn and restart evidence. Row 084 still needs a
-cross-environment client click; local HTML and desktop PDF now pass.
-See the latest evidence and fixture incident report (local evidence: /Users/tvh0021/.codex/visualizations/2026/10/12/01a12fe1-c2ad-74e3-b4db-4af8277cf571/five-blockers/REPORT.md).
-Mobile verification is excluded by the developer. Follow the
-[repository restriction](../../AGENTS.md#verifying); mobile-only audit rows are
-outside scope, not passing. The iOS runtime download was canceled before any
-client build or launch. CocoaPods installation had already completed.
-
-Use the per-item matrix in [VERIFICATION.md](./VERIFICATION.md) as the acceptance
-list. It identifies the missing providers, UI specimens, signing conditions,
-historical corpora, mobile clients and remote connection modes. Historical
-verification-only records are Historical / not applicable, not new runtime passes. Existing workflow,
-permission, startup and billing issues below retain their own acceptance criteria.
-
-The developer resumed after the earlier usage stop. Remaining blocked IDs are
-055 and 084. Native desktop automation returned inconsistent state and activated
-an unintended Claude update attempt, which the disposable app's shutdown
-interrupted. No completed update is recorded. Normal Keychain-free launch remains
-accepted; the adverse-Keychain experiment is excluded and must not be repeated.
-
-Acceptance: resolve or explicitly accept every remaining runtime gap, run the
-relevant real interfaces and adjacent cases, and record the tested revisions and
-date. Until then, there is no evidenced last full-app test date.
-
-### DESKTOP-001: Slow backend startup exceeds the window readiness timeout
-
-Status: Open. Current timeout recovery verified October 11, 2026; the original
-Personal 0.1.3 startup failure remains unexplained.
-
-The desktop readiness probe timed out after 60 seconds. Server startup spent
-about 60 seconds in coordination-reactor startup and another 60 seconds in
-project auto-pull, becoming ready after about 120 seconds. The server eventually
-responded as 0.1.3, but the desktop window remained unavailable until the user
-reopened the app. The subsequent installed Zed test passed.
-
-Verify cold launch with retained projects and workflows. A slow background task
-should not leave the app without a usable window after the backend becomes ready.
-
-`DesktopBackendManager` retries readiness while the backend remains alive.
-Its regression covers two expired readiness budgets before a successful probe.
-Project auto-pull still runs before server command readiness.
-
-October 11 runtime check: an isolated copy of installed Personal 0.3.1,
-commit `de86571090cf`, retained a snapshot of 12 projects, 306 threads, and
-workflow history. Normal cold startup became ready in about 4.1 seconds and
-opened its window automatically. Pausing only the newly spawned backend for
-70 seconds triggered the 60-second readiness timeout. After resumption, the
-window opened automatically about 74 seconds after launch, without reopening
-the app. A retained thread's reply and permission mode survived the restart.
-
-Workspace paths were remapped to a disposable repository, so this check did
-not reproduce the original project auto-pull workload or establish why the
-0.1.3 launch required reopening. Keep this issue open for that investigation.
-The backend-manager and Zed ACP support suites passed all 28 focused tests.
-Local evidence is in the verification report (local evidence: /private/tmp/t3-verify-desktop-zed-20261011/REPORT.md).
-
-### CODEX-CREDIT-001: A repeated token payload's newer balance is dropped
-
-Status: Open, pre-existing. Found October 13, 2026.
-
-Codex parsing skips a `token_count` payload whose usage matches the previous
-one, even when its credit balance is newer. Reconciliation then attributes that
-interim balance drop to the next record instead of the turn that spent it.
-Totals are unchanged; per-turn and per-day attribution can shift.
-
-### PERMISSION-001: Orchestration triggers unrelated macOS folder prompts
-
-Status: Open. Observed September 28, 2026, under the removed T3 orchestration
-layers. Recheck with upstream `delegate_task` before investigating further.
-
-While a T3 orchestration layer ran, macOS repeatedly asked for access to
-Downloads, Documents, Desktop, and Apple Music. The agent should already have
-access to the folders explicitly granted for the task. These unrelated prompts
-interrupt orchestration.
-
-Find which process makes each request and why it reaches folders outside the
-task's configured access. Starting orchestration should not trigger requests for
-unrelated locations.
-
-#### Acceptance criteria
-
-- Starting or running orchestration does not prompt for access to unrelated
-  folders such as Downloads, Documents, Desktop, or Apple Music.
-- Parent and child agents can access the folders explicitly granted for the
-  task.
-- A prompt for another protected location appears only when a task operation
-  actually needs that location.
-
-### WORKFLOW-003: Gemini onboarding fails on the eduroam IPv6 path
-
-Status: Network-specific failure observed October 6 in installed Personal 0.1.5.
-A standalone full-adapter Gemini turn passed October 8 on the working network.
-The orchestration layers in the observed failure were replaced by upstream
-`delegate_task` on October 13; the native IPv6 timeout is unrelated to them.
-
-#### Observed failure
-
-A Codex Sol parent assigned six Gemini Flash Medium review tasks with four
-child slots. All six children failed during ACP authentication before
-`session/new` or task execution. A standalone Gemini High thread failed at the
-same step, establishing that orchestration is not required for the failure.
-No substantive research result was produced.
-
-Parent thread: `8627c083-1d92-47ce-bc0e-b363ffd03e83`,
-`Streamline Apartment Search Document`. Standalone thread:
-`1bb25504-c290-424a-8c79-950f3f64623a`, `Workspace Project Inventory`.
-
-| Child                                  | Authentication started, October 6 EDT | Failed, EDT |
-| -------------------------------------- | ------------------------------------- | ----------- |
-| `e6de8648-babf-4938-85db-e6e292451bcf` | 5:57:19 PM                            | 5:58:34 PM  |
-| `6b5ce4e8-738e-4d7e-8ff7-8c0d3ab00d30` | 5:58:36 PM                            | 5:59:51 PM  |
-| `5033ad5e-d0a0-49d0-b4fe-f1e5b1d11e3f` | 5:59:53 PM                            | 6:01:08 PM  |
-| `0ee0c485-37c0-4634-baa4-ef298f0fbc90` | 6:01:10 PM                            | 6:02:25 PM  |
-| `eea72a7a-a7c2-400a-bcf1-395d8eff8f01` | 6:02:27 PM                            | 6:03:42 PM  |
-| `d1d3a5bc-df09-40e9-837c-1b7fe33dffe8` | 6:03:44 PM                            | 6:05:00 PM  |
-
-The standalone attempt ran from 6:05:02 to 6:06:17 PM. Persisted models pointed
-to the requested Antigravity models. The cached `ready/authenticated` snapshot
-was not evidence that new authentication worked.
-
-#### Diagnosis and release boundary
-
-Isolated authentication-only probes of managed `agy_acp_server_1.1.1`, using
-temporary profile copies and no model prompts, reproduced timeouts in
-76.77-77.07 seconds. Native JSON-RPC error `-32603` carried
-`[Errno 60] Operation timed out`. Stderr identified `oauth_manager.py:294`,
-`Failed to run onboarding after obtaining access token`, and the first
-`loadCodeAssist` call to Google's CCPA service.
-
-A redacted OAuth refresh check returned HTTP 200 in 0.12 seconds, with 3,599
-seconds of token validity. The native process then remained in `SYN_SENT` on
-IPv6; its bundled `httplib2` timed out before trying the next address. An IPv4
-connectivity comparison returned HTTP 404 in 0.066 seconds while IPv6 timed out.
-The unchanged authentication probe succeeded in 2.50 seconds through a temporary
-provider-scoped IPv4 CONNECT tunnel with end-to-end TLS. This isolates a failing
-IPv6 path and absent native fallback, rather than a missing refresh token.
-
-The user confirmed Gemini works on hotspot and fails on eduroam. No particular
-router/VPN change was established. The experimental relay, integration and tests
-were removed at the user's request; no network workaround remains in source or
-system settings. Temporary tunnel processes and profile copies were removed.
-
-The 0.1.4-to-0.1.5 launch-path comparison found no change to binary selection,
-profile/auth setup, arguments or child environment. 0.1.5 task parsing runs only
-after content arrives. The macOS Keychain change belongs to Electron; native
-Antigravity uses file storage. October 5 native logs show successful auth and
-`session/new`, including re-authentication at 7:48 PM EDT. Matching sanitized
-configuration/runtime fingerprints narrow the release boundary, but do not
-record the intervening host network state. The later 1.3.0 runtime and working
-network have standalone evidence; that does not close orchestration recovery.
-
-#### State and scheduling defects found alongside authentication
-
-Startup attempts were serialized despite four slots. A queued child could show
-coordination `running` before any native session/log existed, then `starting`.
-Failed children became session `error`, coordination `reported`, with synthetic
-`Assignment could not start` reports. Reports reached the active/ready parent;
-that does not establish that it resumed and handled them. Synthetic failure
-reports are expected recovery output, not proof assignments executed.
-
-Projection timestamps for the first four failures shared
-`2026-10-06T21:57:17.207Z` despite failures minutes apart. Use native request
-timestamps above for latency. Investigate client labels for pending, starting,
-running and failed work separately.
-
-#### Repairs included in Personal 0.3.1
-
-ACP errors preserve operation and sanitized native `data.details`. The recorded
-failure now retains provider, `authenticate`, and timeout text in client/child
-failure activity. Focused regressions cover cleanup and subsequent retry.
-Provider commands now run up to four per-thread queues concurrently, preserving
-same-thread ordering and workspace leases. Engine/worker regressions cover held
-authentication, overflow, ordering and drains. These repairs do not fix the
-native eduroam timeout.
-
-A separate parser defect made incomplete whitespace-heavy task notifications
-backtrack quadratically. A closing-tag requirement and greedy capture reduced
-the recorded 16,000-space probe from about 404 ms to 0.06 ms. Valid padded
-messages and incomplete input have regressions. This content parser runs after
-authentication and was not the onboarding cause.
-
-#### Evidence and acceptance
-
-Original evidence came from read-only Personal SQLite and matching
-`logs/provider/events.<thread-id>.log` files. Seven attempts and isolated native
-probes showed the same failure sequence. The original orchestration monitor was
-paused after the failures. Full historical notes before cleanup are retained at
-/private/tmp/t3-changelog-audit-20261011/ISSUE_TRACKER.before.md (local evidence, not preserved in repo).
-The direct diagnostic was /private/tmp/t3-gemini-auth-probe.py (local evidence, not preserved in repo); check that it
-still exists before reuse. It sends authentication only. Removed relay scripts
-are historical evidence, not a retained launch recipe.
-
-Acceptance:
-
-- A real Codex parent delegates tasks to Gemini and receives substantive
-  results on a working network.
-- Failed authentication reports provider, operation and actionable secret-free
-  detail; a subsequent retry succeeds after cleanup.
-- UI states distinguish queued/startup/failure from actual execution.
-- Four assignments and queued overflow exercise concurrent startup without
-  exceeding provider limits or losing failure reports.
-- Rerun the complete cycle against the current installed runtime. Focused tests
-  and a standalone Gemini success do not substitute for that cycle.
-
-### ZED-001: Read Zed account usage from the billing service
-
-Status: Implemented October 14, 2026; signed-in account spend displayed in installed 0.5.0. Dashboard comparison and session lifetime remain unverified.
-
-The Zed entry in Limits must show the account's actual spend for the current
-Zed billing period. It must not estimate account spend from one or more T3
-sessions.
-
-#### Why earlier attempts failed
-
-Zed's native credential reaches `/client/users/me` but gets `401` from every
-billing route. `/client/users/me` has the billing period but no token spend.
-ACP `usage_update.cost` is the cumulative cost of one ACP session. Summing it
-across T3 sessions omits usage from Zed and other clients and double-counts
-repeated updates. An earlier `$10` bar built from it showed `$0 / $10` on fresh
-snapshots. Only the dashboard's cookie session for `cloud.zed.dev` can read
-spend.
-
-#### Implemented behavior
-
-The user approved storing that session on October 14, which reverses the
-earlier rule against copying a dashboard cookie into server state. It is the
-Zed provider's `dashboardSession` setting, a secret field held in the host's
-secret store and redacted for clients. Desktop users get it from **Connect** in
-Zed provider settings. The button opens a Zed sign-in window in its own
-`persist:t3code-zed-dashboard` partition and saves the resulting Cookie header.
-Other clients paste the header into the field.
-
-`zedAccountUsage.ts` reads `/frontend/billing/usage` and
-`/frontend/billing/subscriptions/current`. It publishes one monthly window
-labeled `$X of $Y spent` since Personal 0.6.0, with the reset and duration taken from the
-subscription period. A null or zero limit shows `no limit` with an empty bar.
-
-The user asked not to poll. The driver reads once when it starts with a session,
-which includes after a settings change, then once after every Zed prompt
-settles. Reads are serialized. The periodic status probe reuses the last
-reading and never contacts Zed. The read publishes through the managed
-provider's `replaceUsageLimits`, so an expired session replaces live windows
-with an explicit state.
-
-States shown instead of a bar:
-
-- no session: an `unsupported` notice asking for one
-- session set but not read yet: "has not been read yet"
-- `401`, `403` or a redirect: the session expired, replace it
-- any other failure: could not read spend
-
-Only the personal routes are read. Organization billing
-(`/frontend/organizations/{id}/billing/usage`) is not supported.
-
-#### Remaining work
-
-Installed Personal 0.5.0 verification confirmed the missing-session notice,
-secure field, Connect reaching GitHub sign-in for Zed Industries, and cancellation
-restoring Connect. A later signed-in check displayed $9.43 of $10.00, with a reset in about two days. A direct dashboard comparison and session lifetime remain unverified.
-
-1. Sign in once on the installed desktop app. Confirm the cookie lifetime, that
-   `spend_in_cents` matches the dashboard (does it include the Pro credit?),
-   and the reset date.
-2. If the session proves short-lived, consider the Orb `portal_url` from the
-   usage response. Whether it carries a longer-lived token is unverified.
-
-#### Acceptance criteria
-
-- The displayed amount matches the value from the supported Zed billing
-  response.
-- The reset date comes from the same account's billing period.
-- The UI identifies the value as account spend and shows when it was checked.
-- Missing or expired authentication or an unavailable endpoint produces an
-  explicit unavailable state, not a zeroed bar.
-- Zed's billing routes are read only at startup and after Zed turns.
-
-## Closed by the upstream sync, October 13, 2026
-
-The fork's T3 orchestration layers, coordination reactor and Antigravity quota
-converter were replaced by upstream code. See
-[Delegated tasks](./MODIFICATIONS.md#delegated-tasks) and
-[Quota handoff](./MODIFICATIONS.md#quota-handoff). These entries describe removed
-code; their history is in git and the [verification record](./VERIFICATION.md).
-
-- **AG-QUOTA-001** (Claude quota windows dropped): upstream reports Antigravity
-  Claude and GPT models as one "Claude & GPT (shared)" bucket. A live account
-  response has still not been inspected.
-- **QUOTA-RESET-001** (automatic interrupt cancelled reset continuation): the
-  fork reactor is gone. Reset-based retry is upstream's usage-limit recovery;
-  quota handoff only adds a fallback choice in front of it.
-- **COORD-001** (reparenting, settle and worktree-reuse edge cases): the
-  `ThreadCoordination` planner no longer exists.
-- **WORKFLOW-001** and **WORKFLOW-002** (layer client/native verification and
-  strict Antigravity workflows): `start_orchestration_layer`, `spawn_child`,
-  `wait_for_children` and `report_to_parent` were removed in favor of
-  `delegate_task`.
-
-## Verification scope
-
-### Desktop and Zed verification, October 11, 2026
-
-ZED-003 is resolved for Personal 0.3.1 with the configured native Zed bridge
-and GPT-6 Luna at Medium effort. In separate scratch threads, Full access ran
-`pwd` without an approval request; Supervised displayed a Command approval
-card and ran it only after approval. Both returned the expected directory,
-`fixture`. The Supervised reply and selection survived the delayed restart.
-Account discovery no longer returned the historical GPT-5.6 Luna model.
-
-The test copy's application code archive matched the installed app. Setup used
-separate T3 and Electron data directories, remapped workspace paths, and a
-temporary Zed credential copy. The test app exited normally, and the credential
-copy was removed. See [VERIFICATION.md Desktop recovery and isolation
-correction](./VERIFICATION.md#desktop-recovery-and-isolation-correction-october-12-2026) for clarifications: blanket isolation claims that desktop verification left the installed app and its state untouched are not reliable.
-
-### Desktop verification scope, September 22, 2026
-
-Used the already-running personal desktop app through computer use. Sent three
-short Zed GPT-5.6 Luna prompts and one ChatLLM GLM-5.3-Flash prompt. Zed passed
-basic response, follow-up memory, approved command execution, and conversation
-persistence checks. ChatLLM returned `CHAT_OK` to
-`Reply only: CHAT_OK. Do not use tools.` in thread
-`405dca5a-683b-4de4-bce1-25ecd145d85e`, titled `Chat Acknowledgment`.
-No further ChatLLM prompts were sent because Limits showed 10 credits remaining
-before the test.
-
-Settings navigation, provider configuration views, Usage Limits and Tokens,
-the new-thread project picker, and the Files panel loaded. No additional
-confirmed defect was found in that cursory pass. Computer-use window and
-accessibility errors occurred initially and recovered. They are not classified
-as T3 defects. Historical failed threads were not reproduced or filed as new
-issues. Mobile, remote connections, cancellation, and quota exhaustion were not
-tested. No app restart or configuration change was required.
+### USAGE-002: Day provider costs don't add up to Total
+
+Open since 2026-10-11.
+Problem: On Usage → Day, provider costs include credit-based Codex usage but Total doesn't (e.g. Codex $5.78, Total $5.43).
+Cause: `mergeUsage` leaves credit buckets out of the day and hour totals but adds their API-equivalent cost to provider totals.
+Done when: provider columns, Total and charts use the same cost basis, or show subscription and credit values separately.
+History: Reproduced on installed 0.3.2 and through the shared merge with a $1 subscription bucket and a 25-credit bucket carrying $3: Codex $4, Total $1.
+
+### USAGE-005: Antigravity tokens counted about three times
+
+Open since 2026-10-16.
+Problem: Usage shows about 835M Antigravity tokens for 2026-10-09 to 10-16, where the native database holds about 281M.
+Cause: The reader emits two "generation" records next to each real "step" record, and without usage IDs the merge never joins them. The extra Gemini rows are unpriced, but Sonnet calls are priced three times.
+Done when: each Antigravity call counts once in tokens and cost.
+History: Found while rerunning the provider benchmark; not yet confirmed in the app.
+
+### USAGE-006: Codex credits counted twice
+
+Open since 2026-10-16.
+Problem: Usage reports 17.55 Codex credits for 2026-10-09 to 10-16, where the balance fell by 8.775.
+Cause: `reconcileCodexCreditUsage` runs separately on `sessions` and `archived_sessions`, so one balance drop is charged once per directory. Likely since 0.6.0, when archived sessions were added.
+Done when: credits are reconciled once across both directories.
+History: Found while rerunning the provider benchmark; not yet confirmed in the app.
+
+### CHATLLM-WRITE-001: ChatLLM file tools write outside the project through symlinks
+
+Open since 2026-10-12. Planned fix: the small real-path check below; command sandboxing is out of scope.
+Problem: Any ChatLLM thread's `write_file` and `edit_file` follow a symlink inside the project and change the file it points to outside the project.
+Cause: The workspace check compares path text, not the real path on disk.
+Done when: writes through symlinked files or folders are checked against their real path and refused outside the project. Antigravity's file tools already do this.
+History: A direct outside path was refused, but the same file through a symlink was written. `execute_command` can already write outside the project, so this check is not a security boundary.
+
+### ZED-CATALOG-001: Failed discovery after restart restores retired Zed models
+
+Open since 2026-10-12.
+Problem: After a restart where Zed model discovery fails, the picker shows the retired Sonnet 5 and GPT-5.6 Luna instead of the last discovered Sonnet 5.5 and GPT-6 Luna.
+Cause: The provider reports ready and authenticated when discovery fails, so the registry's keep-last-catalog branch never runs, and the seed list is still the old models.
+Done when: the last discovered models survive pending and failed startup discovery, and retired models are replaced only after a successful discovery.
+History: Reproduced twice in isolated servers. A failed refresh without a restart keeps the current catalog.
+
+### ZED-CONTEXT-001: Zed context meter gets no token usage
+
+Open since 2026-10-12.
+Problem: The context meter stays empty for Zed threads.
+Cause: The companion Zed bridge never sends ACP `usage_update`; T3's adapter handles it when present.
+Done when: the bridge reports context use and capacity for new and resumed sessions, and the meter shows it.
+History: Native Zed session storage holds nonzero input and output token counts, but the captured ACP stream has no usage updates.
+
+### CHATLLM-USAGE-001: First ChatLLM turn logs an estimate instead of its charge
+
+Open since 2026-10-12.
+Problem: The first charged turn logs an estimated credit count instead of the measured charge (3.36 instead of 40 credits).
+Cause: The account balance is first read after the first charge, so that turn falls back to an unmarked token estimate.
+Done when: a baseline is read before the first charged turn, or estimates are marked as estimates. Baselines stay per instance.
+History: With controlled account responses, two 40-credit turns logged 43.36 credits ($0.022) instead of 80 ($0.04). Later turns measure correctly.
+
+## Known limitations
+
+- **App Store 1.2 and 1.3 Usage** (MOBILE-001): these phone apps show only Claude, Codex and Grok usage. The host sends them the older Usage format.
+- **ChatLLM on the phone**: newer phone apps don't know the ChatLLM provider, so the host leaves ChatLLM out of their Usage tab (MOBILE-002). Desktop and web show it.
+- **app.t3.codes Usage**: the hosted web app probably fails Usage against this host the way the phone did, because it receives ChatLLM entries. Untested.
+- **Antigravity on eduroam** (WORKFLOW-003): Antigravity sign-in times out because eduroam's IPv6 path stalls and the native client has no IPv4 fallback. Hotspot and other networks work.
+- **Zed organization billing**: Zed Limits reads personal billing only. Organization billing is not supported.
+
+## Resolved
+
+- **ZED-001** (0.5.0): Zed Limits needed real account spend. Cause: native credential can't read billing. Fix: dashboard cookie session; user confirmed spend matches the dashboard.
+- **CODEX-CREDIT-001** (closed 2026-10-16, no fix): Parser skips a repeated `token_count` payload with a newer credit balance. Never observed; totals unaffected.
+- **MOBILE-002** (0.6.3): Phone Usage empty on App Store 2.0.0. Cause: unknown abacus provider fails the whole RPC decode. Fix: host drops ChatLLM entries for mobile.
+- **AG-QUOTA-001** (0.6.2): Antigravity Limits missing the Gemini pool. Cause: probe stopped at the daily endpoint, which omits Gemini. Fix: query both endpoints and merge windows.
+- **CHATLLM-STEPS-001** (0.6.1): Delegated ChatLLM runs ended silently after 20 tool calls. Cause: hidden cap message. Fix: 200/50 per-model cap, visible stop message, per-request timeout.
+- **USAGE-004** (0.6.1): Claude Fast spend never appeared in Usage. Cause: extra usage off, so Claude Code silently ran standard speed. Fix: thread notice with the reason.
+- **USAGE-003** (0.6.0): Older Codex costs missing from Usage. Cause: scanner skipped compressed `.jsonl.zst` rollouts and `archived_sessions`. Fix: read both, dedupe sessions, keep saved usage.
+- **USAGE-001** (0.3.2): Effort variants showed as separate unpriced Usage rows. Cause: no model normalization or official rates. Fix: combine variants and add verified rates.
+- **QUALITY-001** (`1bdb2510a7`): Abacus driver-registry test failed. Cause: expectation listed seven drivers and missed Zed. Fix: test expects the full registry.
+- **ZED-003** (0.3.1): Zed Full access still asked approval for `pwd`. Fix: Full access runs commands without a prompt; Supervised shows an approval card.
+- **PERMISSION-001** (Oct 13 sync): macOS asked for Downloads, Documents, Desktop and Music access during orchestration. Cause unknown. Obsolete: not seen since orchestration-v2 replaced the layers.
+- **ACP-REVIEW-001** (Oct 13 sync): Read-only Antigravity review children could write through ACP `fs/write_text_file`. Obsolete: roles removed; delegated reviews run in throwaway snapshot clones.
+- **DOC-PERMISSIONS-001** (Oct 13 sync): Docs said model-name permission overrides were gone while a helper still chose GPT and Claude modes. Obsolete: helper deleted.
+- **AG-TURN-001** (Oct 13 sync): Native Antigravity turns wrote no per-turn usage logs because ACP responses carry no usage. Obsolete: usage comes from the native database scan.
+- **QUOTA-RESET-001** (Oct 13 sync): An automatic interrupt cancelled reset-based continuation. Obsolete: fork reactor removed; upstream usage-limit recovery handles reset retries.
+- **COORD-001** (Oct 13 sync): Reparenting, settle and worktree-reuse edge cases in the fork's coordination planner. Obsolete: planner removed with the orchestration layers.
+- **WORKFLOW-001, WORKFLOW-002** (Oct 13 sync): Orchestration-layer verification gaps and strict Antigravity workflows. Obsolete: layer tools replaced by upstream `delegate_task`.
+- **AG-QUOTA-001, earlier** (Oct 13 sync): The fork's quota converter dropped Antigravity Claude windows. Obsolete: upstream's probe reports one shared Claude & GPT bucket.

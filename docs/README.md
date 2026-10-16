@@ -2,9 +2,7 @@
 
 ## Personal Fork
 
-- [Personal Fork Documentation](./personal/README.md)
-- [Detailed Modifications & Architecture](./personal/MODIFICATIONS.md)
-- [Upstream Synchronization Guide](./personal/UPSTREAM_SYNC.md)
+- [Personal fork notes](./personal/README.md)
 
 ---
 

@@ -162,3 +162,5 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+- **Personal fork: upstream syncs.** Before merging `upstream/main`, run the `blast-radius` skill on the incoming upstream changes (`git merge-base HEAD upstream/main`..`upstream/main`) to find how they would change or break fork code. [MODIFICATIONS.md](docs/personal/MODIFICATIONS.md) describes the fork code; follow its Upstream sync section while merging.
+- **Personal fork: verification passes.** When a verification pass or audit spans more than one release, record its results in `docs/personal/VERIFICATION.md`. Move each finding into `docs/personal/ISSUE_TRACKER.md`, and delete the file once every result is in the tracker or no longer matches the code. Single-release evidence goes in that release's GitHub notes, not this file.

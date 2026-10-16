@@ -1,210 +1,238 @@
-# Current personal fork modifications
+# Personal fork modifications
 
-Reconciled October 11, 2026 against Personal 0.3.2 source. This is a description
-of current behavior, not a runtime certification. [Verification](./VERIFICATION.md)
-owns audit results, [issues](./ISSUE_TRACKER.md) own remaining work, and
-[the changelog](./CHANGELOG.md) owns release history.
+The detailed companion to [the changelog](./CHANGELOG.md). Each feature area
+describes current behavior (**Now**), then the reasons behind each change
+(**Decisions**), keyed by release and [issue tracker](./ISSUE_TRACKER.md) ID.
+Search for a version or ID from a changelog line to find its reasoning. When a
+decision and **Now** disagree, **Now** wins.
 
-## Branding, typography and markdown
+## Look and feel
 
-The sidebar uses two lines, `T3 Code` and italic `personal`, with descender
-clearance. Single provider instances omit initials badges. ChatLLM uses its
-own name and vector icon.
+**Now.** The sidebar title has two lines, `T3 Code` and italic `personal`. The
+default font sizes are interface 20px, prompt 18px, code 18px and terminal 17px
+(`packages/contracts/src/settings.ts`); saved preferences override them. Chat
+renders inline and block math with KaTeX, including inside tables and bold or
+italic text. HTML file links open in the system browser, with the integrated
+browser in the context menu.
 
-The current client schema defaults are interface 20px, prompt 18px, code 18px,
-and terminal 17px. Existing saved preferences override defaults. The earlier
-README's message 20px/UI 17px/terminal 18px labels did not match these current
-schema fields. See `packages/contracts/src/settings.ts`.
+**Decisions.**
 
-Web/desktop chat uses KaTeX for inline and block math, including tables and
-styled wrappers. Plain messages skip math preprocessing/plugins. KaTeX markup
-and stylesheet dependencies are aligned at 0.18.7; earlier mismatches produced
-vector accents inside base glyphs. Native mobile has a separate markdown renderer.
+- Before 0.0.42: messages without math delimiters skip math preprocessing and
+  plugins, so ordinary chat pays nothing for KaTeX.
+- 0.3.1: KaTeX markup and stylesheet are pinned to the same version (0.18.7).
+  A mismatch drew vector accents inside their letters.
+- 0.3.1: HTML files are served by the environment that owns them, including
+  files outside the workspace. PDFs are unchanged.
+- 0.3.3: upstream's provider badge helpers are back. An earlier sync had
+  silently reverted them. The only fork change left there relabels an instance
+  still named "Abacus" as ChatLLM.
 
-HTML file links default to the system browser and offer an integrated browser
-alternative where available. Their owning environment serves the file, including
-files outside the workspace. PDF handling is separate.
+**Removed.** Single-instance provider badges were hidden before 0.0.42; 0.3.3
+restored upstream's badges.
 
 ## ChatLLM provider
 
-The `abacus` driver uses the configured RouteLLM API and exposes ChatLLM in
-clients. Catalog refresh reads available account models manually and periodically,
-preserving configured custom models.
+**Now.** The `abacus` driver runs ChatLLM (Abacus RouteLLM) through the
+configured API. Catalog refresh lists the account's models and keeps custom
+models. Its agent loop streams tool calls and runs `read_file`, `write_file`,
+`edit_file`, `list_directory` and `execute_command`, with filters for known
+destructive commands. A turn allows 200 tool calls on models whose id contains
+`flash` and 50 on others (`abacusMaxTurnSteps`); `requestTimeoutMs` (default
+600 s) applies to each request.
 
-Its agent loop streams fragmented tool calls, executes file/directory/command
-tools, feeds results back and accumulates usage across every completion step.
-Ordinary sessions support `read_file`, `write_file`, `edit_file`,
-`list_directory`, and `execute_command`. Writes stay in the workspace. Command
-filters reject known destructive forms; commands have cancellation and timeout
-handling. A turn runs at most 200 tool calls on models whose id contains
-`flash` and 50 on any other model (`abacusMaxTurnSteps`). At the limit the
-batch that would exceed it is skipped, so the history has no unanswered calls,
-and the turn ends with a visible assistant message naming the limit. Delegated
-tasks report that message as their summary. `requestTimeoutMs` (default 600 s)
-applies to each RouteLLM request, not the whole turn.
+**Decisions.**
 
-Workflow review workers expose only confined read/list and scoped reporting
-tools. Execution rejects forbidden writes and commands even if the provider
-requests them. Read containment includes symlink resolution. Parent coordination
-tools are forwarded through the HTTP MCP bridge.
+- Before 0.0.42: usage accumulates across every step of the loop, not just the
+  last completion.
+- 0.6.1 (CHATLLM-STEPS-001): the old 20-call cap ended delegated runs with a
+  silent `completed`. The cap now depends on the model, the batch that would
+  exceed it is skipped so history has no unanswered calls, and the turn ends
+  with a visible message that delegated tasks report as their summary.
+- Open (CHATLLM-WRITE-001): writes are checked by path text, not real path, so
+  a symlink inside the project can redirect them outside it.
+  `execute_command` can already write anywhere, so this is not a sandbox.
 
-## Usage accounting
+**Removed.** In the 0.4.0 sync: parent access to T3 coordination tools over the
+HTTP MCP bridge, and the read-only tool set for review workers. Delegated
+reviews now run in snapshot clones instead (see Delegated tasks).
 
-Usage contract v6 includes Antigravity and ChatLLM. The personal server projects
-v5 for mobile 1.2.x/1.3.x, retaining only Claude, Codex and Grok entries that those
-clients understand. This restores older-client decoding; it cannot add missing
-providers to their Usage tab. Newer mobile releases keep v6 without ChatLLM
-entries, which upstream clients reject even inside forward-compatible arrays
-(MOBILE-002). Limits is independent. MOBILE-001 records the accepted limitation.
+## Usage
 
-Completed Antigravity/ChatLLM turns write usage JSONL atomically. Transcript
-scanning also reads native Antigravity SQLite conversation traces. The original
-recovery decoded protobuf fields 9.2 for uncached input, 9.5 for cache reads,
-9.3 for output, 9.9 for thinking, and 24.8/gen_metadata for model identity.
-Historical counts are dated measurements, not permanent totals.
+**Now.** Usage prices every provider's tokens at API-equivalent rates. Codex
+credits cost $0.04 and ChatLLM credits $0.0005 (`packages/contracts/src/usage.ts`).
+Effort and thinking variants of a model share one row. Credit-based usage is
+shown separately from subscription usage. The period picker includes All time
+(`Cmd/Ctrl+Shift+5`) and remembers the last period. ChatLLM writes per-turn
+usage logs; every other provider is read from its native transcripts or
+database.
 
-ChatLLM credits use $0.0005 per credit. Turn usage accumulates all agent-loop
-steps; compute-point deltas measure credits with a pricing fallback when needed.
-Codex credits use $0.04 each. The usage scan cache (v6) keeps each record's
-account balance, so reconciliation orders balance snapshots by timestamp across
-duplicate/forked rollouts instead of charging the same balance drop once per
-transcript. `codex-auto-review` contributes no paid credits
-or USD and does not move the paid baseline. Its original guessed token rate has
-been removed from current accounting.
+**Decisions.**
 
-Shared normalization combines known model effort/thinking variants while
-preserving intrinsic/custom model distinctions. Gemini Flash tiers combine;
-`gemini-pro-agent` maps locally to Gemini 3.1 Pro. Effort-specific overrides
-apply before aggregation. Model rows separate subscription throughput from
-credit-based usage. Physical transcript sources are deduplicated across
-environments using host, provider, path and volume identity. A 20,000-bucket
-merge has a 1,000 ms regression budget.
+- Before 0.0.42 (MOBILE-001): App Store 1.2.x and 1.3.x reject Usage contract
+  v6, so the host sends them v5 with only Claude, Codex and Grok.
+- 0.6.3 (MOBILE-002): newer phone apps reject the whole Usage reply when it
+  contains ChatLLM. `ForwardCompatibleArray` doesn't drop unknown entries inside
+  RPC replies, so the host removes ChatLLM for every mobile client
+  (`usageClientCompatibility.ts`). app.t3.codes is not projected.
+- 0.3.2 (USAGE-001): price precedence is custom prices, then provider-reported
+  cost, then verified official rates, then LiteLLM (`usagePricing.ts`).
+  Estimates use base-context rates and leave out Gemini cache storage.
+- 0.3.2: `gemini-pro-agent` maps to Gemini 3.1 Pro and the Gemini Flash tiers
+  combine, matching Antigravity's own labels. `codex-auto-review` costs nothing
+  and doesn't move the credit baseline.
+- 0.3.3, 0.4.0: Codex credits come from balance snapshots ordered by time
+  across every rollout, so a forked or duplicated session doesn't charge the
+  same balance drop twice. The scan cache (v6) stores each record's balance.
+- 0.6.0 (USAGE-003): Codex compresses old rollouts to `.jsonl.zst` and moves
+  some to `archived_sessions`. The scanner reads both and counts duplicate
+  sessions once. Saved usage no longer expires after 92 days, so it outlives
+  provider cleanup; usage deleted before its first scan is still lost.
+- 0.6.1 (USAGE-004): speed comes from the provider's reported `usage.speed`,
+  not the selected option. Claude Code silently drops Fast when the account
+  can't serve it, so the Claude adapter adds one thread notice with the reason.
+- A 20,000-bucket merge has a 1,000 ms test budget (`usageMerge.test.ts`).
 
-Custom token prices take precedence over provider-reported cost; reported cost
-precedes verified reference rates, then public/fallback rates. Reference estimates
-use base-context pricing. Dotted Claude and bare Gemini Pro names include local
-aliases. Gemini cache-creation fallback uses input rates as an assumption;
-cache storage and long-context premiums are excluded. See
-`apps/server/src/usage/usagePricing.ts` and the latest pricing evidence.
+**Removed.** In the 0.4.0 sync, the fork's Antigravity per-turn logs and its
+protobuf trace decoder gave way to upstream's SQLite scanner.
 
-Speed comes from the provider's reported `usage.speed`, not from the selected
-option. Claude Code drops a fast-mode request to standard when the account
-cannot serve it, for example with extra usage off. The Claude adapter then adds
-one thread notice per Claude process stating the reason (USAGE-004).
+## Limits
 
-USAGE-002 tracks inconsistent Day provider costs versus Total. A passing model
-normalization check does not establish that all breakdowns or charts agree.
+**Now.** Limits shows reset countdowns for Antigravity, ChatLLM and Zed besides
+upstream's providers. Antigravity has a Gemini pool and a shared "Claude & GPT"
+pool, shortest window first. ChatLLM shows monthly compute points. Zed shows
+`$X of $Y spent`, or `$X spent, no limit`.
 
-## Antigravity catalog, permissions and quotas
+**Decisions.**
 
-Managed ACP 1.3.0 with the recognized Zed client identity discovers eligible
-Gemini and Claude Opus/Sonnet 5.5 variants. Availability depends on the signed-in
-Google account and Google's undocumented recognized-client behavior. Native
-model identifiers reach chat and text helpers unchanged. Built-in catalog seeds
-cover eligible installed/new sessions until live discovery is available; a live
-catalog takes precedence. Unauthenticated/disabled providers do not gain models
-merely because a budget policy names them.
+- 0.4.0: the fork adopted upstream's Antigravity quota probe and its shared
+  Claude & GPT bucket instead of keeping its own converter.
+- 0.6.2 (AG-QUOTA-001): Google's daily endpoint can leave out the Gemini group,
+  so the probe asks both endpoints and merges their windows.
+- 0.5.0 (ZED-001): Zed's own credential can't read billing, so spend comes from
+  `cloud.zed.dev` with a dashboard sign-in. Desktop signs in with **Connect** in
+  Zed provider settings; other clients paste the dashboard Cookie header. The
+  session lives in the host's secret store. Spend is read at provider start and
+  after each Zed turn, never on a timer. A missing or expired session shows a
+  notice, not an empty bar. Only personal billing is read.
 
-The September Gemini-only ACP restriction is historical. Personal 0.3.0 added
-Claude support. Quota probing and usage scanning are upstream's: Claude and GPT
-share one "Claude & GPT (shared)" bucket, and historical Antigravity tokens
-come from upstream's SQLite scanner. The fork only keeps its shortest-window-first
-sort and asks both Google quota endpoints, merging their windows, because the
-daily endpoint can omit the Gemini group (AG-QUOTA-001). ChatLLM still writes
-live turn usage.
+## Antigravity
 
-Antigravity uses Full access at new-session/resume boundaries. Web/desktop/mobile
-selectors expose that effective mode while retaining the saved thread/draft
-preference for a later provider switch. Existing turns continue. Provider policy
-compares effective modes, avoiding redundant restarts.
+**Now.** Antigravity runs over ACP with the recognized Zed client identity, so
+the account can offer Claude Opus 5.5 and Sonnet 5.5 (low, medium, high) next
+to Gemini. Built-in seeds fill the picker until live discovery answers.
+Native task results appear in the work trace without ending the prompt. ACP
+errors keep the native operation and error text.
 
-Native task notifications produce work-trace results without finishing the prompt.
-Ordinary, quoted, incomplete and foreign-session content remains chat text.
-Incomplete whitespace-heavy notifications no longer trigger quadratic backtracking.
-ACP request errors retain operation names and bounded, sanitized native text
-including timeout/cancellation detail.
+**Decisions.**
 
-Provider commands can run in four thread queues concurrently, preserving order
-within each thread and existing workspace leases. This removes global startup
-serialization. It does not repair the native runtime's network-specific IPv6
-onboarding failure. WORKFLOW-003 retains that diagnosis and missing recovery checks.
+- 0.3.0: the Claude variants depend on the Google account and Google's
+  undocumented client allowlist. Catalog refreshes keep them only when account
+  discovery reports them.
+- 0.3.1: incomplete task notifications followed by whitespace caused quadratic
+  regex backtracking; the parser no longer backtracks.
+- 0.5.0: new files in new directories failed when the workspace path ran
+  through a symlink, such as macOS `/var`. Paths now resolve to their real
+  location first (`AntigravityClientFiles.ts`).
 
-## Zed ACP integration
+**Removed.** In the 0.4.0 sync: the Full-access lock from 0.1.2 (Antigravity now
+follows the thread's permission mode), and the four-thread provider command
+queue from 0.3.1, which kept a slow sign-in from blocking other threads at
+startup.
 
-The separately configured companion bridge provides headless Zed ACP sessions.
-T3 discovers one newest hosted Sonnet and one newest Luna through `--list-models`
-on manual/periodic refresh, preserves custom models and retains the last successful
-catalog when a probe is pending or fails, including after restart. Original seed
-models are a fallback, not a reason to overwrite cached discovery.
+## Zed
 
-The bridge authenticates with existing Zed sign-in, waits for model readiness,
-and streams answers, tools, approvals, elicitation and context-token usage.
-Repeated identical completed tool snapshots are suppressed. Native context
-counts and capacity drive the composer meter; session billing is separate.
+**Now.** Zed runs through a companion bridge, `zed-acp-server`, built from the
+`integration/zed-abacus` branch of [tvh0021/zed](https://github.com/tvh0021/zed)
+and set as the Zed provider's binary path. Desktop updates don't include it. It
+uses the existing Zed sign-in. Refresh discovers the newest hosted Sonnet and
+Luna through `--list-models` and keeps custom models. Answers, tools, child
+agents and approvals stream into the thread. Thinking effort uses Zed's native
+values.
 
-Native web-search initialization, child/nested-child subscriptions, pending
-approval forwarding and answer routing require companion commit `317b394ae4`
-or later. Tool titles, inputs, output, content and locations stay current as
-calls stream. Child tool IDs remain distinct and child text does not replace
-the parent answer. Prompt errors return ACP errors.
+**Decisions.**
 
-Thinking-effort descriptors and defaults require companion commit `11708bd472`
-or later. T3 applies compatible selected effort before prompts and reapplies
-stored choices to replacement sessions. Model changes discard unsupported values.
-This is not a claim of native conversation-history resumption.
-
-Zed account spend remains unavailable because native credentials cannot read
-the dashboard's billing routes. ACP cumulative session cost cannot substitute
-for account billing. Limits explicitly links the dashboard without showing a
-zeroed or invented account bar. ZED-001 owns billing access; earlier approval,
-streaming and effort verification remains dated evidence.
+- Before 0.0.42: identical completed tool snapshots are dropped; repeating them
+  split answers mid-word and flooded the activity list.
+- 0.1.3: web search, child-agent forwarding and streaming tool updates need
+  bridge commit `317b394ae4` or later. Child tool IDs stay distinct, and child
+  text never replaces the parent answer.
+- 0.2.0: effort needs bridge commit `11708bd472` or later. Model switches keep
+  only compatible effort values.
+- 0.5.1: after the 0.4.0 sync Zed turns failed with `Model not available`. The
+  thread's model now reaches the bridge's startup `--model` argument, and the
+  model is sent before effort even when the bridge advertises no model setting.
+- Open (ZED-CATALOG-001, ZED-CONTEXT-001): a restart after failed discovery
+  restores retired models, and the bridge sends no context usage.
 
 ## Delegated tasks
 
-Since the October 2026 upstream sync, agents delegate through upstream's
-`delegate_task` MCP tool. The fork's orchestration-layer tools, layer UI and
-coordination state are gone. Child threads created by earlier layers import as
-ordinary threads without parent links.
+**Now.** Agents delegate through upstream's `delegate_task`. The fork adds two
+guards (`apps/server/src/orchestration-v2/delegationGuards.ts`):
 
-The fork adds two guards to `delegate_task` (`orchestration-v2/delegationGuards.ts`):
+- **Per-model budgets.** A parent may start a limited number of children per
+  model across aliases and instances. The count never resets, so waiting for
+  children doesn't restore budget. Provider-native subagents don't count.
+  Named defaults and overrides beat price bands: above $10 per million output
+  tokens gets one turn, $1 to $10 gets four, below $1 is unlimited. Unpriced
+  models need an override. Settings shows the live policy.
+- **Review snapshots.** A `reviewRef` gives the child a detached clone of that
+  commit instead of the parent's worktree. Storage cleanup removes orphans.
 
-- **Per-model turn budgets.** Each parent may start a limited number of
-  app-owned children per canonical model, across aliases and provider
-  instances. The count never resets, so a parent cannot regain budget by waiting
-  for children to finish. Provider-native subagents are not counted. Named
-  defaults and overrides take precedence over price bands: above $10 per million
-  output tokens gets one turn, below $1 is unlimited, and $1 through $10 gets
-  four. Unpriced models need overrides. Settings shows the live policy, so don't
-  copy the table here.
-- **Review snapshots.** A `reviewRef` gives the child a detached local clone of
-  that commit instead of the parent's live worktree. StorageCleanup removes
-  orphaned snapshots.
+The policy is checked daily but refetches models and prices only when the month
+changes or a refresh is forced from Settings > Providers (mobile: Settings >
+Maintenance).
 
-The coordination policy refreshes models and prices daily and on demand from
-Settings > Providers. Mobile uses Settings > Maintenance.
+**Decisions.**
+
+- 0.4.0: upstream's `delegate_task` replaced the fork's orchestration layers;
+  the fork kept only its budgets and review isolation, as guards on it.
+- 0.4.0: clearing limit overrides deep-merged an empty map and kept the old
+  values; cleared overrides are now removed.
+
+**Removed.** In the 0.4.0 sync: orchestration layers, their UI and coordination
+state, thread handoff MCP tools, and worker restrictions (0.0.42.2 to 0.1.1).
+Threads from old layers import as ordinary threads.
 
 ## Quota handoff
 
-Quota handoff is built on upstream's usage-limit recovery. When a thread hits a
-usage limit and auto-resume is on, the recovery worker looks up the thread's
-model in the environment's ordered fallback map. It skips the limited source
-instance and picks the first mapped model whose provider is ready and whose
-quota windows are fresh and below the threshold (95% by default). If none
-qualifies, it refreshes the candidates' quota once. A qualifying fallback
-resumes the thread on that model; otherwise upstream's reset-based retry
-applies unchanged.
+**Now.** Built on upstream's usage-limit recovery. When a thread hits a usage
+limit, auto-resume is on and the environment has a fallback map, the recovery
+worker skips the limited instance and picks the first mapped model whose
+provider is ready and whose quota is fresh and below the threshold (95% by
+default). If none qualifies it refreshes quota once; otherwise upstream's
+reset-based retry applies.
 
-Earlier live evidence of Codex-to-Gemini child handoffs predates this design
-and does not verify it.
+**Decisions.**
 
-## Desktop startup and macOS access
+- 0.4.0: rebuilt on upstream's recovery worker instead of the fork's layer
+  reactor, which the sync removed. Live fallback has not been exercised since.
 
-Personal builds retain a local signing identity so an executable hash change alone
-does not discard macOS folder grants. Automatic inaccessible Keychain reads avoid
-launch password dialogs while encryption remains enabled; explicit cookie imports
-may request approval.
+## Desktop and macOS
 
-The backend manager retries readiness while the process remains alive. Current
-normal/delayed startup evidence is recorded in DESKTOP-001, whose original
-slow project auto-pull incident remains unexplained. PERMISSION-001 separately
-tracks orchestration reaching unrelated protected folders.
+**Now.** Personal builds are signed with one persistent local identity
+(`scripts/lib/personal-mac-signing.ts`). Automatic Keychain reads that would
+need a password are skipped (`apps/desktop/src/electron/MacKeychain.ts`).
+
+**Decisions.**
+
+- 0.1.4: macOS tied folder grants to the executable hash, so each update asked
+  for Documents access again. A stable signing identity keeps the grants.
+- 0.1.4: launch no longer shows Keychain dialogs for old or locked credentials.
+  Encryption stays on; explicit cookie imports can still ask.
+
+## Upstream sync
+
+Run the `blast-radius` skill before merging (see `AGENTS.md`). Then:
+
+- Merge `upstream/main`; don't rebase. Merges keep the fork's history and
+  resolve conflicts once.
+- After resolving, diff each conflicted file against `upstream/main`. Syncs
+  have silently undone upstream work before: the provider badge helpers
+  (`providerInstanceDisplay.ts`) and the Runbooks section of `docs/README.md`.
+- Fork-only services (`DelegationGuards`, the recovery worker's
+  `ProviderRegistry`) are read with `Effect.serviceOption`, so upstream tests
+  need no edits. Put new fork dependencies behind the same kind of optional
+  seam.
+- Official rates outrank LiteLLM, so an upstream Usage test that sets a custom
+  rate on an officially priced model fails. Change the test's model; don't
+  weaken the rule.

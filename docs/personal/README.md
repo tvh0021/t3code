@@ -1,31 +1,44 @@
-# Personal fork notes
+# T3 Code Personal
 
-This folder records the changes to the personal T3 Code fork. The latest
-recorded release is Personal 0.4.0. On October 13, 2026 the fork was synced
-onto upstream's orchestration-v2; see the [changelog](./CHANGELOG.md).
+A personal fork of [T3 Code](https://github.com/pingdotgg/t3code) with two extra
+providers and deeper usage tracking. It merges upstream regularly; the last sync
+was October 13, 2026 (upstream `42160f2925`).
 
-- [Verification record](./VERIFICATION.md) is the canonical record of the latest
-  audit, per-item verdicts, revisions, evidence and missing coverage. The latest
-  audit was October 11, 2026. A complete cross-client/provider runtime test date
-  has not been established.
-- [Issue tracker](./ISSUE_TRACKER.md) owns open defects, accepted limitations and
-  pending verification. Resolved entries describe only the behavior verified.
-- [Changelog](./CHANGELOG.md) preserves dated changes and release evidence.
-  Historical limitations may have been superseded by a later entry.
-- [Modifications](./MODIFICATIONS.md) describes the current fork behavior and
-  constraints without duplicating release test counts.
-- [Session handoff](./SESSION_HANDOFF.md) retains historical workflow and provider
-  investigation evidence, including the removed orchestration layers. Its dated
-  state is not current release status.
-- [Provider allowance benchmark](./PROVIDER_USAGE_TRACKING.md) preserves the
-  September 18 measurements and the rates used then.
-- [Upstream sync guide](./UPSTREAM_SYNC.md) describes maintainer sync procedures.
+## Why use it
 
-Use `vp run dev:desktop` for desktop development with isolated worktree state.
-Follow the root `AGENTS.md` and the client verification skill before runtime
-checks. Never start a verification server against live user data. Run only the
-focused checks relevant to the changed behavior.
+- **Two more providers.** ChatLLM (Abacus RouteLLM), with its own tool loop, and
+  Zed's hosted models through a headless Zed bridge.
+- **Usage that shows what your subscriptions are worth.** API-equivalent cost
+  for every provider, Codex and ChatLLM credits, an All time view, and Codex
+  history including compressed and archived sessions.
+- **More in Limits.** Both Antigravity pools (Gemini, and Claude & GPT),
+  ChatLLM compute points, and Zed account spend.
+- **Quota handoff.** A thread that hits its usage limit continues on the first
+  fallback model with quota left (95% threshold by default).
+- **Delegation budgets.** Per-model limits on how many child tasks an agent may
+  start, and read-only review snapshots.
+- **LaTeX math and larger default fonts.**
 
-Mobile verification is outside this fork's scope. Follow the
-[mobile verification restriction](../../AGENTS.md#verifying); a local fork update
-does not deploy server changes to the mobile app's third-party service.
+## Install
+
+Download the DMG or ZIP from
+[Releases](https://github.com/tvh0021/t3code/releases). Before installing:
+
+- Releases are macOS Apple Silicon only. On other platforms, build from source
+  as described in upstream's [development guide](../operations/development.md).
+- Builds are signed with a personal identity and are not notarized by Apple.
+  The first launch is blocked; allow it in System Settings > Privacy & Security.
+- Zed needs `zed-acp-server`, built from the `integration/zed-abacus` branch of
+  [tvh0021/zed](https://github.com/tvh0021/zed). Set its path as the Zed
+  provider's binary path.
+- The App Store phone app works with this host, but its Usage tab leaves out
+  ChatLLM.
+
+## Notes
+
+- [Changelog](./CHANGELOG.md): what changed in each release.
+- [Issue tracker](./ISSUE_TRACKER.md): open issues, known limitations and
+  resolved issues.
+- [Modifications](./MODIFICATIONS.md): how each fork feature works and why.
+- [Provider usage benchmark](./PROVIDER_USAGE_TRACKING.md): measured value of
+  each subscription.

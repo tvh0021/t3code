@@ -1,80 +1,88 @@
-# Provider Subscription Allowance & API Cost Tracking
+# Provider subscription value
 
-This is a historical September 18, 2026 allowance benchmark. Its rate cards
-record the assumptions used then, not current pricing or a scheduled monitoring
-process. Current accounting and last-test scope are in
-[MODIFICATIONS.md](./MODIFICATIONS.md#usage-accounting) and
-[VERIFICATION.md](./VERIFICATION.md).
+How much API-equivalent usage each subscription delivered, measured from local
+transcripts and priced as if the same tokens had gone through the provider's
+API. Each benchmark used the rates of its day; current rates are at the end.
 
----
+## Benchmark 2: 2026-10-09 to 2026-10-16 (7 days)
 
-## Workflow limits are separate from billing
+Plans: Codex on ChatGPT Plus ($20/mo); Claude on a Team Premium seat (from
+2026-10-12, extra usage disabled by the organization); Antigravity and ChatLLM
+plans not recorded locally. Zed spend isn't stored locally and is not included.
 
-September 27, 2026: the development workflow policy uses output-price bands to
-limit automatic turns. Named defaults and user overrides take precedence.
-Monthly maintenance updates catalogs and pricing for future workflows, while
-active workflows retain captured budgets.
+### 7-day totals
 
-Audit-trail reviews use GPT 6 Sol at low reasoning. The user requested this
-selection for cost control; do not reuse the older GPT 5.6 Sol/high configuration
-or treat historical benchmark rates below as a current model-selection policy.
+| Provider    | Main models                               | Tokens | Cache hit | API value | Credits / extra spend  |
+| :---------- | :---------------------------------------- | -----: | --------: | --------: | :--------------------- |
+| Claude      | Opus 5.5 (418M), Haiku 4.5/5.5, Fable 5.1 |   462M |       97% |  **$208** | none (extra usage off) |
+| Codex       | GPT-6.1 Sol (494M), GPT-6 Astra/Sol/Luna  |   532M |     97.5% |   **$87** | 8.8 credits ($0.35)    |
+| Antigravity | Gemini 3.8 Flash High (277M), Sonnet 5.5  |   281M |       96% |   **$33** | none                   |
+| ChatLLM     | GLM-5.3-Flash, muse-wonder                |   0.2M |     99.9% |     $0.08 | 992 credits ($0.50)    |
 
-These limits do not measure provider allowance, actual subscription charges, or
-account spend. An unlimited workflow model can still incur charges and hit
-provider quotas. The benchmark below remains a historical September 18
-measurement; it was not remeasured during the workflow implementation.
+Codex delivered $87 in a week against a $4.62 weekly share of its fee (18.8×).
 
-See [the model-budget policy](./MODIFICATIONS.md#model-budgets-and-maintenance)
-and [pending verification](./ISSUE_TRACKER.md).
+### Limit consumption
 
-## Tracking Log
+- **Codex weekly:** three windows reset early, so 7 days consumed 146% of a
+  weekly limit. One full weekly limit is worth about **$59 (371M tokens)**,
+  about 12.8× the monthly fee per month.
+- **Codex 5-hour:** one window hit 100%, after **23.2M tokens worth $6.89**
+  (97% cached). Three others peaked at 93–98%, worth $8–9 each.
+- **Claude weekly:** on 2026-10-13 the meter dropped from 19% to 4% with the
+  same reset time, which suggests the limit rose about 4.75×. Before that, a
+  full week extrapolated to about $182; after it, to about **$827 (1.78B
+  tokens)**, from 21% of one week.
+- **Claude 5-hour:** none hit 100%. Extrapolated full windows are worth about
+  $20 before the change and about $60 after.
+- Antigravity and ChatLLM record no used-percent locally.
 
-### Benchmark #1: 2026-09-18
+These figures count each Antigravity call and each Codex credit drop once. The
+app's Usage page currently over-counts both (USAGE-005, USAGE-006).
 
-- **Measurement Date**: September 18, 2026 (Local Time: 13:40 EDT / 17:40 UTC)
-- **Methodology**: Ground-truth telemetry audit from local logs (`~/.gemini/antigravity/` and `~/.codex/sessions/`). Evaluated across exact exhaustion anchors (0% used $\rightarrow$ 100% used) with full prompt caching discounts applied to prevent inflated cumulative double-counting.
+## Benchmark 1: 2026-09-18
 
-#### 1. Measured 5-Hour Burst Limit Allowance (0% $\rightarrow$ 100% Exhaustion)
+Codex on ChatGPT Plus ($20/mo) and Antigravity on Google AI Pro ($19.99/mo),
+priced at the rates of the time.
 
-| Provider / Plan                                                | Model(s) Evaluated            | Measured 5-Hour Token Capacity  | Prompt Cache Hit Rate                 | API Cost per 5-Hour Limit | Subscription Plan Fee | Window Value Multiplier |
-| :------------------------------------------------------------- | :---------------------------- | :------------------------------ | :------------------------------------ | :------------------------ | :-------------------- | :---------------------- |
-| **Antigravity (Google AI Pro)**<br>_(Claude Pool)_             | `claude-opus-4-6-thinking`    | **~4.04M tokens** _(9 turns)_   | ~93.4% cached input ($1.50/M)         | **$4.48**                 | $19.99 / month        | **0.22×**               |
-| **Antigravity (Google AI Pro)**<br>_(Gemini Pool)_             | `gemini-3.8-flash-high`       | **~170.9M tokens** _(33 turns)_ | ~98.4% cached input ($0.0375/M)       | **$9.87 – $10.00**        | (Included above)      | **0.50×**               |
-| **Antigravity (Google AI Pro)**<br>_(Combined Window Ceiling)_ | Claude Opus + Gemini Flash    | **~175.0M tokens**              | —                                     | **~$14.48**               | $19.99 / month        | **0.72×**               |
-| **Codex (ChatGPT Plus)**<br>_(Measured 5h Session)_            | `gpt-6-astra` / `gpt-5.6-sol` | **~3.41M tokens** _(30 turns)_  | ~94.9% cached input ($0.40 – $1.25/M) | **$4.59 – $9.18**         | $20.00 / month        | **0.23× – 0.46×**       |
+### 5-hour window, 0% to 100%
 
-> **Notes on 5-Hour Limits**:
->
-> - **Antigravity / Google AI Pro**: Employs separate quota pools. The Claude Opus pool triggers cooldown after ~$4.48 of compute, while the Gemini Flash pool provides high token volume (~171M tokens) before exhaustion.
-> - **Codex**: A single continuous session starting from a completely fresh window (`0.0% used`) to lockout (`100.0% used`) consumes **~3.41M tokens** (~30 turns) with a ~~95% cache hit rate, representing **~$4.59 to $9.18** in API-equivalent compute. Both providers offer remarkably consistent 5-hour burst allowances (~~$4.50 – $9.50) per monthly subscription dollar.
+| Provider / pool          | Model                         | Tokens             | Cache hit | API value    | Value / monthly fee |
+| :----------------------- | :---------------------------- | :----------------- | :-------- | :----------- | :------------------ |
+| Antigravity, Claude pool | `claude-opus-4-6-thinking`    | ~4.04M (9 turns)   | ~93.4%    | $4.48        | 0.22×               |
+| Antigravity, Gemini pool | `gemini-3.8-flash-high`       | ~170.9M (33 turns) | ~98.4%    | $9.87–$10.00 | 0.50×               |
+| Antigravity, both pools  | Claude Opus + Gemini Flash    | ~175.0M            | —         | ~$14.48      | 0.72×               |
+| Codex                    | `gpt-6-astra` / `gpt-5.6-sol` | ~3.41M (30 turns)  | ~94.9%    | $4.59–$9.18  | 0.23×–0.46×         |
 
----
+### Weekly cycle, reset to 100% (2026-09-14 to 2026-09-18)
 
-#### 2. Weekly Quota Allowance & Actual Incurred Cost (Full Reset $\rightarrow$ 100% Exhaustion)
+| Metric              | Codex                          | Antigravity                                |
+| :------------------ | :----------------------------- | :----------------------------------------- |
+| Cycle               | 100% in 3.5 days (2,105 turns) | Rolling 7 days                             |
+| Tokens              | 207.0M                         | Claude ~10.1M, Gemini ~536.0M              |
+| Cache hit           | 94.6%                          | 95.2%                                      |
+| API value           | $66.30                         | Claude $11.20, Gemini $31.00–$32.50 (~$43) |
+| Credits             | $2.21 (55 fallback turns)      | none (hard cooldown)                       |
+| Value / monthly fee | ~3.3× in 4 days                | ~2.1×–2.2× per week                        |
 
-Measured across the complete weekly cycle (**2026-09-14 14:03 UTC $\rightarrow$ 2026-09-18 02:28 UTC**):
+## Current rates
 
-| Metric                             | Codex (ChatGPT Plus: $20/mo)                               | Antigravity (Google AI Pro: $19.99/mo)                                           |
-| :--------------------------------- | :--------------------------------------------------------- | :------------------------------------------------------------------------------- |
-| **Weekly Cycle Duration**          | Drained to 100% in **3.5 days** (2,105 subscription turns) | Rolling 7-day quota (~16–18 window equivalents)                                  |
-| **Total Tokens Consumed**          | **207,034,530 tokens**                                     | Claude: **~10.1M tokens**<br>Gemini: **~536.0M tokens**                          |
-| **Average Prompt Cache Rate**      | **94.6% cached input**                                     | **95.2% cached input**                                                           |
-| **Primary Subscription API Value** | **$66.30**                                                 | Claude: **$11.20**<br>Gemini: **$31.00 – $32.50**<br>**Total: ~$42.20 – $43.70** |
-| **Usage Credits Incurred**         | **$2.21** _(55 fallback turns from balance)_               | N/A (Hard rate-limit cooldown)                                                   |
-| **Weekly Plan Multiplier**         | **~3.3× monthly sub cost** in 4 days                       | **~2.1× – 2.2× monthly sub cost** per week                                       |
+Per 1M tokens: uncached input / cached input / output. Official rates come from
+`apps/server/src/usage/usagePricing.ts`; the rest from LiteLLM (2026-10-16).
+Fast tiers cost 2× for GPT and Opus.
 
----
+| Model             | Rates                                  | Source   |
+| :---------------- | :------------------------------------- | :------- |
+| gpt-6.1-sol       | $2 / $0.10 / $10                       | official |
+| gpt-6-sol         | $2 / $0.20 / $10                       | official |
+| gpt-6-astra       | $10 / $1 / $50                         | official |
+| gpt-6-luna        | $0.10 / $0.01 / $0.50                  | official |
+| claude-opus-5-5   | $4 / $0.20 / $20 (cache write $5)      | official |
+| claude-sonnet-5-5 | $2 / $0.10 / $10                       | official |
+| gemini-3.8-flash  | $0.75 / $0.075 / $3.75                 | official |
+| claude-fable-5-1  | $10 / $0.25 / $50 (cache write $12.50) | LiteLLM  |
+| claude-haiku-4-5  | $1 / $0.10 / $5 (cache write $1.25)    | LiteLLM  |
+| claude-haiku-5-5  | $0.10 / $0.01 / $0.50                  | LiteLLM  |
+| muse-wonder-1.0   | $4 / $0.20 / $20                       | LiteLLM  |
+| GLM-5.3-Flash     | $0.15 / $0.03 / $0.50                  | LiteLLM  |
 
-## Reference Rate Cards Used for Benchmarking
-
-These historical benchmark rates came from `request-auditor`. Current T3
-pricing supersedes them; in particular, `codex-auto-review` now has zero USD
-and credit accounting. The original benchmark has not been recomputed:
-
-- **Codex**:
-  - `gpt-5.6-sol`: $4.00 uncached input / $0.40 cached input / $20.00 output (per 1M tokens)
-  - `gpt-5.6-luna`: $0.20 uncached input / $0.02 cached input / $1.20 output (per 1M tokens)
-  - `codex-auto-review`: $1.00 uncached input / $0.25 cached input / $4.00 output (per 1M tokens)
-- **Antigravity / Google AI Pro**:
-  - `claude-opus-4-6-thinking`: $5.00 uncached input / $1.50 cached input / $25.00 output (per 1M tokens)
-  - `gemini-3.8-flash-high`: $0.15 uncached input / $0.0375 cached input / $0.60 output (per 1M tokens)
+`codex-auto-review` is unpriced and costs nothing.
