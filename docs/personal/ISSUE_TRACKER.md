@@ -59,6 +59,52 @@ that history on desktop and web. Cursor's account cache still
 retains 92 days. The saved cache grows with history, and transcripts deleted
 before their first scan cannot be recovered. USAGE-002 is a separate open issue.
 
+### USAGE-004: Claude fast mode never appears in Usage
+
+Status: Released in Personal 0.6.1 on October 15, 2026. The installed app
+shows the fallback notice when this account disables extra usage.
+
+Usage showed Codex Fast spend but no Claude Fast spend after a day of Claude
+turns with fast mode selected. Usage was correct: those requests ran at
+standard speed. T3 passed `fastMode: true` to the SDK on 118 runs since
+October 14. Claude Code opened each session with `fast_mode_state: "on"`, then
+reported `"off"` with `fast_mode_disabled_reason: "extra_usage_disabled"`. Fast
+mode on a subscription bills as extra usage, which is off for this account.
+Transcripts sent `speed: fast` on at most two requests per session and recorded
+every response as `usage.speed: "standard"`. Older sessions without fast mode
+report `sdk_opt_in_required`.
+
+The composer kept showing Fast with no sign of the fallback. The Claude adapter
+now adds one thread notice per Claude process when a fast-mode turn's init or
+result frame reports fast mode off, worded from the reason. `pending` is
+transient and shows nothing. The usage reader needed no change. Enabling extra
+usage on the Claude account is required before Claude Fast spend can appear.
+
+### CHATLLM-STEPS-001: Delegated ChatLLM runs stop silently after 20 tool calls
+
+Status: Released in Personal 0.6.1 on October 15, 2026. An installed GLM
+turn completed 24 file reads and a follow-up after reopening.
+
+Two delegated `zai-org/GLM-5.3-Flash` code reviews ended after exactly 20 tool
+calls with status `completed`, no error and no final answer. The parent saw
+only the model's last progress line as the task summary. Claude, Codex and
+Antigravity children started in the same minute ran normally. Incident notes:
+`/tmp/etk-review/abacus-glm-incident.md`.
+
+The adapter capped each turn at 20 tool calls. At the cap it wrote a ceiling
+message into the model's history but never emitted it, so nothing reached the
+thread. The batch that crossed the cap also stayed in history with no tool
+results, which a follow-up request could be rejected for.
+
+The cap is now 200 tool calls for models whose id contains `flash` and 50 for
+others. The batch that would cross the cap is skipped and the turn ends with a
+visible message, for example "Stopped after 50 tool calls: claude-opus-5-5 is
+limited to 50 per turn. Send a follow-up to continue." The 600-second
+`requestTimeoutMs` previously covered the whole turn and would have failed long
+turns, discarding their history. It now applies per request. Regressions cover
+the per-model limit, the visible stop message, and a follow-up whose history has
+every tool call answered. A full delegated GLM review and a live 200-call run have not been repeated.
+
 ## Open issues
 
 ### USAGE-002: Day provider costs do not add to Total

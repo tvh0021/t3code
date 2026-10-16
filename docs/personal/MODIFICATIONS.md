@@ -36,7 +36,12 @@ tools, feeds results back and accumulates usage across every completion step.
 Ordinary sessions support `read_file`, `write_file`, `edit_file`,
 `list_directory`, and `execute_command`. Writes stay in the workspace. Command
 filters reject known destructive forms; commands have cancellation and timeout
-handling. A turn has a bounded tool loop.
+handling. A turn runs at most 200 tool calls on models whose id contains
+`flash` and 50 on any other model (`abacusMaxTurnSteps`). At the limit the
+batch that would exceed it is skipped, so the history has no unanswered calls,
+and the turn ends with a visible assistant message naming the limit. Delegated
+tasks report that message as their summary. `requestTimeoutMs` (default 600 s)
+applies to each RouteLLM request, not the whole turn.
 
 Workflow review workers expose only confined read/list and scoped reporting
 tools. Execution rejects forbidden writes and commands even if the provider
@@ -80,6 +85,11 @@ use base-context pricing. Dotted Claude and bare Gemini Pro names include local
 aliases. Gemini cache-creation fallback uses input rates as an assumption;
 cache storage and long-context premiums are excluded. See
 `apps/server/src/usage/usagePricing.ts` and the latest pricing evidence.
+
+Speed comes from the provider's reported `usage.speed`, not from the selected
+option. Claude Code drops a fast-mode request to standard when the account
+cannot serve it, for example with extra usage off. The Claude adapter then adds
+one thread notice per Claude process stating the reason (USAGE-004).
 
 USAGE-002 tracks inconsistent Day provider costs versus Total. A passing model
 normalization check does not establish that all breakdowns or charts agree.

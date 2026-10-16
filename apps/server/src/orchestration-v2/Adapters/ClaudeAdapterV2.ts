@@ -17,6 +17,7 @@ import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { normalizeClaudeTurnTokenUsage } from "../../provider/ClaudeTurnTokenUsage.ts";
 import {
   type CanUseTool,
+  type FastModeDisabledReason,
   forkSession as forkClaudeSession,
   type ForkSessionOptions,
   type ForkSessionResult,
@@ -2875,6 +2876,36 @@ function describeClaudeUsageLimit(
   }limit resets${wait ? ` in ${wait}` : ""}.`;
 }
 
+/** Why Claude declined fast mode. `pending` is a transient availability check. */
+const CLAUDE_FAST_MODE_DISABLED_REASONS = {
+  free: "it requires a paid Claude plan",
+  preference: "your organization has disabled it",
+  extra_usage_disabled: "extra usage is turned off for your Claude account",
+  network_error: "Claude could not check its availability",
+  unknown: "Claude reports it as unavailable",
+  not_first_party: "it only works when Claude Code uses the Anthropic API directly",
+  disabled_by_env: "it is disabled in this environment",
+  model_not_allowed: "this model is not allowed for your organization",
+  sdk_opt_in_required: "the session did not opt in to it",
+  pending: null,
+} satisfies Record<FastModeDisabledReason, string | null>;
+
+/**
+ * Claude Code silently falls back to standard speed when it cannot serve fast
+ * mode, and reports why only on init and result frames.
+ */
+function describeClaudeFastModeOff(message: SDKMessage): string | null {
+  if (message.type !== "result" && !(message.type === "system" && message.subtype === "init")) {
+    return null;
+  }
+  const reason = message.fast_mode_disabled_reason;
+  if (message.fast_mode_state !== "off" || reason === undefined) return null;
+  const explanation = CLAUDE_FAST_MODE_DISABLED_REASONS[reason] ?? null;
+  return explanation === null
+    ? null
+    : `Fast mode is off because ${explanation}. Claude is running at standard speed.`;
+}
+
 function formatClaudeUsageLimitWait(waitMs: number): string {
   const totalMinutes = Math.ceil(waitMs / 60_000);
   const hours = Math.floor(totalMinutes / 60);
@@ -2993,6 +3024,10 @@ interface ClaudeLiveQueryContext {
   permissionMode: PermissionMode;
   // Stop, rollback or fork is closing this process; its work is ending.
   stopping: boolean;
+  // The selection asked for fast mode, and whether this process has already
+  // said it declined it.
+  readonly fastModeRequested: boolean;
+  fastModeOffAnnounced: boolean;
   // Registry entries still running when this process opened. Their process
   // is gone and never reports their end; any later task_started replaces the
   // entry, so an entry still in this set runs nowhere.
@@ -6791,6 +6826,44 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
           yield* trackClaudeGoal({ nativeThreadId: liveQuery.nativeThreadId, context, message });
 
+          if (liveQuery.fastModeRequested && !liveQuery.fastModeOffAnnounced) {
+            const notice = describeClaudeFastModeOff(message);
+            if (notice !== null) {
+              liveQuery.fastModeOffAnnounced = true;
+              const now = yield* DateTime.now;
+              const nativeItemId = `fast-mode-off:${context.providerTurnId}`;
+              yield* emitProviderEvent({
+                type: "turn_item.updated",
+                driver: CLAUDE_PROVIDER,
+                turnItem: {
+                  id: idAllocator.derive.turnItemFromProviderItem({
+                    driver: CLAUDE_PROVIDER,
+                    nativeItemId,
+                  }),
+                  threadId: context.input.threadId,
+                  runId: context.input.runId,
+                  nodeId: context.input.rootNodeId,
+                  providerThreadId: context.input.providerThread.id,
+                  providerTurnId: context.providerTurnId,
+                  nativeItemRef: {
+                    driver: CLAUDE_PROVIDER,
+                    nativeId: nativeItemId,
+                    strength: "weak",
+                  },
+                  parentItemId: null,
+                  ordinal: yield* resolveItemOrdinal(context, nativeItemId),
+                  type: "system_notice",
+                  status: "completed",
+                  title: notice,
+                  message: notice,
+                  startedAt: now,
+                  completedAt: now,
+                  updatedAt: now,
+                },
+              });
+            }
+          }
+
           // Subagent narration belongs to its child thread, never the parent log.
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;
@@ -8431,6 +8504,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             openedPermissionMode: queryOptions.permissionMode,
             permissionMode: queryOptions.permissionMode,
             stopping: false,
+            fastModeRequested: compiledSelection.settings.fastMode === true,
+            fastModeOffAnnounced: false,
             subagentsFromEarlierProcesses: new Set(
               [...(yield* Ref.get(sessionSubagentsByTaskId)).values()].filter(
                 (subagent) => subagent.task.status === "running",

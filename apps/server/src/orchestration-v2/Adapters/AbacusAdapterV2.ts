@@ -48,7 +48,13 @@ import { STATIC_FALLBACK_RATES } from "../../usage/usagePricing.ts";
 export const ABACUS_PROVIDER = ProviderDriverKind.make("abacus");
 const decodeAbacusSettings = Schema.decodeSync(AbacusSettings);
 
-const MAX_TURN_STEPS = 20;
+/**
+ * Tool calls one turn may run. Flash models are cheap enough for long agent
+ * loops such as delegated reviews; pricier models stop sooner.
+ */
+export function abacusMaxTurnSteps(model: string): number {
+  return /flash/i.test(model) ? 200 : 50;
+}
 const READ_ONLY_TOOL_NAMES: ReadonlyArray<string> = ["read_file", "list_directory"];
 const makeToolCallId = () => `call_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 const MAX_TOOL_OUTPUT_BYTES = 30 * 1024;
@@ -621,13 +627,9 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
             };
             yield* Ref.set(activeTurnRef, active);
 
-            const timeout = setTimeout(
-              () => controller.abort("timeout"),
-              options.requestTimeoutMs ?? 600_000,
-            );
-
             const cwd = turnInput.runtimePolicy.cwd ?? process.cwd();
             const turnModel = turnInput.modelSelection.model || options.defaultModel;
+            const maxTurnSteps = abacusMaxTurnSteps(turnModel);
             const initialMessageCount = messages.length;
             if (messages.length === 0) {
               messages.push({
@@ -669,6 +671,11 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
                 `item-abacus-assistant-${syntheticNativeTurnId}-${stepCount}`,
               );
 
+              // Per request: a long tool loop may run well past one request's budget.
+              const timeout = setTimeout(
+                () => controller.abort("timeout"),
+                options.requestTimeoutMs ?? 600_000,
+              );
               const requestExit = yield* Effect.tryPromise({
                 try: async () => {
                   const response = await fetchFn(abacusChatCompletionsUrl(options.apiBaseUrl), {
@@ -796,6 +803,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
                 },
                 catch: (cause) => cause,
               }).pipe(Effect.exit);
+              clearTimeout(timeout);
 
               if (!active.cancelled && requestExit._tag === "Failure") {
                 failure =
@@ -872,6 +880,64 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
                 break;
               }
 
+              if (stepCount + toolCalls.length > maxTurnSteps) {
+                // Ends the turn without running this batch, so the history
+                // holds no unanswered tool calls for the next turn. The notice
+                // is the turn's last assistant text, which delegated tasks
+                // report as their summary.
+                const ceilingText = `Stopped after ${stepCount} tool calls: ${turnModel} is limited to ${maxTurnSteps} per turn. Send a follow-up to continue.`;
+                const content = assistantText ? `${assistantText}\n\n${ceilingText}` : ceilingText;
+                messages.push({ role: "assistant", content });
+                currentTurnItems.push({ role: "assistant", content });
+                const ceilingNow = yield* DateTime.now;
+                const ceilingMessageId = MessageId.make(
+                  `msg-abacus-assistant-${syntheticNativeTurnId}-step-limit`,
+                );
+                yield* Queue.offer(events, {
+                  type: "message.updated",
+                  driver: ABACUS_PROVIDER,
+                  message: {
+                    id: ceilingMessageId,
+                    threadId: turnInput.threadId,
+                    runId: turnInput.runId,
+                    nodeId: turnInput.rootNodeId,
+                    role: "assistant",
+                    text: ceilingText,
+                    attachments: [],
+                    streaming: false,
+                    createdBy: "agent",
+                    creationSource: "provider",
+                    createdAt: ceilingNow,
+                    updatedAt: ceilingNow,
+                  },
+                });
+                yield* Queue.offer(events, {
+                  type: "turn_item.updated",
+                  driver: ABACUS_PROVIDER,
+                  turnItem: {
+                    id: TurnItemId.make(`item-abacus-assistant-${syntheticNativeTurnId}-step-limit`),
+                    threadId: turnInput.threadId,
+                    runId: turnInput.runId,
+                    nodeId: turnInput.rootNodeId,
+                    providerThreadId: turnInput.providerThread.id,
+                    providerTurnId,
+                    nativeItemRef: null,
+                    parentItemId: null,
+                    ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 3,
+                    status: "completed",
+                    title: null,
+                    startedAt: ceilingNow,
+                    completedAt: ceilingNow,
+                    updatedAt: ceilingNow,
+                    type: "assistant_message",
+                    messageId: ceilingMessageId,
+                    text: ceilingText,
+                    streaming: false,
+                  },
+                });
+                break;
+              }
+
               messages.push({
                 role: "assistant",
                 content: assistantText || null,
@@ -882,13 +948,6 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
               }
 
               stepCount += toolCalls.length;
-              if (stepCount > MAX_TURN_STEPS) {
-                const ceilingMessage =
-                  "\n\nI have reached the 20-step tool ceiling for this turn. Would you like me to continue with the remaining steps?";
-                messages.push({ role: "assistant", content: ceilingMessage });
-                currentTurnItems.push({ role: "assistant", content: ceilingMessage });
-                break;
-              }
 
               for (const tc of toolCalls) {
                 if (active.cancelled) break;
@@ -1012,7 +1071,6 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
               }
             }
 
-            clearTimeout(timeout);
             controller.abort();
             if (active.currentProcess) {
               active.currentProcess.kill("SIGTERM");

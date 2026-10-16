@@ -21,6 +21,7 @@ import * as Fiber from "effect/Fiber";
 import {
   ABACUS_AGENT_TOOLS,
   abacusChatCompletionsUrl,
+  abacusMaxTurnSteps,
   checkCommandSafety,
   handleEditFile,
   handleListDirectory,
@@ -152,6 +153,13 @@ describe("AbacusAdapterV2 unit helpers", () => {
     }
   });
 
+  it("allows flash models longer tool loops than pricier models", () => {
+    expect(abacusMaxTurnSteps("zai-org/GLM-5.3-Flash")).toBe(200);
+    expect(abacusMaxTurnSteps("gemini-3.8-flash")).toBe(200);
+    expect(abacusMaxTurnSteps("claude-opus-5-5")).toBe(50);
+    expect(abacusMaxTurnSteps("route-llm")).toBe(50);
+  });
+
   it("truncates large tool outputs", () => {
     const manyLines = Array.from({ length: 800 }, (_, i) => `Line ${i + 1}`).join("\n");
     const truncated = truncateToolOutput(manyLines);
@@ -164,7 +172,9 @@ describe("AbacusAdapterV2 unit helpers", () => {
 describe("AbacusAdapterV2 session and turn execution", () => {
   it.effect("sends authenticated streaming requests and writes turn usage", () =>
     Effect.gen(function* () {
-      const tempStateDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-usage-state-"));
+      const tempStateDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "abacus-usage-state-"),
+      );
       const requests: Array<{
         url: string;
         authorization: string | null;
@@ -188,7 +198,11 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       const instanceId = ProviderInstanceId.make("abacus-v2-test");
       const threadId = ThreadId.make("thread-abacus-v2");
       const modelSelection = { instanceId, model: "route-llm" } as const;
-      const runtimePolicy = { cwd: process.cwd(), runtimeMode: "full-access" as const, interactionMode: "default" as const };
+      const runtimePolicy = {
+        cwd: process.cwd(),
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+      };
 
       const adapter = yield* makeAbacusAdapterV2({
         instanceId,
@@ -290,7 +304,11 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       const instanceId = ProviderInstanceId.make("abacus-attachments");
       const threadId = ThreadId.make("thread-attachments");
       const modelSelection = { instanceId, model: "route-llm" } as const;
-      const runtimePolicy = { cwd: process.cwd(), runtimeMode: "full-access" as const, interactionMode: "default" as const };
+      const runtimePolicy = {
+        cwd: process.cwd(),
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+      };
 
       const adapter = yield* makeAbacusAdapterV2({
         instanceId,
@@ -368,7 +386,7 @@ describe("AbacusAdapterV2 session and turn execution", () => {
             createdBy: "user",
             creationSource: "web",
           },
-              })
+        })
         .pipe(Effect.result);
 
       expect(result._tag).toBe("Failure");
@@ -410,7 +428,11 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       const instanceId = ProviderInstanceId.make("abacus-loop-test");
       const threadId = ThreadId.make("thread-loop");
       const modelSelection = { instanceId, model: "route-llm" } as const;
-      const runtimePolicy = { cwd: tempDir, runtimeMode: "full-access" as const, interactionMode: "default" as const };
+      const runtimePolicy = {
+        cwd: tempDir,
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+      };
 
       const adapter = yield* makeAbacusAdapterV2({
         instanceId,
@@ -490,6 +512,123 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       expect(
         snapshot.messages.some((m: any) => m.text?.includes("The file says: Hello agentic world!")),
       ).toBe(true);
+
+      NodeFS.rmSync(tempDir, { recursive: true, force: true });
+    }),
+  );
+
+  it.effect("ends a turn visibly at the tool-call limit and keeps history answerable", () =>
+    Effect.gen(function* () {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-step-limit-"));
+      const requests: Array<ReadonlyArray<Record<string, unknown>>> = [];
+      let toolTurn = true;
+
+      const fetch: typeof globalThis.fetch = async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as { messages: Array<Record<string, unknown>> };
+        requests.push(body.messages);
+        if (!toolTurn) {
+          return sseResponse([
+            'data: {"choices":[{"delta":{"content":"Continuing."},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          ]);
+        }
+        // The model never stops asking for tools.
+        return sseResponse([
+          `data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_list_${requests.length}","type":"function","function":{"name":"list_directory","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n`,
+        ]);
+      };
+
+      const instanceId = ProviderInstanceId.make("abacus-step-limit-test");
+      const threadId = ThreadId.make("thread-step-limit");
+      const modelSelection = { instanceId, model: "claude-opus-5-5" } as const;
+      const runtimePolicy = {
+        cwd: tempDir,
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+      };
+      const adapter = yield* makeAbacusAdapterV2({
+        instanceId,
+        apiBaseUrl: "https://example.test/v1/",
+        apiKey: "secret-key",
+        defaultModel: "route-llm",
+        fetch,
+      });
+      const session = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("session-step-limit"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* session.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      const appThread: OrchestrationV2AppThread = {
+        id: threadId,
+        createdBy: "user",
+        creationSource: "web",
+        projectId: ProjectId.make("project-1"),
+        title: "Step limit",
+        providerInstanceId: instanceId,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: tempDir,
+        activeProviderThreadId: providerThread.id,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        lastVisitedAt: null,
+        deletedAt: null,
+      };
+      const startTurn = (ordinal: number, text: string) =>
+        session.startTurn({
+          threadId,
+          runId: RunId.make(`run-${ordinal}`),
+          attemptId: RunAttemptId.make(`attempt-${ordinal}`),
+          rootNodeId: NodeId.make(`node-${ordinal}`),
+          appThread,
+          providerThread,
+          runtimePolicy,
+          modelSelection,
+          runOrdinal: ordinal,
+          providerTurnOrdinal: ordinal,
+          message: {
+            messageId: MessageId.make(`msg-${ordinal}`),
+            text,
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+          },
+        });
+
+      yield* startTurn(1, "Review everything.");
+      // 50 answered tool calls, then the request whose call is refused.
+      expect(requests).toHaveLength(51);
+      expect(requests[50]?.filter((m) => m.role === "tool")).toHaveLength(50);
+      const snapshot = (yield* session.readThreadSnapshot({ providerThread })) as {
+        readonly messages: ReadonlyArray<{ readonly text?: string }>;
+      };
+      expect(
+        snapshot.messages.some((m) =>
+          m.text?.startsWith("Stopped after 50 tool calls: claude-opus-5-5 is limited to 50"),
+        ),
+      ).toBe(true);
+
+      toolTurn = false;
+      yield* startTurn(2, "Continue.");
+      const history = requests.at(-1) ?? [];
+      const calledIds = history.flatMap((m) =>
+        Array.isArray(m.tool_calls) ? m.tool_calls.map((call: { id: string }) => call.id) : [],
+      );
+      const answeredIds = history.flatMap((m) => (m.role === "tool" ? [m.tool_call_id] : []));
+      expect(calledIds).toEqual(answeredIds);
 
       NodeFS.rmSync(tempDir, { recursive: true, force: true });
     }),

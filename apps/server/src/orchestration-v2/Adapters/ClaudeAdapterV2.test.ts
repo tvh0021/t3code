@@ -3557,6 +3557,72 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("says once when Claude declines a requested fast mode", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const now = yield* DateTime.now;
+      const turn = (ordinal: number) =>
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make(`claude-fast-mode-off:${ordinal}`),
+          text: `Request ${ordinal}`,
+          attachments: [],
+          providerTurnOrdinal: ordinal,
+          modelSelection: {
+            instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+            model: "claude-opus-5-5",
+            options: [{ id: "fastMode", value: true }],
+          },
+        });
+      // The CLI opens with fast mode on, then reports it off on every result.
+      const declinedResult = (uuid: string) =>
+        claudeSdkFrame({
+          ...makeResultFrame({ uuid, result: "Done." }),
+          fast_mode_state: "off",
+          fast_mode_disabled_reason: "extra_usage_disabled",
+        });
+
+      yield* harness.runtime.startTurn(turn(1));
+      yield* Queue.offer(
+        harness.sdkMessages,
+        claudeSdkFrame({
+          type: "system",
+          subtype: "init",
+          fast_mode_state: "on",
+          uuid: "00000000-0000-4000-8000-000000000311",
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      yield* Queue.offer(
+        harness.sdkMessages,
+        declinedResult("00000000-0000-4000-8000-000000000312"),
+      );
+      yield* Queue.take(harness.terminalReceipts);
+      yield* harness.runtime.startTurn(turn(2));
+      yield* Queue.offer(
+        harness.sdkMessages,
+        declinedResult("00000000-0000-4000-8000-000000000313"),
+      );
+      yield* Queue.take(harness.terminalReceipts);
+
+      const notices = harness.events.flatMap((event) =>
+        event.type === "turn_item.updated" && event.turnItem.type === "system_notice"
+          ? [event.turnItem.message]
+          : [],
+      );
+      assert.deepEqual(notices, [
+        "Fast mode is off because extra usage is turned off for your Claude account. Claude is running at standard speed.",
+      ]);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer),
+      ),
+    ),
+  );
+
   it.effect(
     "runs native compaction and keeps its context watermark separate from billed usage",
     () =>
