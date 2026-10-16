@@ -47,9 +47,9 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 
 ## Resolved
 
-- **USAGE-005** (after 0.6.3): Antigravity tokens counted about 3×. Cause: id-less Gemini usage repeated in step, generation and retry records. Fix: identical id-less totals within a database count once.
-- **USAGE-006** (after 0.6.3): Codex credits counted twice. Cause: `sessions` and `archived_sessions` reconciled separately. Fix: each Codex home reconciles as one balance timeline.
-- **CHATLLM-WRITE-001** (after 0.6.3): ChatLLM `write_file`/`edit_file` followed symlinks outside the project. Fix: writes check the real path, as Antigravity's file tools do.
+- **USAGE-005** (0.6.4, verified in the installed Personal app): Antigravity tokens counted about 3×. Cause: id-less Gemini usage repeated in step, generation and retry records. Fix: identical id-less totals within a database count once.
+- **USAGE-006** (0.6.4, verified in the installed Personal app): Codex credits counted twice. Cause: `sessions` and `archived_sessions` reconciled separately. Fix: each Codex home reconciles as one balance timeline.
+- **CHATLLM-WRITE-001** (0.6.4, verified in the installed Personal app): ChatLLM `write_file`/`edit_file` followed symlinks outside the project. Fix: writes check the real path, as Antigravity's file tools do.
 - **ZED-001** (0.5.0): Zed Limits needed real account spend. Cause: native credential can't read billing. Fix: dashboard cookie session; user confirmed spend matches the dashboard.
 - **CODEX-CREDIT-001** (closed 2026-10-16, no fix): Parser skips a repeated `token_count` payload with a newer credit balance. Never observed; totals unaffected.
 - **MOBILE-002** (0.6.3): Phone Usage empty on App Store 2.0.0. Cause: unknown abacus provider fails the whole RPC decode. Fix: host drops ChatLLM entries for mobile.

@@ -6,6 +6,12 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.6.4 (2026-10-16)
+
+- Issue: Antigravity tokens counted about three times → Fix: repeated ID-less usage within a database counts once (USAGE-005)
+- Issue: Codex credits counted twice → Fix: sessions and archived sessions share one balance timeline per Codex home (USAGE-006)
+- Issue: ChatLLM file writes could follow symlinks outside the project → Fix: writes and edits check the resolved path (CHATLLM-WRITE-001)
+
 ### 0.6.3 (2026-10-16)
 
 - Issue: Phone Usage tab empty on App Store 2.0.0 → Fix: host drops ChatLLM entries for newer mobile apps (MOBILE-002)
