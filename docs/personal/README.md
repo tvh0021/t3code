@@ -16,7 +16,7 @@ was October 13, 2026 (upstream `42160f2925`).
 - **Quota handoff.** A thread that hits its usage limit continues on the first
   fallback model with quota left (95% threshold by default).
 - **Delegation budgets.** Per-model limits on how many child tasks an agent may
-  start, and read-only review snapshots.
+  start, and delegated reviews of a chosen commit.
 - **LaTeX math and larger default fonts.**
 
 ## Install

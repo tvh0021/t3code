@@ -44,6 +44,9 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 - **app.t3.codes Usage**: the hosted web app probably fails Usage against this host the way the phone did, because it receives ChatLLM entries. Untested.
 - **Antigravity on eduroam** (WORKFLOW-003): Antigravity sign-in times out because eduroam's IPv6 path stalls and the native client has no IPv4 fallback. Hotspot and other networks work.
 - **Zed organization billing**: Zed Limits reads personal billing only. Organization billing is not supported.
+- **Zed custom models** (ZED-MODELS-001): `customModels` in Zed settings is hidden and not wired to the model picker. Only discovered models are selectable.
+- **Malformed Zed updates** (ZED-UPDATES-001): since the 2026-10-17 sync, the shared ACP adapter drops session updates it can't decode instead of failing the turn. Watch for Zed turns that end with missing text or tool output.
+- **Zed effort tests** (ZED-TEST-001): the legacy Zed tests that checked per-model effort lists and rejected unsupported effort values were removed with the pre-v2 adapter. `ZedAdapterV2.test.ts` covers only model-then-effort ordering.
 
 ## Resolved
 

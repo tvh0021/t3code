@@ -6,6 +6,12 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.6.5 (2026-10-17)
+
+- New feature: upstream sync through 2026-10-17
+- Change: a delegated review (`reviewRef`) now runs in an upstream-managed worktree at that commit, with the project's setup script, instead of a fork clone. Old clones in `<T3 home>/worktrees/coordination-reviews` are no longer cleaned up and can be deleted by hand
+- Issue: Claude Fast turned on partway through a thread got no notice when Claude Code declined it → Fix: the notice follows the thread's current selection
+
 ### 0.6.4 (2026-10-16)
 
 - Issue: Antigravity tokens counted about three times → Fix: repeated id-less usage within a database counts once (USAGE-005)

@@ -55,7 +55,7 @@ destructive commands. A turn allows 200 tool calls on models whose id contains
 
 **Removed.** In the 0.4.0 sync: parent access to T3 coordination tools over the
 HTTP MCP bridge, and the read-only tool set for review workers. Delegated
-reviews now run in snapshot clones instead (see Delegated tasks).
+reviews now run in their own worktree instead (see Delegated tasks).
 
 ## Usage
 
@@ -175,16 +175,18 @@ values.
 ## Delegated tasks
 
 **Now.** Agents delegate through upstream's `delegate_task`. The fork adds two
-guards (`apps/server/src/orchestration-v2/delegationGuards.ts`):
+things:
 
 - **Per-model budgets.** A parent may start a limited number of children per
   model across aliases and instances. The count never resets, so waiting for
   children doesn't restore budget. Provider-native subagents don't count.
   Named defaults and overrides beat price bands: above $10 per million output
   tokens gets one turn, $1 to $10 gets four, below $1 is unlimited. Unpriced
-  models need an override. Settings shows the live policy.
-- **Review snapshots.** A `reviewRef` gives the child a detached clone of that
-  commit instead of the parent's worktree. Storage cleanup removes orphans.
+  models need an override. Settings shows the live policy
+  (`apps/server/src/orchestration-v2/delegationGuards.ts`).
+- **Review worktrees.** A `reviewRef` is resolved to a commit and passed to
+  upstream's `isolation: "worktree"` as its base, so the child reviews that
+  commit instead of the parent's current one (`OrchestratorMcpService.ts`).
 
 The policy is checked daily but refetches models and prices only when the month
 changes or a refresh is forced from Settings > Providers (mobile: Settings >
@@ -196,6 +198,9 @@ Maintenance).
   the fork kept only its budgets and review isolation, as guards on it.
 - 0.4.0: clearing limit overrides deep-merged an empty map and kept the old
   values; cleared overrides are now removed.
+- 0.6.5: upstream added worktree isolation for delegated tasks, so the fork's
+  clone snapshots and their cleanup were dropped in favor of it. The fork's
+  remaining change is one revision argument, which keeps weekly syncs small.
 
 **Removed.** In the 0.4.0 sync: orchestration layers, their UI and coordination
 state, thread handoff MCP tools, and worker restrictions (0.0.42.2 to 0.1.1).
@@ -241,6 +246,12 @@ Run the `blast-radius` skill before merging (see `AGENTS.md`). Then:
   `ProviderRegistry`) are read with `Effect.serviceOption`, so upstream tests
   need no edits. Put new fork dependencies behind the same kind of optional
   seam.
+- Upstream lint rules apply to fork code. Run targeted lint on every fork file
+  the merge touches, not only the conflicted ones.
+- On a macOS host, upstream's `storageCleanup.test.ts` (tmp paths resolve
+  under `/private/var`) and the cross-architecture Windows probe test in
+  `build-desktop-artifact.test.ts` fail without any fork change. CI runs them
+  on Linux.
 - Official rates outrank LiteLLM, so an upstream Usage test that sets a custom
   rate on an officially priced model fails. Change the test's model; don't
   weaken the rule.
