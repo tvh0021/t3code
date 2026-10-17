@@ -162,10 +162,15 @@ uses the existing Zed sign-in. Refresh lists every hosted model on the account
 through `--list-models`, labeled by upstream provider, and keeps custom models.
 A failed refresh keeps the last list and shows a warning. Answers, tools, child
 agents and approvals stream into the thread. Thinking effort uses Zed's native
-values.
+values. After an app restart, a bridge without session resume support starts
+a fresh provider session with saved conversation context.
 
 **Decisions.**
 
+- 0.7.2 (ZED-RESUME-001): the bridge lacks load and resume support.
+  `AcpSessionRuntime` now identifies the unsupported restore method so the
+  existing ACP adapter fallback can start a fresh session and carry context
+  forward through `ProviderTurnStartService`.
 - Before 0.0.42: identical completed tool snapshots are dropped; repeating them
   split answers mid-word and flooded the activity list.
 - 0.1.3: web search, child-agent forwarding and streaming tool updates need

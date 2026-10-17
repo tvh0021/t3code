@@ -2204,6 +2204,7 @@ export const make = (
           } else {
             return yield* new EffectAcpErrors.AcpRequestError({
               code: -32601,
+              method: options.resumeMethod === "resume" ? "session/resume" : "session/load",
               errorMessage: "ACP agent does not advertise session/load or session/resume support",
             });
           }

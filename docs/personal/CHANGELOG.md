@@ -8,6 +8,8 @@ User-visible changes per release, newest first. Current behavior is in
 
 ### 0.7.2 (2026-10-17)
 
+- Issue: Zed threads failed to continue after restarting T3 → Fix: T3 starts a fresh provider session with saved conversation context (ZED-RESUME-001)
+
 - Issue: after Zed's monthly reset, the Zed limit bar showed "resets now" with last period's date → Fix: it shows the next reset date and rereads spend once the period ends (ZED-RESET-001)
 
 ### 0.7.1 (2026-10-17)

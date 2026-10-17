@@ -41,6 +41,8 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 
 ## Resolved
 
+- **ZED-RESUME-001** (0.7.2): Zed continuation failed after restart. Cause: the unsupported-resume error bypassed recovery. Fix: identify the failed method so context recovery runs.
+
 - **ZED-RESET-001** (0.7.2): Zed showed "resets now" after rollover. Cause: stale billing period and cached spend. Fix: advance the period and reread spend once.
 - **ZED-VERSION-001** (0.7.1): Zed always showed version 0.1.0. Cause: T3 and the bridge both hardcoded it. Fix: T3 reads the bridge's `--version`, which comes from its Cargo version.
 - **ZED-CATALOG-001** (0.7.0): A restart after failed Zed discovery restored retired models. Cause: failed discovery reported ready. Fix: it reports a warning, and the registry keeps the last catalog.

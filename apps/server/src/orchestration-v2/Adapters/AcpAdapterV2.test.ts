@@ -2014,105 +2014,115 @@ describe("AcpAdapterV2", () => {
       }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
-  it.live("preserves new-session fallback when an eager ACP session load is stale", () =>
-    Effect.gen(function* () {
-      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const path = yield* Path.Path;
-      const selfInvocation = yield* resolveSelfInvocation();
-      const mockAgentPath = yield* path.fromFileUrl(
-        new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
-      );
-      const protocolEvents = yield* Queue.unbounded<EffectAcpProtocol.AcpProtocolLogEvent>();
-      const instanceId = ProviderInstanceId.make("acp-test-stale-eager-resume");
-      const adapter = yield* makeAcpAdapterV2({
-        instanceId,
-        flavor: {
-          driver: ACP_TEST_DRIVER,
-          capabilities: AcpProviderCapabilitiesV2,
-          makeRuntime: makeMockRuntime({
-            childProcessSpawner,
-            mockAgentPath,
-            protocolEvents,
-            environment: (runtimeOrdinal) =>
-              runtimeOrdinal === 1 ? { T3_ACP_FAIL_LOAD_SESSION: "1" } : {},
-          }),
-        },
-        selfInvocation,
-      });
-      const threadId = ThreadId.make("thread-acp-stale-eager-resume");
-      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        cwd: process.cwd(),
-      });
-      const modelSelection = { instanceId, model: "default" } as const;
-      const runtime = yield* adapter.openSession({
-        threadId,
-        providerSessionId: ProviderSessionId.make("provider-session-acp-stale-eager-resume"),
-        modelSelection,
-        runtimePolicy,
-        initialNativeThreadId: "stale-session",
-      });
-      const replacementThread = yield* runtime.ensureThread({
-        threadId,
-        modelSelection,
-        runtimePolicy,
-      });
-      const staleThread: OrchestrationV2ProviderThread = {
-        ...replacementThread,
-        nativeMetadata: null,
-        nativeThreadRef: {
-          driver: ACP_TEST_DRIVER,
-          nativeId: "stale-session",
-          strength: "strong",
-        },
-      };
-
-      const startupMethods = yield* pollProtocolMethods(protocolEvents);
-      assert.equal(startupMethods.filter((method) => method === "session/resume").length, 1);
-      assert.equal(startupMethods.filter((method) => method === "session/new").length, 1);
-
-      const resumeError = yield* runtime
-        .resumeThread({ providerThread: staleThread, modelSelection, runtimePolicy })
-        .pipe(Effect.flip);
-      assert.equal(resumeError._tag, "ProviderAdapterResumeThreadError");
-      assert.notInclude(yield* pollProtocolMethods(protocolEvents), "session/resume");
-      assert.notEqual(replacementThread.nativeThreadRef?.nativeId, "stale-session");
-      const preservedReplacement = yield* runtime.ensureThread({
-        threadId,
-        modelSelection,
-        runtimePolicy,
-      });
-      assert.equal(preservedReplacement.nativeMetadata?.itemIdentityVersion, 2);
-      const now = yield* DateTime.now;
-      yield* runtime.startTurn(
-        makeTurnInput({
-          threadId,
-          providerThread: preservedReplacement,
-          instanceId,
-          runtimePolicy,
-          now,
-          ordinal: 1,
-        }),
-      );
-      const terminal = Array.from(
-        yield* runtime.events.pipe(
-          Stream.takeUntil((event) => event.type === "turn.terminal"),
-          Stream.runCollect,
-        ),
-      ).find((event) => event.type === "turn.terminal");
-      assert.equal(
-        terminal?.providerTurnId,
-        idAllocator.derive.providerTurn({
-          driver: ACP_TEST_DRIVER,
-          nativeTurnId: acpScopedNativeId(
-            instanceId,
-            `${preservedReplacement.nativeThreadRef?.nativeId}:turn:1`,
+  it.live.each(["stale", "unsupported"] as const)(
+    "preserves new-session fallback when eager ACP restore is %s",
+    (restoreFailure) =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const path = yield* Path.Path;
+        const selfInvocation = yield* resolveSelfInvocation();
+        const mockAgentPath = yield* path.fromFileUrl(
+          new URL(
+            restoreFailure === "unsupported"
+              ? "../../../scripts/acp-no-resume-mock-agent.ts"
+              : "../../../scripts/acp-mock-agent.ts",
+            import.meta.url,
           ),
-        }),
-      );
-    }).pipe(Effect.provide(layerTest), Effect.scoped),
+        );
+        const protocolEvents = yield* Queue.unbounded<EffectAcpProtocol.AcpProtocolLogEvent>();
+        const instanceId = ProviderInstanceId.make("acp-test-stale-eager-resume");
+        const adapter = yield* makeAcpAdapterV2({
+          instanceId,
+          flavor: {
+            driver: ACP_TEST_DRIVER,
+            capabilities: AcpProviderCapabilitiesV2,
+            makeRuntime: makeMockRuntime({
+              childProcessSpawner,
+              mockAgentPath,
+              protocolEvents,
+              environment: (runtimeOrdinal) =>
+                runtimeOrdinal === 1 ? { T3_ACP_FAIL_LOAD_SESSION: "1" } : {},
+            }),
+          },
+          selfInvocation,
+        });
+        const threadId = ThreadId.make("thread-acp-stale-eager-resume");
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "default" } as const;
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-acp-stale-eager-resume"),
+          modelSelection,
+          runtimePolicy,
+          initialNativeThreadId: "stale-session",
+        });
+        const replacementThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const staleThread: OrchestrationV2ProviderThread = {
+          ...replacementThread,
+          nativeMetadata: null,
+          nativeThreadRef: {
+            driver: ACP_TEST_DRIVER,
+            nativeId: "stale-session",
+            strength: "strong",
+          },
+        };
+
+        const startupMethods = yield* pollProtocolMethods(protocolEvents);
+        assert.equal(
+          startupMethods.filter((method) => method === "session/resume").length,
+          restoreFailure === "stale" ? 1 : 0,
+        );
+        assert.equal(startupMethods.filter((method) => method === "session/new").length, 1);
+
+        const resumeError = yield* runtime
+          .resumeThread({ providerThread: staleThread, modelSelection, runtimePolicy })
+          .pipe(Effect.flip);
+        assert.equal(resumeError._tag, "ProviderAdapterResumeThreadError");
+        assert.notInclude(yield* pollProtocolMethods(protocolEvents), "session/resume");
+        assert.notEqual(replacementThread.nativeThreadRef?.nativeId, "stale-session");
+        const preservedReplacement = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        assert.equal(preservedReplacement.nativeMetadata?.itemIdentityVersion, 2);
+        const now = yield* DateTime.now;
+        yield* runtime.startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread: preservedReplacement,
+            instanceId,
+            runtimePolicy,
+            now,
+            ordinal: 1,
+          }),
+        );
+        const terminal = Array.from(
+          yield* runtime.events.pipe(
+            Stream.takeUntil((event) => event.type === "turn.terminal"),
+            Stream.runCollect,
+          ),
+        ).find((event) => event.type === "turn.terminal");
+        assert.equal(
+          terminal?.providerTurnId,
+          idAllocator.derive.providerTurn({
+            driver: ACP_TEST_DRIVER,
+            nativeTurnId: acpScopedNativeId(
+              instanceId,
+              `${preservedReplacement.nativeThreadRef?.nativeId}:turn:1`,
+            ),
+          }),
+        );
+      }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
   it.live("cleans detached fixtures when an assertion aborts the test scope", () =>
