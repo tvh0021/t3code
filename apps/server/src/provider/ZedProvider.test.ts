@@ -9,7 +9,7 @@ import { writeFakeCli } from "@t3tools/provider-testing/fakeCli";
 import {
   buildInitialZedProviderSnapshot,
   checkZedProviderStatus,
-  parseLatestZedModels,
+  parseZedModels,
 } from "./ZedProvider.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -63,7 +63,8 @@ describe("checkZedProviderStatus", () => {
       });
       const snapshot = yield* checkZedProviderStatus(decodeSettings({ enabled: true, binaryPath }));
 
-      expect(snapshot.status).toBe(exitCode === 0 ? "ready" : "error");
+      // Exit 0 still lists no models, so discovery fails with a warning.
+      expect(snapshot.status).toBe(exitCode === 0 ? "warning" : "error");
       expect(snapshot.usageLimits).toMatchObject({
         checkedAt: snapshot.checkedAt,
         windows: [],
@@ -76,7 +77,7 @@ describe("checkZedProviderStatus", () => {
 
 describe("Zed model discovery", () => {
   it("exposes the bridge's supported thinking efforts and default", () => {
-    const models = parseLatestZedModels(
+    const models = parseZedModels(
       encodeJson([
         {
           slug: "zed.dev/gpt-6.1-luna",
@@ -103,32 +104,42 @@ describe("Zed model discovery", () => {
   });
 
   const catalog = [
-    { slug: "zed.dev/claude-sonnet-5", name: "Sonnet 5" },
-    { slug: "zed.dev/claude-sonnet-5-5-20260901", name: "Sonnet 5.5" },
-    { slug: "zed.dev/claude-sonnet-5-10", name: "Sonnet 5.10" },
-    { slug: "zed.dev/claude-opus-9", name: "Opus" },
-    { slug: "zed.dev/gpt-5.6-luna", name: "Luna 5.6" },
-    { slug: "zed.dev/gpt-6.1-luna", name: "Luna 6.1" },
-    { slug: "zed.dev/gpt-9-sol", name: "Sol" },
-    { slug: "other/gpt-10-luna", name: "Other Luna" },
-    { slug: "zed.dev/gpt-10-luna-preview", name: "Preview" },
+    { slug: "zed.dev/claude-sonnet-5-5", name: "Claude Sonnet 5.5", provider: "Anthropic" },
+    { slug: "zed.dev/gpt-6-luna", name: "GPT-6 Luna", provider: "OpenAI", isDefault: true },
+    { slug: "zed.dev/gemini-4-argon", name: "Gemini 4 Argon", provider: "Google AI" },
   ];
 
-  it("keeps controls absent on models without effort metadata", () => {
-    expect(
-      parseLatestZedModels(encodeJson(catalog)).every(
-        (model) => model.capabilities?.optionDescriptors?.length === 0,
-      ),
-    ).toBe(true);
+  it("keeps every model in bridge order with its provider and default", () => {
+    expect(parseZedModels(encodeJson(catalog))).toEqual([
+      {
+        slug: "zed.dev/claude-sonnet-5-5",
+        name: "Claude Sonnet 5.5",
+        subProvider: "Anthropic",
+        isCustom: false,
+        capabilities: expect.objectContaining({ optionDescriptors: [] }),
+      },
+      {
+        slug: "zed.dev/gpt-6-luna",
+        name: "GPT-6 Luna",
+        subProvider: "OpenAI",
+        isCustom: false,
+        isDefault: true,
+        capabilities: expect.objectContaining({ optionDescriptors: [] }),
+      },
+      {
+        slug: "zed.dev/gemini-4-argon",
+        name: "Gemini 4 Argon",
+        subProvider: "Google AI",
+        isCustom: false,
+        capabilities: expect.objectContaining({ optionDescriptors: [] }),
+      },
+    ]);
   });
 
-  it("selects one newest version per supplied family regardless of catalog order", () => {
-    for (const entries of [catalog, catalog.toReversed()]) {
-      expect(parseLatestZedModels(encodeJson(entries)).map((model) => model.slug)).toEqual([
-        "zed.dev/claude-sonnet-5-10",
-        "zed.dev/gpt-6.1-luna",
-      ]);
-    }
+  it("defaults to the first model from bridges that mark no default", () => {
+    const models = parseZedModels(encodeJson(catalog.map(({ slug, name }) => ({ slug, name }))));
+    expect(models.map((model) => model.isDefault ?? false)).toEqual([true, false, false]);
+    expect(models.every((model) => model.subProvider === undefined)).toBe(true);
   });
 
   it.effect("refreshes from the bridge and retains custom models", () =>
@@ -148,10 +159,10 @@ describe("Zed model discovery", () => {
         }),
       );
       expect(snapshot.models.map((model) => model.slug)).toEqual([
-        "zed.dev/claude-sonnet-5-10",
-        "zed.dev/gpt-6.1-luna",
+        ...catalog.map((entry) => entry.slug),
         "zed.dev/custom",
       ]);
+      expect(snapshot.status).toBe("ready");
       expect(snapshot.message).toBeUndefined();
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
@@ -205,36 +216,13 @@ describe("Zed model discovery", () => {
       const snapshot = yield* checkZedProviderStatus(
         decodeSettings({ enabled: true, binaryPath, dataDir }),
       );
-      expect(snapshot.models).toEqual(parseLatestZedModels(encodeJson(catalog)));
+      expect(snapshot.models).toEqual(parseZedModels(encodeJson(catalog)));
       expect(snapshot.message).toBeUndefined();
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("retains discovered and custom models when the bridge exits unsuccessfully", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const directory = yield* fs.makeTempDirectoryScoped();
-      const binaryPath = writeFakeCli({
-        directory,
-        name: "zed-acp-server",
-        source: `if (process.argv.includes("--list-models")) process.exit(1);`,
-      });
-      const previous = parseLatestZedModels(encodeJson(catalog));
-      const snapshot = yield* checkZedProviderStatus(
-        decodeSettings({ enabled: true, binaryPath, customModels: ["zed.dev/custom"] }),
-        undefined,
-        undefined,
-        previous,
-      );
-      expect(snapshot.models.slice(0, 2)).toEqual(previous);
-      expect(snapshot.models[2]).toMatchObject({ slug: "zed.dev/custom", isCustom: true });
-      expect(snapshot.message).toContain("Keeping the previous list");
-      expect(snapshot.status).toBe("ready");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect.each(["invalid JSON", "[]", encodeJson(catalog.slice(0, 1))])(
-    "retains the last catalog on failed or incomplete discovery: %s",
+  it.effect.each(["exit 1", "invalid JSON", "[]"])(
+    "keeps the previous catalog and warns on failed discovery: %s",
     (output) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -242,18 +230,21 @@ describe("Zed model discovery", () => {
         const binaryPath = writeFakeCli({
           directory,
           name: "zed-acp-server",
-          source: `if (process.argv.includes("--list-models")) console.log(${encodeJson(output)});`,
+          source: `if (process.argv.includes("--list-models")) ${
+            output === "exit 1" ? "process.exit(1)" : `console.log(${encodeJson(output)})`
+          };`,
         });
-        const previous = parseLatestZedModels(encodeJson(catalog));
+        const previous = parseZedModels(encodeJson(catalog));
         const snapshot = yield* checkZedProviderStatus(
-          decodeSettings({ enabled: true, binaryPath }),
+          decodeSettings({ enabled: true, binaryPath, customModels: ["zed.dev/custom"] }),
           undefined,
           undefined,
           previous,
         );
-        expect(snapshot.models).toEqual(previous);
+        expect(snapshot.models.slice(0, previous.length)).toEqual(previous);
+        expect(snapshot.models.at(-1)).toMatchObject({ slug: "zed.dev/custom", isCustom: true });
         expect(snapshot.message).toContain("Keeping the previous list");
-        expect(snapshot.status).toBe("ready");
+        expect(snapshot.status).toBe("warning");
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

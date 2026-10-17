@@ -152,8 +152,9 @@ startup.
 **Now.** Zed runs through a companion bridge, `zed-acp-server`, built from the
 `integration/zed-abacus` branch of [tvh0021/zed](https://github.com/tvh0021/zed)
 and set as the Zed provider's binary path. Desktop updates don't include it. It
-uses the existing Zed sign-in. Refresh discovers the newest hosted Sonnet and
-Luna through `--list-models` and keeps custom models. Answers, tools, child
+uses the existing Zed sign-in. Refresh lists every hosted model on the account
+through `--list-models`, labeled by upstream provider, and keeps custom models.
+A failed refresh keeps the last list and shows a warning. Answers, tools, child
 agents and approvals stream into the thread. Thinking effort uses Zed's native
 values.
 
@@ -169,8 +170,11 @@ values.
 - 0.5.1: after the 0.4.0 sync Zed turns failed with `Model not available`. The
   thread's model now reaches the bridge's startup `--model` argument, and the
   model is sent before effort even when the bridge advertises no model setting.
-- Open (ZED-CATALOG-001, ZED-CONTEXT-001): a restart after failed discovery
-  restores retired models, and the bridge sends no context usage.
+- Pending release: the picker shows the whole hosted catalog instead of the
+  newest Sonnet and Luna. Provider labels and the account default need bridge
+  commit `aa2e090c03` or later, which also leaves out models Zed has disabled.
+  Older bridges list the same models without labels, with the first as default.
+- Open (ZED-CONTEXT-001): the bridge sends no context usage.
 
 ## Delegated tasks
 

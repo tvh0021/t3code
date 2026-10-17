@@ -347,6 +347,21 @@ it("preserves Zed custom settings and the previous catalog when refresh fails", 
   assert.deepStrictEqual(mergeProviderSnapshot(discovered, failed).models, discovered.models);
 });
 
+it("keeps cached Zed discovery when the first probe after a restart fails discovery", () => {
+  const cached = makeProvider(ProviderDriverKind.make("zed"), {
+    models: zedModels(["zed.dev/claude-sonnet-5-5", "zed.dev/gpt-6-luna"]),
+  });
+  const custom = { ...zedModels(["custom"])[0]!, isCustom: true };
+  const seed = [...zedModels(["seed"]), custom];
+  const pending = { ...cached, installed: false, status: "warning" as const, models: seed };
+  const hydrated = hydrateCachedProvider({ fallbackProvider: pending, cachedProvider: cached });
+  const failedDiscovery = { ...cached, status: "warning" as const, models: seed };
+  assert.deepStrictEqual(
+    mergeProviderSnapshot(mergeProviderSnapshot(hydrated, pending), failedDiscovery).models,
+    [...cached.models, custom],
+  );
+});
+
 it("keeps cached Zed discovery through boot seeding and a failed initial probe", () => {
   const cached = makeProvider(ProviderDriverKind.make("zed"), {
     models: zedModels(["zed.dev/claude-sonnet-5-5", "zed.dev/gpt-6-luna"]),

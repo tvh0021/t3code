@@ -181,8 +181,16 @@ const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean =>
   const isPendingInitialProbe =
     provider.enabled && !provider.installed && provider.status === "warning";
   const didInstalledProviderProbeFail = provider.installed && provider.status === "error";
+  // The Zed bridge runs but reports a warning when hosted model discovery fails.
+  const didZedDiscoveryFail =
+    provider.driver === ProviderDriverKind.make("zed") &&
+    provider.installed &&
+    provider.status === "warning";
   return (
-    isPendingAntigravityAuthentication || isPendingInitialProbe || didInstalledProviderProbeFail
+    isPendingAntigravityAuthentication ||
+    isPendingInitialProbe ||
+    didInstalledProviderProbeFail ||
+    didZedDiscoveryFail
   );
 };
 

@@ -38,18 +38,18 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
 
 export const ZED_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
-    slug: "zed.dev/claude-sonnet-5",
-    name: "Claude Sonnet 5",
+    slug: "zed.dev/claude-sonnet-5-5",
+    name: "Claude Sonnet 5.5",
+    subProvider: "Anthropic",
     isCustom: false,
     isDefault: true,
-    badge: "new",
     capabilities: EMPTY_CAPABILITIES,
   },
   {
-    slug: "zed.dev/gpt-5.6-luna",
-    name: "GPT-5.6 Luna",
+    slug: "zed.dev/gpt-6-luna",
+    name: "GPT-6 Luna",
+    subProvider: "OpenAI",
     isCustom: false,
-    badge: "new",
     capabilities: EMPTY_CAPABILITIES,
   },
 ];
@@ -60,6 +60,8 @@ const decodeZedCatalog = Schema.decodeSync(
       Schema.Struct({
         slug: Schema.String,
         name: Schema.String,
+        provider: Schema.optional(Schema.String),
+        isDefault: Schema.optional(Schema.Boolean),
         effortLevels: Schema.optional(
           Schema.Array(
             Schema.Struct({
@@ -74,8 +76,11 @@ const decodeZedCatalog = Schema.decodeSync(
   ),
 );
 
-function parseZedCatalog(output: string) {
-  return decodeZedCatalog(output).map((entry) => {
+export function parseZedModels(output: string): ReadonlyArray<ServerProviderModel> {
+  const catalog = decodeZedCatalog(output);
+  // Bridges before aa2e090c03 mark no default; Zed lists its preferred model first.
+  const hasDefault = catalog.some((entry) => entry.isDefault);
+  return catalog.map((entry, index) => {
     const levels = entry.effortLevels ?? [];
     const defaultValue = levels.find((level) => level.isDefault)?.value;
     const capabilities = createModelCapabilities({
@@ -96,45 +101,14 @@ function parseZedCatalog(output: string) {
             ]
           : [],
     });
-    return { ...entry, capabilities };
-  });
-}
-
-export function parseLatestZedModels(output: string): ReadonlyArray<ServerProviderModel> {
-  const catalog = parseZedCatalog(output);
-  const families = [
-    /^zed\.dev\/claude-sonnet-(\d+(?:[.-]\d+)*)(?:-latest)?$/,
-    /^zed\.dev\/gpt-(\d+(?:\.\d+)*)-luna(?:-\d{8})?$/,
-  ];
-  return families.flatMap((family, familyIndex) => {
-    const candidates = catalog.flatMap((entry) => {
-      const match = family.exec(entry.slug);
-      if (!match?.[1]) return [];
-      const version = match[1].split(/[.-]/).map(Number);
-      const snapshot = version.at(-1);
-      if (snapshot !== undefined && snapshot >= 10_000_000) version.pop();
-      return [{ slug: entry.slug, name: entry.name, version, capabilities: entry.capabilities }];
-    });
-    candidates.sort((left, right) => {
-      for (let index = 0; index < Math.max(left.version.length, right.version.length); index++) {
-        const difference = (right.version[index] ?? 0) - (left.version[index] ?? 0);
-        if (difference !== 0) return difference;
-      }
-      return right.slug.localeCompare(left.slug, undefined, { numeric: true });
-    });
-    const newest = candidates[0];
-    return newest
-      ? [
-          {
-            slug: newest.slug,
-            name: newest.name,
-            isCustom: false,
-            ...(familyIndex === 0 ? { isDefault: true } : {}),
-            badge: "new",
-            capabilities: newest.capabilities,
-          },
-        ]
-      : [];
+    return {
+      slug: entry.slug,
+      name: entry.name,
+      ...(entry.provider ? { subProvider: entry.provider } : {}),
+      isCustom: false,
+      ...((hasDefault ? entry.isDefault : index === 0) ? { isDefault: true } : {}),
+      capabilities,
+    };
   });
 }
 
@@ -199,11 +173,6 @@ export function buildInitialZedProviderSnapshot(
     });
   });
 }
-
-type CatalogDiscoveryResult = {
-  discovered: ReadonlyArray<ServerProviderModel>;
-  catalog: ReturnType<typeof parseZedCatalog>;
-};
 
 export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(function* (
   zedSettings: ZedSettings,
@@ -271,29 +240,25 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
     ),
   ).pipe(
     Effect.flatMap((result) =>
-      Effect.try<CatalogDiscoveryResult>(() => {
+      Effect.try(() => {
         if (result.code !== 0) throw new Error("Zed model discovery failed");
-        const discovered = parseLatestZedModels(result.stdout);
-        if (discovered.length !== 2)
-          throw new Error("Zed did not supply both Sonnet and Luna models");
-        return { discovered, catalog: parseZedCatalog(result.stdout) };
+        const discovered = parseZedModels(result.stdout);
+        if (discovered.length === 0) throw new Error("Zed supplied no models");
+        return discovered;
       }),
     ),
     Effect.timeout("40 seconds"),
     Effect.result,
   );
   if (Result.isSuccess(catalogResult)) {
-    models = zedModelsFromSettings(zedSettings.customModels, catalogResult.success.discovered).map(
-      (model) => {
-        const authored = zedSettings.customModels.find(
-          (entry) => typeof entry !== "string" && entry.slug === model.slug,
-        );
-        if (!model.isCustom || (typeof authored !== "string" && authored?.capabilities))
-          return model;
-        const discovered = catalogResult.success.catalog.find((entry) => entry.slug === model.slug);
-        return discovered ? { ...model, capabilities: discovered.capabilities } : model;
-      },
-    );
+    models = zedModelsFromSettings(zedSettings.customModels, catalogResult.success).map((model) => {
+      const authored = zedSettings.customModels.find(
+        (entry) => typeof entry !== "string" && entry.slug === model.slug,
+      );
+      if (!model.isCustom || (typeof authored !== "string" && authored?.capabilities)) return model;
+      const discovered = catalogResult.success.find((entry) => entry.slug === model.slug);
+      return discovered ? { ...model, capabilities: discovered.capabilities } : model;
+    });
   }
 
   return buildServerProvider({
@@ -305,7 +270,8 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
     probe: {
       installed: true,
       version: "0.1.0",
-      status: "ready",
+      // A warning tells the registry to keep the last discovered catalog.
+      status: Result.isFailure(catalogResult) ? "warning" : "ready",
       ...(Result.isFailure(catalogResult)
         ? {
             message:

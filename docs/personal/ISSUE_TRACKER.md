@@ -13,14 +13,6 @@ Cause: `mergeUsage` leaves credit buckets out of the day and hour totals but add
 Done when: provider columns, Total and charts use the same cost basis, or show subscription and credit values separately.
 History: Reproduced on installed 0.3.2 and through the shared merge with a $1 subscription bucket and a 25-credit bucket carrying $3: Codex $4, Total $1.
 
-### ZED-CATALOG-001: Failed discovery after restart restores retired Zed models
-
-Open since 2026-10-12.
-Problem: After a restart where Zed model discovery fails, the picker shows the retired Sonnet 5 and GPT-5.6 Luna instead of the last discovered Sonnet 5.5 and GPT-6 Luna.
-Cause: The provider reports ready and authenticated when discovery fails, so the registry's keep-last-catalog branch never runs, and the seed list is still the old models.
-Done when: the last discovered models survive pending and failed startup discovery, and retired models are replaced only after a successful discovery.
-History: Reproduced twice in isolated servers. A failed refresh without a restart keeps the current catalog.
-
 ### ZED-CONTEXT-001: Zed context meter gets no token usage
 
 Open since 2026-10-12.
@@ -44,12 +36,13 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 - **app.t3.codes Usage**: the hosted web app probably fails Usage against this host the way the phone did, because it receives ChatLLM entries. Untested.
 - **Antigravity on eduroam** (WORKFLOW-003): Antigravity sign-in times out because eduroam's IPv6 path stalls and the native client has no IPv4 fallback. Hotspot and other networks work.
 - **Zed organization billing**: Zed Limits reads personal billing only. Organization billing is not supported.
-- **Zed custom models** (ZED-MODELS-001): `customModels` in Zed settings is hidden and not wired to the model picker. Only discovered models are selectable.
 - **Malformed Zed updates** (ZED-UPDATES-001): since the 2026-10-17 sync, the shared ACP adapter drops session updates it can't decode instead of failing the turn. Watch for Zed turns that end with missing text or tool output.
 - **Zed effort tests** (ZED-TEST-001): the legacy Zed tests that checked per-model effort lists and rejected unsupported effort values were removed with the pre-v2 adapter. `ZedAdapterV2.test.ts` covers only model-then-effort ordering.
 
 ## Resolved
 
+- **ZED-CATALOG-001** (pending release): a restart after failed Zed discovery restored retired seed models. Cause: failed discovery still reported ready, so the registry dropped the cached catalog. Fix: failed discovery reports a warning and the registry keeps the last catalog. Rechecked in an isolated server: after a restart with a failing bridge, the 23 discovered models stay (the old code showed Sonnet 5 and GPT-5.6 Luna).
+- **ZED-MODELS-001** (pending release, no fix): hidden Zed `customModels` weren't wired to the picker. Superseded: refresh now lists every hosted model on the account.
 - **USAGE-005** (0.6.4): Antigravity tokens counted about 3×. Cause: id-less Gemini usage repeated in step, generation and retry records. Fix: identical id-less totals within a database count once.
 - **USAGE-006** (0.6.4): Codex credits counted twice. Cause: `sessions` and `archived_sessions` reconciled separately. Fix: each Codex home reconciles as one balance timeline.
 - **CHATLLM-WRITE-001** (0.6.4): ChatLLM `write_file`/`edit_file` followed symlinks outside the project. Cause: writes compared path text. Fix: writes check the real path, as Antigravity's file tools do.
