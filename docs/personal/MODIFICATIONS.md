@@ -179,6 +179,10 @@ values.
   replaced the cached catalog with retired seed models. `checkZedProviderStatus`
   now reports a warning, and `shouldRetainMissingProviderModels` keeps the last
   catalog for an installed Zed provider in that state.
+- 0.7.1 (ZED-VERSION-001): `checkZedProviderStatus` showed a hardcoded 0.1.0,
+  and the bridge's `initialize` reply hardcoded the same. The probe now runs
+  `--version` instead of `--help` and parses its output, so it needs bridge
+  0.2.1 or later; older bridges fail the probe.
 - Open (ZED-CONTEXT-001): the bridge sends no context usage.
 
 ## Delegated tasks

@@ -29,7 +29,7 @@ Download the DMG or ZIP from
 - Builds are signed with a personal identity and are not notarized by Apple.
   The first launch is blocked; allow it in System Settings > Privacy & Security.
 - Zed needs `zed-acp-server` from a
-  [tvh0021/zed release](https://github.com/tvh0021/zed/releases) (0.2.0 or
+  [tvh0021/zed release](https://github.com/tvh0021/zed/releases) (0.2.1 or
   later), or built from that fork's `main`. Set its path as the Zed provider's
   binary path.
 - The App Store phone app works with this host, but its Usage tab leaves out

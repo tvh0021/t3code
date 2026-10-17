@@ -41,6 +41,7 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 
 ## Resolved
 
+- **ZED-VERSION-001** (0.7.1): Zed always showed version 0.1.0. Cause: T3 and the bridge both hardcoded it. Fix: T3 reads the bridge's `--version`, which comes from its Cargo version.
 - **ZED-CATALOG-001** (0.7.0): A restart after failed Zed discovery restored retired models. Cause: failed discovery reported ready. Fix: it reports a warning, and the registry keeps the last catalog.
 - **ZED-MODELS-001** (0.7.0): Hidden Zed `customModels` weren't wired to the picker. Cause: discovery kept only two hosted models. Fix: refresh lists every hosted model, so custom entries aren't needed.
 - **USAGE-005** (0.6.4): Antigravity tokens counted about 3×. Cause: id-less Gemini usage repeated in step, generation and retry records. Fix: identical id-less totals within a database count once.

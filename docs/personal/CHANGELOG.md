@@ -6,6 +6,10 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.7.1 (2026-10-17)
+
+- Issue: Zed's provider entry always showed version 0.1.0 → Fix: it shows the bridge's real version; needs bridge 0.2.1 or later (ZED-VERSION-001)
+
 ### 0.7.0 (2026-10-17)
 
 - New feature: Zed offers every hosted model on the account, labeled by provider, instead of only the newest Sonnet and Luna; labels and the account default need bridge `aa2e090c03`
