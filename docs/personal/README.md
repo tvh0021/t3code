@@ -28,9 +28,10 @@ Download the DMG or ZIP from
   as described in upstream's [development guide](../operations/development.md).
 - Builds are signed with a personal identity and are not notarized by Apple.
   The first launch is blocked; allow it in System Settings > Privacy & Security.
-- Zed needs `zed-acp-server`, built from the `integration/zed-abacus` branch of
-  [tvh0021/zed](https://github.com/tvh0021/zed). Set its path as the Zed
-  provider's binary path.
+- Zed needs `zed-acp-server` from a
+  [tvh0021/zed release](https://github.com/tvh0021/zed/releases) (0.2.0 or
+  later), or built from that fork's `main`. Set its path as the Zed provider's
+  binary path.
 - The App Store phone app works with this host, but its Usage tab leaves out
   ChatLLM.
 

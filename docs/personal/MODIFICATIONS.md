@@ -149,9 +149,9 @@ startup.
 
 ## Zed
 
-**Now.** Zed runs through a companion bridge, `zed-acp-server`, built from the
-`integration/zed-abacus` branch of [tvh0021/zed](https://github.com/tvh0021/zed)
-and set as the Zed provider's binary path. Desktop updates don't include it. It
+**Now.** Zed runs through a companion bridge, `zed-acp-server`, from
+[tvh0021/zed](https://github.com/tvh0021/zed) (`main`, released as
+`personal-vX.Y.Z`) and set as the Zed provider's binary path. Desktop updates don't include it. It
 uses the existing Zed sign-in. Refresh lists every hosted model on the account
 through `--list-models`, labeled by upstream provider, and keeps custom models.
 A failed refresh keeps the last list and shows a warning. Answers, tools, child
