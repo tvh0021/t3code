@@ -41,8 +41,8 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 
 ## Resolved
 
-- **ZED-CATALOG-001** (pending release): a restart after failed Zed discovery restored retired seed models. Cause: failed discovery still reported ready, so the registry dropped the cached catalog. Fix: failed discovery reports a warning and the registry keeps the last catalog. Rechecked in an isolated server: after a restart with a failing bridge, the 23 discovered models stay (the old code showed Sonnet 5 and GPT-5.6 Luna).
-- **ZED-MODELS-001** (pending release, no fix): hidden Zed `customModels` weren't wired to the picker. Superseded: refresh now lists every hosted model on the account.
+- **ZED-CATALOG-001** (0.7.0): A restart after failed Zed discovery restored retired models. Cause: failed discovery reported ready. Fix: it reports a warning, and the registry keeps the last catalog.
+- **ZED-MODELS-001** (0.7.0): Hidden Zed `customModels` weren't wired to the picker. Cause: discovery kept only two hosted models. Fix: refresh lists every hosted model, so custom entries aren't needed.
 - **USAGE-005** (0.6.4): Antigravity tokens counted about 3×. Cause: id-less Gemini usage repeated in step, generation and retry records. Fix: identical id-less totals within a database count once.
 - **USAGE-006** (0.6.4): Codex credits counted twice. Cause: `sessions` and `archived_sessions` reconciled separately. Fix: each Codex home reconciles as one balance timeline.
 - **CHATLLM-WRITE-001** (0.6.4): ChatLLM `write_file`/`edit_file` followed symlinks outside the project. Cause: writes compared path text. Fix: writes check the real path, as Antigravity's file tools do.

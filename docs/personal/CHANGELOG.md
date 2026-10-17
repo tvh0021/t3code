@@ -6,6 +6,12 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.7.0 (2026-10-17)
+
+- New feature: Zed offers every hosted model on the account, labeled by provider, instead of only the newest Sonnet and Luna; labels and the account default need bridge `aa2e090c03`
+- Issue: a restart after failed Zed model discovery restored retired models → Fix: failed discovery shows a warning and keeps the last model list (ZED-CATALOG-001)
+- Issue: hidden Zed custom models weren't wired to the picker → Fix: every hosted model is listed, so custom models aren't needed (ZED-MODELS-001)
+
 ### 0.6.5 (2026-10-17)
 
 - Upstream sync: merged upstream a7025639c0

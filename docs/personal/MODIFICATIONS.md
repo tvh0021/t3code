@@ -170,10 +170,15 @@ values.
 - 0.5.1: after the 0.4.0 sync Zed turns failed with `Model not available`. The
   thread's model now reaches the bridge's startup `--model` argument, and the
   model is sent before effort even when the bridge advertises no model setting.
-- Pending release: the picker shows the whole hosted catalog instead of the
-  newest Sonnet and Luna. Provider labels and the account default need bridge
-  commit `aa2e090c03` or later, which also leaves out models Zed has disabled.
-  Older bridges list the same models without labels, with the first as default.
+- 0.7.0: `parseZedModels` keeps the bridge's whole hosted catalog instead of
+  the newest Sonnet and Luna, which hid every other model on the account.
+  Provider labels and the account default need bridge commit `aa2e090c03` or
+  later, which also leaves out models Zed has disabled. Older bridges list the
+  same models without labels, with the first as default.
+- 0.7.0 (ZED-CATALOG-001): failed discovery reported ready, so a restart
+  replaced the cached catalog with retired seed models. `checkZedProviderStatus`
+  now reports a warning, and `shouldRetainMissingProviderModels` keeps the last
+  catalog for an installed Zed provider in that state.
 - Open (ZED-CONTEXT-001): the bridge sends no context usage.
 
 ## Delegated tasks
