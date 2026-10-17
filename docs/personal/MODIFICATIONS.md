@@ -248,10 +248,6 @@ Run the `blast-radius` skill before merging (see `AGENTS.md`). Then:
   seam.
 - Upstream lint rules apply to fork code. Run targeted lint on every fork file
   the merge touches, not only the conflicted ones.
-- On a macOS host, upstream's `storageCleanup.test.ts` (tmp paths resolve
-  under `/private/var`) and the cross-architecture Windows probe test in
-  `build-desktop-artifact.test.ts` fail without any fork change. CI runs them
-  on Linux.
 - Official rates outrank LiteLLM, so an upstream Usage test that sets a custom
   rate on an officially priced model fails. Change the test's model; don't
   weaken the rule.
