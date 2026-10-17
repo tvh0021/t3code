@@ -17,6 +17,7 @@ import {
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
   isCommandMissingCause,
+  parseGenericCliVersion,
   providerModelsFromSettings,
   spawnAndCollect,
   type ServerProviderDraft,
@@ -195,7 +196,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
 
   const probeResult = yield* spawnAndCollect(
     spawnInput.command,
-    ChildProcess.make(spawnInput.command, ["--help"], {
+    ChildProcess.make(spawnInput.command, ["--version"], {
       cwd: spawnInput.cwd,
       env: spawnInput.env,
       extendEnv: true,
@@ -218,7 +219,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
         auth: { status: "unknown" },
         message: commandMissing
           ? `Zed ACP server binary '${spawnInput.command}' was not found. Configure binaryPath in Zed settings.`
-          : "Failed to execute Zed ACP server probe.",
+          : "Failed to execute Zed ACP server probe. T3 Code needs zed-acp-server 0.2.1 or later.",
         usageLimits: yield* accountUsage,
       },
     });
@@ -269,7 +270,7 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
     slashCommands: ZED_SLASH_COMMANDS,
     probe: {
       installed: true,
-      version: "0.1.0",
+      version: parseGenericCliVersion(probeResult.success.stdout),
       // A warning tells the registry to keep the last discovered catalog.
       status: Result.isFailure(catalogResult) ? "warning" : "ready",
       ...(Result.isFailure(catalogResult)

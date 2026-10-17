@@ -149,7 +149,8 @@ describe("Zed model discovery", () => {
       const binaryPath = writeFakeCli({
         directory,
         name: "zed-acp-server",
-        source: `if (process.argv.includes("--list-models")) console.log(${encodeJson(encodeJson(catalog))});`,
+        source: `if (process.argv.includes("--version")) console.log("zed-acp-server 0.2.1");
+if (process.argv.includes("--list-models")) console.log(${encodeJson(encodeJson(catalog))});`,
       });
       const snapshot = yield* checkZedProviderStatus(
         decodeSettings({
@@ -164,6 +165,7 @@ describe("Zed model discovery", () => {
       ]);
       expect(snapshot.status).toBe("ready");
       expect(snapshot.message).toBeUndefined();
+      expect(snapshot.version).toBe("0.2.1");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
