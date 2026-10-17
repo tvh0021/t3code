@@ -108,7 +108,8 @@ protobuf trace decoder gave way to upstream's SQLite scanner.
 **Now.** Limits shows reset countdowns for Antigravity, ChatLLM and Zed besides
 upstream's providers. Antigravity has a Gemini pool and a shared "Claude & GPT"
 pool, shortest window first. ChatLLM shows monthly compute points. Zed shows
-`$X of $Y spent`, or `$X spent, no limit`.
+`$X of $Y spent`, or `$X spent, no limit`. After rollover, T3 advances
+an ended billing period by calendar months and rereads spend once.
 
 **Decisions.**
 
@@ -119,9 +120,14 @@ pool, shortest window first. ChatLLM shows monthly compute points. Zed shows
 - 0.5.0 (ZED-001): Zed's own credential can't read billing, so spend comes from
   `cloud.zed.dev` with a dashboard sign-in. Desktop signs in with **Connect** in
   Zed provider settings; other clients paste the dashboard Cookie header. The
-  session lives in the host's secret store. Spend is read at provider start and
-  after each Zed turn, never on a timer. A missing or expired session shows a
+  session lives in the host's secret store. Spend is read at provider start,
+  after each Zed turn, and once when the cached period ends. A missing or expired session shows a
   notice, not an empty bar. Only personal billing is read.
+- 0.7.2 (ZED-RESET-001): Zed's `subscriptions/current` keeps reporting the
+  ended billing period for hours after the monthly rollover, so
+  `zedSpendToUsageLimits` rolls an ended period forward by calendar months.
+  When the cached period ends, the next status probe also rereads spend once
+  per period end (`endedZedPeriod` in `ZedDriver`), which is still not polling.
 
 ## Antigravity
 

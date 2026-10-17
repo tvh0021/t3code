@@ -102,8 +102,19 @@ export function zedSpendToUsageLimits(input: {
   }
   const limit = spend.limit_in_cents;
   const period = Option.fromNullishOr(input.subscription.subscription?.period);
-  const start = Option.flatMap(period, (p) => DateTime.make(p.start_at));
-  const end = Option.flatMap(period, (p) => DateTime.make(p.end_at));
+  const checkedAt = DateTime.makeUnsafe(input.checkedAt);
+  let start = Option.flatMap(period, (p) => DateTime.make(p.start_at));
+  let end = Option.flatMap(period, (p) => DateTime.make(p.end_at));
+  // Zed keeps reporting the ended period for hours after its monthly rollover.
+  // Periods are calendar months, so roll the stale one forward.
+  while (
+    Option.isSome(start) &&
+    Option.isSome(end) &&
+    DateTime.isLessThanOrEqualTo(end.value, checkedAt)
+  ) {
+    start = end;
+    end = Option.some(DateTime.add(end.value, { months: 1 }));
+  }
   const durationMs =
     Option.isSome(start) && Option.isSome(end)
       ? DateTime.toEpochMillis(end.value) - DateTime.toEpochMillis(start.value)
@@ -127,6 +138,15 @@ export function zedSpendToUsageLimits(input: {
       ],
     }),
   );
+}
+
+/** The cached billing period's end, once it has passed and the cached spend is stale. */
+export function endedZedPeriod(
+  usage: ServerProviderUsageLimits,
+  nowMillis: number,
+): string | undefined {
+  const resetsAt = usage.windows.find((window) => window.id === ZED_SPEND_WINDOW_ID)?.resetsAt;
+  return resetsAt !== undefined && Date.parse(resetsAt) <= nowMillis ? resetsAt : undefined;
 }
 
 /** Reads current spend and the billing period. Never fails; problems become unavailable states. */

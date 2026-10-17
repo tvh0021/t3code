@@ -6,6 +6,10 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.7.2 (2026-10-17)
+
+- Issue: after Zed's monthly reset, the Zed limit bar showed "resets now" with last period's date → Fix: it shows the next reset date and rereads spend once the period ends (ZED-RESET-001)
+
 ### 0.7.1 (2026-10-17)
 
 - Issue: Zed's provider entry always showed version 0.1.0 → Fix: it shows the bridge's real version; needs bridge 0.2.1 or later (ZED-VERSION-001)

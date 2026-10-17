@@ -29,6 +29,7 @@ import {
   ZED_BUILT_IN_MODELS,
 } from "../ZedProvider.ts";
 import {
+  endedZedPeriod,
   readZedAccountUsage,
   zedUsageNotYetRead,
   zedUsageWithoutSession,
@@ -93,14 +94,29 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         generateReviewGuide: () => unsupportedTextGen("generateReviewGuide"),
       };
 
-      // Account spend is read only at startup and after Zed prompts, never by
-      // the periodic status probe, so Zed's billing routes see real usage only.
+      // Account spend is read at startup, after Zed prompts, and once when the
+      // cached billing period has ended. The periodic status probe otherwise
+      // reuses the cached value, so Zed's billing routes see real usage only.
       const dashboardSession = effectiveConfig.dashboardSession;
       const startedAt = DateTime.formatIso(yield* DateTime.now);
       const accountUsage = yield* Ref.make(
         dashboardSession ? zedUsageNotYetRead(startedAt) : zedUsageWithoutSession(startedAt),
       );
       let latestModels = ZED_BUILT_IN_MODELS;
+      // Assigned once the snapshot exists; the probe below is built before it.
+      let refreshAfterPeriodEnd: Effect.Effect<void> = Effect.void;
+      let refreshedForPeriodEnd: string | undefined;
+      const refreshIfPeriodEnded = Effect.gen(function* () {
+        const ended = endedZedPeriod(
+          yield* Ref.get(accountUsage),
+          DateTime.toEpochMillis(yield* DateTime.now),
+        );
+        // Once per period end, so a dashboard that keeps reporting the old
+        // period cannot turn the status probe into a poll.
+        if (ended === undefined || ended === refreshedForPeriodEnd) return;
+        refreshedForPeriodEnd = ended;
+        yield* refreshAfterPeriodEnd;
+      });
       const checkZed = (workspaceCwd: string) =>
         Effect.suspend(() =>
           checkZedProviderStatus(
@@ -116,6 +132,7 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
               latestModels = draft.models.filter((model) => !model.isCustom);
             }),
           ),
+          Effect.tap(() => refreshIfPeriodEnded),
         );
       const checkProvider = checkZed(cwd).pipe(
         Effect.map(stampIdentity),
@@ -157,6 +174,7 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
         Effect.asVoid,
       );
       if (effectiveConfig.enabled && dashboardSession) {
+        refreshAfterPeriodEnd = refreshAccountUsageInBackground;
         yield* refreshAccountUsageInBackground;
       }
 

@@ -3,7 +3,13 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 
-import { readZedAccountUsage, ZED_SPEND_WINDOW_ID } from "./zedAccountUsage.ts";
+import {
+  endedZedPeriod,
+  readZedAccountUsage,
+  ZED_SPEND_WINDOW_ID,
+  zedSpendToUsageLimits,
+  zedUsageNotYetRead,
+} from "./zedAccountUsage.ts";
 
 const period = { start_at: "2026-10-01T00:00:00Z", end_at: "2026-10-31T00:00:00Z" };
 
@@ -117,4 +123,47 @@ describe("readZedAccountUsage", () => {
       expect(usage.unavailable?.reason).toBe("unsupported");
     }),
   );
+});
+
+describe("zedSpendToUsageLimits", () => {
+  it("rolls forward a period Zed still reports after its monthly rollover", () => {
+    const limits = zedSpendToUsageLimits({
+      checkedAt: "2026-10-17T07:28:53.000Z",
+      usage: { current_usage: { token_spend: { spend_in_cents: 38, limit_in_cents: 1000 } } },
+      subscription: {
+        subscription: {
+          period: { start_at: "2026-09-17T00:00:00.000Z", end_at: "2026-10-17T00:00:00.000Z" },
+        },
+      },
+    });
+    expect(limits.windows[0]).toMatchObject({
+      resetsAt: "2026-11-17T00:00:00.000Z",
+      windowDurationMins: 31 * 24 * 60,
+    });
+  });
+});
+
+describe("endedZedPeriod", () => {
+  const usage = (resetsAt: string) => ({
+    checkedAt: "2026-10-01T00:00:00.000Z",
+    windows: [
+      {
+        id: ZED_SPEND_WINDOW_ID,
+        kind: "monthly" as const,
+        label: "$0.38 spent",
+        usedPercent: 4,
+        resetsAt,
+      },
+    ],
+  });
+  const now = Date.parse("2026-10-17T12:00:00.000Z");
+
+  it("reports a cached period that has already ended", () => {
+    expect(endedZedPeriod(usage("2026-10-17T00:00:00.000Z"), now)).toBe("2026-10-17T00:00:00.000Z");
+  });
+
+  it("ignores a current period and usage without a spend window", () => {
+    expect(endedZedPeriod(usage("2026-11-17T00:00:00.000Z"), now)).toBeUndefined();
+    expect(endedZedPeriod(zedUsageNotYetRead("2026-10-17T00:00:00.000Z"), now)).toBeUndefined();
+  });
 });
