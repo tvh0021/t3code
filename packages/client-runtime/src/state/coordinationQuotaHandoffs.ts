@@ -1,8 +1,8 @@
 export function formatCoordinationQuotaHandoffs(
   fallbacks: Readonly<Record<string, ReadonlyArray<string>>>,
 ): string {
-  return Object.entries(fallbacks)
-    .toSorted(([left], [right]) => left.localeCompare(right))
+  return [...Object.entries(fallbacks)]
+    .sort(([left], [right]) => left.localeCompare(right))
     .map(([source, destinations]) => `${source}=${destinations.join(",")}`)
     .join("\n");
 }

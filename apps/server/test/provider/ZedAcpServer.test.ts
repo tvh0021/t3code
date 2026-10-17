@@ -1,8 +1,8 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import * as fs from "node:fs/promises";
-import * as os from "node:os";
-import * as path from "node:path";
-import * as readline from "node:readline";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeReadline from "node:readline";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 const ZED_ACP_SERVER_BIN = "/Users/tvh0021/git_repos/zed-dev/target/debug/zed-acp-server";
@@ -17,8 +17,8 @@ interface JsonRpcMessage {
 }
 
 class ZedAcpTestClient {
-  private proc: ChildProcess | null = null;
-  private rl: readline.Interface | null = null;
+  private proc: NodeChildProcess.ChildProcess | null = null;
+  private rl: NodeReadline.Interface | null = null;
   private nextId = 1;
   private pendingRequests = new Map<number | string, (res: JsonRpcMessage) => void>();
   private notifications: JsonRpcMessage[] = [];
@@ -33,7 +33,7 @@ class ZedAcpTestClient {
       args.push("--data-dir", dataDir);
     }
 
-    this.proc = spawn(ZED_ACP_SERVER_BIN, args, {
+    this.proc = NodeChildProcess.spawn(ZED_ACP_SERVER_BIN, args, {
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -44,7 +44,7 @@ class ZedAcpTestClient {
       }
     });
 
-    this.rl = readline.createInterface({
+    this.rl = NodeReadline.createInterface({
       input: this.proc.stdout!,
       crlfDelay: Infinity,
     });
@@ -127,14 +127,14 @@ describe("ZedAcpServer Harness (Milestone 2)", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "zed-acp-test-"));
-    await fs.writeFile(path.join(tempDir, "test.txt"), "Hello Zed Agent!");
+    tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "zed-acp-test-"));
+    await NodeFSP.writeFile(NodePath.join(tempDir, "test.txt"), "Hello Zed Agent!");
     client = new ZedAcpTestClient();
   });
 
   afterEach(async () => {
     await client.stop();
-    await fs.rm(tempDir, { recursive: true, force: true });
+    await NodeFSP.rm(tempDir, { recursive: true, force: true });
   });
 
   it("performs capability negotiation via initialize", async () => {

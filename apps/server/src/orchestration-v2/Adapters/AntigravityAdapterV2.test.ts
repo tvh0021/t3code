@@ -260,8 +260,6 @@ describe("AntigravityAdapterV2 client file system", () => {
       assert.isTrue(Exit.isFailure(outsideWrite));
       assert.isFalse(yield* fileSystem.exists(path.join(outside, "planted.txt")));
 
-      // An in-workspace symlink to an outside file must not carry a read or
-      // write out of the workspace.
       const linkPath = path.join(workspace, "linked-secret.txt");
       yield* fileSystem.symlink(outsideFile, linkPath);
       const linkedRead = yield* readTextFile(
@@ -275,7 +273,6 @@ describe("AntigravityAdapterV2 client file system", () => {
       ).pipe(Effect.exit);
       assert.isTrue(Exit.isFailure(linkedWrite), "a write through an escaping symlink is denied");
       assert.equal(yield* fileSystem.readFileString(outsideFile), "secret");
-      // A dangling in-workspace symlink to an outside path must not create it.
       const plantedTarget = path.join(outside, "created-through-link.txt");
       const danglingLink = path.join(workspace, "dangling.txt");
       yield* fileSystem.symlink(plantedTarget, danglingLink);
@@ -285,7 +282,6 @@ describe("AntigravityAdapterV2 client file system", () => {
       ).pipe(Effect.exit);
       assert.isTrue(Exit.isFailure(danglingWrite), "a write through a dangling symlink is denied");
       assert.isFalse(yield* fileSystem.exists(plantedTarget));
-      // A new file under an in-workspace directory link to outside is denied.
       yield* fileSystem.symlink(outside, path.join(workspace, "linked-dir"));
       const linkedDirWrite = yield* writeTextFile(
         {
@@ -297,7 +293,6 @@ describe("AntigravityAdapterV2 client file system", () => {
       ).pipe(Effect.exit);
       assert.isTrue(Exit.isFailure(linkedDirWrite), "a write under an escaping directory link");
       assert.isFalse(yield* fileSystem.exists(path.join(outside, "new.txt")));
-      // A symlink that stays inside the workspace keeps working.
       const insideLink = path.join(workspace, "inside-link.ts");
       yield* fileSystem.symlink(insidePath, insideLink);
       const viaInsideLink = yield* readTextFile(
@@ -371,7 +366,6 @@ describe("AntigravityAdapterV2 workspace changes", () => {
         modelSelection,
         runtimePolicy: policyFor(workspaceA),
       });
-      // The session opened for A now runs a turn for B.
       const now = yield* DateTime.now;
       yield* session
         .startTurn({
@@ -439,8 +433,6 @@ describe("AntigravityAdapterV2 workspace changes", () => {
 });
 
 describe("AntigravityAdapterV2 client file system under restrictive policies", () => {
-  // Antigravity asks before each of its own edits, so T3 serves an opted-in
-  // write whatever the thread's policy says, confined to the workspace.
   it.effect("serves in-workspace reads and writes and still refuses outside paths", () =>
     Effect.gen(function* () {
       const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -550,106 +542,104 @@ describe("AntigravityAdapterV2 Claude chat", () => {
     { name: "Gemini", model: "gemini-test-low" },
     { name: "Claude Opus 5.5", model: "claude-opus-5-5-medium" },
     { name: "Claude Sonnet 5.5", model: "claude-sonnet-5-5-medium" },
-  ] as const)(
-    "runs chat turn through ACP transport with $name",
-    ({ model }) =>
-      Effect.gen(function* () {
-        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const crypto = yield* Crypto.Crypto;
-        const mockAgentPath = yield* path.fromFileUrl(
-          new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
-        );
-        const workspace = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3-agy-claude-",
-        });
-        const instanceId = ProviderInstanceId.make("antigravity-claude-test");
-        const adapter = yield* makeAntigravityAdapterV2({
-          instanceId,
-          selfInvocation: yield* resolveSelfInvocation(),
-          makeRuntime: (input) =>
-            makeAntigravityAcpRuntime({
-              ...input,
-              childProcessSpawner,
-              spawn: {
-                command: process.execPath,
-                args: [mockAgentPath],
-                cwd: input.cwd,
-                env: { T3_ACP_ANTIGRAVITY: "1" },
-              },
-            }).pipe(Effect.provideService(Crypto.Crypto, crypto)),
-          withProcess: (_stop, task) => task,
-          defaultModel: Effect.succeed(undefined),
-        });
-        const threadId = ThreadId.make(`thread-agy-claude-${model}`);
-        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          cwd: workspace,
-        });
-        const modelSelection = { instanceId, model } as const;
-        const session = yield* adapter.openSession({
-          threadId,
-          providerSessionId: ProviderSessionId.make(`session-agy-claude-${model}`),
-          modelSelection,
-          runtimePolicy,
-        });
-        const providerThread = yield* session.ensureThread({
-          threadId,
-          modelSelection,
-          runtimePolicy,
-        });
-        const now = yield* DateTime.now;
-        yield* session
-          .startTurn({
-            appThread: {
-              createdBy: "user",
-              creationSource: "web",
-              id: threadId,
-              projectId: ProjectId.make("project-agy-claude"),
-              title: "Claude chat test",
-              providerInstanceId: instanceId,
-              modelSelection,
-              runtimeMode: "full-access",
-              interactionMode: "default",
-              branch: null,
-              worktreePath: workspace,
-              activeProviderThreadId: providerThread.id,
-              lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
-              forkedFrom: null,
-              createdAt: now,
-              updatedAt: now,
-              archivedAt: null,
-              settledOverride: null,
-              settledAt: null,
-              lastVisitedAt: null,
-              deletedAt: null,
+  ] as const)("runs chat turn through ACP transport with $name", ({ model }) =>
+    Effect.gen(function* () {
+      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const crypto = yield* Crypto.Crypto;
+      const mockAgentPath = yield* path.fromFileUrl(
+        new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+      );
+      const workspace = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-agy-claude-",
+      });
+      const instanceId = ProviderInstanceId.make("antigravity-claude-test");
+      const adapter = yield* makeAntigravityAdapterV2({
+        instanceId,
+        selfInvocation: yield* resolveSelfInvocation(),
+        makeRuntime: (input) =>
+          makeAntigravityAcpRuntime({
+            ...input,
+            childProcessSpawner,
+            spawn: {
+              command: process.execPath,
+              args: [mockAgentPath],
+              cwd: input.cwd,
+              env: { T3_ACP_ANTIGRAVITY: "1" },
             },
-            threadId,
-            runId: RunId.make("run-agy-claude"),
-            runOrdinal: 1,
-            providerTurnOrdinal: 1,
-            attemptId: RunAttemptId.make("attempt-agy-claude"),
-            rootNodeId: NodeId.make("node-agy-claude"),
-            providerThread,
-            message: {
-              createdBy: "user",
-              creationSource: "web",
-              messageId: MessageId.make("message-agy-claude"),
-              text: "Hello",
-              attachments: [],
-            },
+          }).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+        withProcess: (_stop, task) => task,
+        defaultModel: Effect.succeed(undefined),
+      });
+      const threadId = ThreadId.make(`thread-agy-claude-${model}`);
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: workspace,
+      });
+      const modelSelection = { instanceId, model } as const;
+      const session = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make(`session-agy-claude-${model}`),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* session.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      yield* session
+        .startTurn({
+          appThread: {
+            createdBy: "user",
+            creationSource: "web",
+            id: threadId,
+            projectId: ProjectId.make("project-agy-claude"),
+            title: "Claude chat test",
+            providerInstanceId: instanceId,
             modelSelection,
-            runtimePolicy,
-          })
-          .pipe(Effect.forkScoped);
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: workspace,
+            activeProviderThreadId: providerThread.id,
+            lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+            forkedFrom: null,
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: null,
+          },
+          threadId,
+          runId: RunId.make("run-agy-claude"),
+          runOrdinal: 1,
+          providerTurnOrdinal: 1,
+          attemptId: RunAttemptId.make("attempt-agy-claude"),
+          rootNodeId: NodeId.make("node-agy-claude"),
+          providerThread,
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            messageId: MessageId.make("message-agy-claude"),
+            text: "Hello",
+            attachments: [],
+          },
+          modelSelection,
+          runtimePolicy,
+        })
+        .pipe(Effect.forkScoped);
 
-        const terminalEvent = yield* session.events.pipe(
-          Stream.filter((event) => event.type === "turn.terminal"),
-          Stream.runHead,
-        );
-        assert.isDefined(terminalEvent);
-      }).pipe(Effect.provide(layerSession), Effect.scoped),
+      const terminalEvent = yield* session.events.pipe(
+        Stream.filter((event) => event.type === "turn.terminal"),
+        Stream.runHead,
+      );
+      assert.isDefined(terminalEvent);
+    }).pipe(Effect.provide(layerSession), Effect.scoped),
   );
 });

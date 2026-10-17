@@ -43,6 +43,17 @@ describe("organizeUsageModels", () => {
     ]);
   });
 
+  it("sorts by total tokens when the breakdown shows tokens", () => {
+    const models: ModelTotals[] = [
+      makeModel({ model: "pricey", costUsd: 10.0, totalTokens: 50 }),
+      makeModel({ model: "busy", costUsd: 1.0, totalTokens: 500 }),
+    ];
+
+    const { subscriptionModels } = organizeUsageModels(models, true);
+
+    expect(subscriptionModels.map((m) => m.model)).toEqual(["busy", "pricey"]);
+  });
+
   it("splits models into subscription and credit-based groups while preserving ordering", () => {
     const models: ModelTotals[] = [
       makeModel({ model: "gpt-5.6-sol", costUsd: 12.0, isCreditBased: false }),
@@ -53,13 +64,7 @@ describe("organizeUsageModels", () => {
 
     const { subscriptionModels, creditModels } = organizeUsageModels(models);
 
-    expect(subscriptionModels.map((m) => m.model)).toEqual([
-      "gpt-5.6-sol",
-      "claude-sonnet-5-5",
-    ]);
-    expect(creditModels.map((m) => m.model)).toEqual([
-      "chatllm-smart",
-      "chatllm-fast",
-    ]);
+    expect(subscriptionModels.map((m) => m.model)).toEqual(["gpt-5.6-sol", "claude-sonnet-5-5"]);
+    expect(creditModels.map((m) => m.model)).toEqual(["chatllm-smart", "chatllm-fast"]);
   });
 });

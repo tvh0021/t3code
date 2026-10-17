@@ -23,10 +23,7 @@ import {
   type OpenCodeAdapterV2DriverEnv,
 } from "@t3tools/provider-opencode/server";
 import { PiAdapterV2Driver, type PiAdapterV2DriverEnv } from "@t3tools/provider-pi/server";
-import {
-  ZedAdapterV2Driver,
-  type ZedAdapterV2DriverEnv,
-} from "./Adapters/ZedAdapterV2.ts";
+import { ZedAdapterV2Driver, type ZedAdapterV2DriverEnv } from "./Adapters/ZedAdapterV2.ts";
 import type { AnyProviderAdapterDriver } from "@t3tools/provider-core/server/adapterDriver";
 
 export type BuiltInProviderAdapterDriversV2Env =

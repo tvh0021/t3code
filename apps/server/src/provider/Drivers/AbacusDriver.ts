@@ -203,10 +203,7 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
           return updated;
         }),
         get streamChanges() {
-          return Stream.concat(
-            Stream.fromEffect(Ref.get(snapshotRef)),
-            Stream.fromPubSub(changes),
-          );
+          return Stream.concat(Stream.fromEffect(Ref.get(snapshotRef)), Stream.fromPubSub(changes));
         },
         applyUsageLimits: (update) =>
           Effect.gen(function* () {

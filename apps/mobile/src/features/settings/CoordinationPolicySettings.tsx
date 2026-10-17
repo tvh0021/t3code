@@ -6,8 +6,8 @@ import {
 import type { EnvironmentId, ServerSettings } from "@t3tools/contracts";
 import { useState } from "react";
 import { Alert, TextInput, View } from "react-native";
-import { AppText } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "./components/SettingsSection";
@@ -49,10 +49,7 @@ export function CoordinationPolicySettings({
         setDraft(null);
         setFallbackDraft(null);
         setThresholdDraft(null);
-        Alert.alert(
-          "Limits saved",
-          "New delegated tasks use these limits.",
-        );
+        Alert.alert("Limits saved", "New delegated tasks use these limits.");
       }
     } catch (error) {
       Alert.alert(
@@ -101,7 +98,7 @@ export function CoordinationPolicySettings({
           onChangeText={setDraft}
           className="min-h-24 rounded-lg border border-border-subtle p-3 text-foreground"
         />
-        <MaterialButton label="Save limits" disabled={pending} onPress={() => void save()} />
+        <Button label="Save limits" disabled={pending} onPress={() => void save()} />
         <AppText>
           When a thread hits a usage limit and auto-resume is on, switch to a fallback only if its
           quota windows are below this percentage.
@@ -132,11 +129,7 @@ export function CoordinationPolicySettings({
           onChangeText={setFallbackDraft}
           className="min-h-24 rounded-lg border border-border-subtle p-3 text-foreground"
         />
-        <MaterialButton
-          label="Refresh model policy"
-          disabled={pending}
-          onPress={() => void maintain()}
-        />
+        <Button label="Refresh model policy" disabled={pending} onPress={() => void maintain()} />
       </View>
     </SettingsSection>
   );
