@@ -576,13 +576,13 @@ export function mergeUsage(
         totalTokens: 0,
         byProvider: new Map<UsageProviderKind, { costUsd: number; totalTokens: number }>(),
       };
+      // Periods use the subscription basis, like the headline. Credit spend
+      // stays in provider and model totals, so period columns sum to Total.
+      const dayProvider = day.byProvider.get(bucket.provider) ?? { costUsd: 0, totalTokens: 0 };
       if (isSubscription) {
         day.costUsd += bucketCostUsd;
         day.totalTokens += tokens;
-      }
-      const dayProvider = day.byProvider.get(bucket.provider) ?? { costUsd: 0, totalTokens: 0 };
-      dayProvider.costUsd += bucketCostUsd;
-      if (isSubscription) {
+        dayProvider.costUsd += bucketCostUsd;
         dayProvider.totalTokens += tokens;
       }
       day.byProvider.set(bucket.provider, dayProvider);
@@ -596,16 +596,14 @@ export function mergeUsage(
           totalTokens: 0,
           byProvider: new Map<UsageProviderKind, { costUsd: number; totalTokens: number }>(),
         };
-        if (isSubscription) {
-          hour.costUsd += bucketCostUsd;
-          hour.totalTokens += tokens;
-        }
         const hourProvider = hour.byProvider.get(bucket.provider) ?? {
           costUsd: 0,
           totalTokens: 0,
         };
-        hourProvider.costUsd += bucketCostUsd;
         if (isSubscription) {
+          hour.costUsd += bucketCostUsd;
+          hour.totalTokens += tokens;
+          hourProvider.costUsd += bucketCostUsd;
           hourProvider.totalTokens += tokens;
         }
         hour.byProvider.set(bucket.provider, hourProvider);

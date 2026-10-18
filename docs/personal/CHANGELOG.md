@@ -6,6 +6,14 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.7.5 (2026-10-18)
+
+- Issue: on Usage → Day, provider columns included Codex credit spend that Total left out → Fix: day and hour columns, Total and charts all use subscription cost, matching the headline; credit spend stays in provider and model totals (USAGE-002)
+
+- Issue: ChatLLM credits in Usage diverged from the Abacus dashboard (13,558 vs 4,857 credits for Argon on October 17) → Fix: credits now come from Abacus's billing ledger by UTC day and include use outside T3; hourly views and days without ledger data estimate credits from tokens (CHATLLM-USAGE-002)
+
+- Issue: Usage listed an unpriced `<synthetic>` Claude model → Fix: Claude Code's locally generated messages (errors, interruptions) are no longer counted as usage (USAGE-008)
+
 ### 0.7.4 (2026-10-18)
 
 - Issue: Antigravity Usage showed unknown models, split Gemini tiers and unpriced Argon usage → Fix: recover model names, combine access tiers and apply Argon's introductory API rate for Antigravity and ChatLLM (USAGE-007)

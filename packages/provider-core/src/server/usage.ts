@@ -14,6 +14,8 @@ export type UsageSpeed = "standard" | "fast" | "ultrafast";
 export interface UsageRecord {
   readonly provider: UsageProviderKind;
   readonly timestampMs: number;
+  /** Account snapshots with no request timestamps retain their UTC billing day. */
+  readonly billingDay?: string;
   readonly model: string;
   readonly rateModel?: string;
   readonly sessionId: string;

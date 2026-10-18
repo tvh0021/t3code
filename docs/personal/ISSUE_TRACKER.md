@@ -5,14 +5,6 @@ before diagnosing a new bug. Release history is in [CHANGELOG.md](./CHANGELOG.md
 
 ## Open issues
 
-### USAGE-002: Day provider costs don't add up to Total
-
-Open since 2026-10-11.
-Problem: On Usage → Day, provider costs include credit-based Codex usage but Total doesn't (e.g. Codex $5.78, Total $5.43).
-Cause: `mergeUsage` leaves credit buckets out of the day and hour totals but adds their API-equivalent cost to provider totals.
-Done when: provider columns, Total and charts use the same cost basis, or show subscription and credit values separately.
-History: Reproduced on installed 0.3.2 and through the shared merge with a $1 subscription bucket and a 25-credit bucket carrying $3: Codex $4, Total $1.
-
 ### ZED-CONTEXT-001: Zed context meter gets no token usage
 
 Open since 2026-10-12.
@@ -21,16 +13,9 @@ Cause: The companion Zed bridge never sends ACP `usage_update`; T3's adapter han
 Done when: the bridge reports context use and capacity for new and resumed sessions, and the meter shows it.
 History: Native Zed session storage holds nonzero input and output token counts, but the captured ACP stream has no usage updates.
 
-### CHATLLM-USAGE-002: ChatLLM credits diverge from Abacus's billing ledger
-
-Open since 2026-10-18.
-Problem: T3's saved Argon usage shows 4,857.39 credits for October 17, while Abacus's online ledger shows 13,558.16.
-Cause: T3 reads account deltas when turns finish; Abacus can post charges up to an hour later. Account-wide deltas also cannot reliably attribute overlapping models.
-Done when: delayed charges reconcile against authoritative model billing, and estimated credits are identified.
-History: The saved records contain no later balance snapshots to recover the missing charges. Release 0.7.4 fixes the missing first-turn baseline and last-request-only token totals, but does not reconstruct historical credits.
-
 ## Known limitations
 
+- **ChatLLM ledger days are UTC**: Abacus bills by UTC day, so ChatLLM credits land on the UTC date even when Usage uses another time zone; turn tokens use local days.
 - **App Store 1.2 and 1.3 Usage** (MOBILE-001): these phone apps show only Claude, Codex and Grok usage. The host sends them the older Usage format.
 - **ChatLLM on the phone**: newer phone apps don't know the ChatLLM provider, so the host leaves ChatLLM out of their Usage tab (MOBILE-002). Desktop and web show it.
 - **app.t3.codes Usage**: the hosted web app probably fails Usage against this host the way the phone did, because it receives ChatLLM entries. Untested.
@@ -40,6 +25,12 @@ History: The saved records contain no later balance snapshots to recover the mis
 - **Zed effort tests** (ZED-TEST-001): the legacy Zed tests that checked per-model effort lists and rejected unsupported effort values were removed with the pre-v2 adapter. `ZedAdapterV2.test.ts` covers only model-then-effort ordering.
 
 ## Resolved
+
+- **CHATLLM-USAGE-002** (0.7.5): ChatLLM credits diverged from Abacus's dashboard. Cause: balance changes missed delayed charges and mixed concurrent turns. Fix: use daily ledger credits.
+
+- **USAGE-008** (0.7.5): Usage listed an unpriced `<synthetic>` Claude model. Cause: local errors and interruptions entered usage scans. Fix: aggregation skips synthetic messages, including cached records.
+
+- **USAGE-002** (0.7.5): Day provider costs exceeded Total. Cause: provider columns included credit spend excluded from totals. Fix: periods consistently count subscription costs.
 
 - **CHATLLM-USAGE-001** (0.7.4): ChatLLM undercounted first-turn credits and tool-loop tokens. Cause: missing starting balance and overwritten usage. Fix: share an initial baseline and sum requests.
 

@@ -43,10 +43,10 @@ destructive commands. A turn allows 200 tool calls on models whose id contains
 **Decisions.**
 
 - 0.7.4 (CHATLLM-USAGE-001): `AbacusAdapterV2` overwrote usage after each
-  request and first read the balance after charging. It now sums every request's
-  tokens and shares one initial balance read per adapter before requests start.
-  Account deltas still miss delayed charges and cannot reliably separate
-  overlapping models; historical logs cannot recover those charges.
+  request. It now sums every request's tokens.
+- 0.7.5 (CHATLLM-USAGE-002): per-turn credits from account balance changes
+  missed late charges and mixed concurrent turns. Turn logs now hold tokens only,
+  and credits come from Abacus's billing ledger (`abacusLedger.ts`); see Usage.
 - 0.6.1 (CHATLLM-STEPS-001): the old 20-call cap ended delegated runs with a
   silent `completed`. The cap now depends on the model, the batch that would
   exceed it is skipped so history has no unanswered calls, and the turn ends
@@ -65,10 +65,15 @@ reviews now run in their own worktree instead (see Delegated tasks).
 **Now.** Usage prices every provider's tokens at API-equivalent rates. Codex
 credits cost $0.04 and ChatLLM credits $0.0005 (`packages/contracts/src/usage.ts`).
 Effort and thinking variants of a model share one row. Credit-based usage is
-shown separately from subscription usage. The period picker includes All time
+shown separately from subscription usage. Day and hour columns, totals and charts
+count subscription costs only. Locally generated Claude `<synthetic>` messages
+do not count as usage. The period picker includes All time
 (`Cmd/Ctrl+Shift+5`) and remembers the last period. ChatLLM writes per-turn
-usage logs; every other provider is read from its native transcripts or
-database. Antigravity model aliases share a priced model row, and unnamed
+token logs; every other provider is read from its native transcripts or
+database. ChatLLM credits come from Abacus's daily billing ledger, read with the
+API key, so they match the Abacus dashboard and include use outside T3. Turns on
+ledger days add tokens only; hourly views and days the ledger lacks price tokens
+at published rates. Antigravity model aliases share a priced model row, and unnamed
 steps inherit the nearest named model when available.
 
 **Decisions.**
@@ -115,6 +120,17 @@ steps inherit the nearest named model when available.
   The shared rate also prices ChatLLM Argon usage without changing its reported credits.
   The rate doubles on 2026-12-01 and `usagePricing.ts` must be updated then.
   Gemini 3.8 Flash's introductory rate likewise doubles on 2027-01-01.
+- 0.7.5 (CHATLLM-USAGE-002): the ledger is the undocumented
+  `_getOrganizationComputePointLog` endpoint behind the Abacus billing page.
+  It returns 30 UTC days per model, so `usage-abacus-ledger.json` keeps older
+  days. It refreshes during Usage scans, at most once a minute, and charges post
+  within minutes. Token pricing supplies estimates when daily ledger data is
+  unavailable or the view needs hourly timestamps.
+- 0.7.5 (USAGE-002): `mergeUsage` included credit spend in period provider
+  columns but omitted it from Total. Both now use subscription costs.
+- 0.7.5 (USAGE-008): Claude's local errors and interruptions appeared as an
+  unpriced model. `UsageAggregator.add` skips `<synthetic>` records, including
+  records loaded from earlier scan caches.
 - A 20,000-bucket merge has a 1,000 ms test budget (`usageMerge.test.ts`).
 
 **Removed.** In the 0.4.0 sync, the fork's Antigravity per-turn logs and its

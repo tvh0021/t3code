@@ -213,7 +213,7 @@ describe("AbacusAdapterV2 unit helpers", () => {
 });
 
 describe("AbacusAdapterV2 session and turn execution", () => {
-  it.effect("records the first charged turn and every request in its tool loop", () =>
+  it.effect("records every request in a turn's tool loop", () =>
     Effect.gen(function* () {
       const tempStateDir = NodeFS.mkdtempSync(
         NodePath.join(NodeOS.tmpdir(), "abacus-usage-state-"),
@@ -225,15 +225,6 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       }> = [];
 
       const fetch: typeof globalThis.fetch = async (input, init) => {
-        if (String(input).includes("_getOrganizationComputePoints")) {
-          return Response.json({
-            success: true,
-            result: {
-              curr_month_usage: requests.length * 40,
-              computePointsLeft: 1000 - requests.length * 40,
-            },
-          });
-        }
         requests.push({
           url: String(input),
           authorization: new Headers(init?.headers).get("authorization"),
@@ -359,8 +350,8 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       expect(usageLine.payload.info.last_token_usage).toMatchObject({
         input_tokens: 30,
         output_tokens: 15,
-        credits: 80,
       });
+      expect(usageLine.payload.info.last_token_usage).not.toHaveProperty("credits");
 
       NodeFS.rmSync(tempStateDir, { recursive: true, force: true });
     }),

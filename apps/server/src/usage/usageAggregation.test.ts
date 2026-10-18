@@ -126,6 +126,13 @@ describe("UsageAggregator", () => {
     expect(result.buckets[0]?.totals.outputTokens).toBe(50);
   });
 
+  it("leaves Claude's locally generated <synthetic> messages out of usage", () => {
+    const result = aggregate([record(), record({ model: "<synthetic>" })]);
+
+    expect(result.buckets.map((bucket) => bucket.model)).toEqual([record().model]);
+    expect(result.buckets[0]?.records).toBe(1);
+  });
+
   it("still sums records that carry no dedupe key", () => {
     const result = aggregate([record(), record()]);
 
@@ -241,6 +248,46 @@ describe("UsageAggregator", () => {
       credits: 42,
       unpricedRecords: 0,
     });
+  });
+
+  it("takes a ledger-billed day's cost from the ledger and only tokens from turns", () => {
+    const aggregator = new UsageAggregator({
+      timeZone: "UTC",
+      sinceDay: "2026-08-01",
+      untilDay: "2026-08-31",
+      rates,
+      billedDays: new Map([["abacus", new Set(["2026-08-07"])]]),
+    });
+    const turn = { provider: "abacus", model: "gemini-4-argon", credits: 42 } as const;
+    aggregator.add(record(turn));
+    aggregator.add(record({ ...turn, timestampMs: Date.parse("2026-08-08T01:00:00Z") }));
+    aggregator.add(
+      record({
+        ...turn,
+        credits: 30,
+        reportedCostUsd: 0.015,
+        billingDay: "2026-08-07",
+        sessionId: "",
+        totals: {
+          uncachedInputTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationTokens: 0,
+          outputTokens: 0,
+          reasoningTokens: 0,
+        },
+      }),
+    );
+    const byDay = new Map<string, { credits: number; costUsd: number; outputTokens: number }>();
+    for (const bucket of aggregator.finish().buckets) {
+      const day = byDay.get(bucket.day) ?? { credits: 0, costUsd: 0, outputTokens: 0 };
+      day.credits += bucket.credits ?? 0;
+      day.costUsd += bucket.costUsd;
+      day.outputTokens += bucket.totals.outputTokens;
+      byDay.set(bucket.day, day);
+    }
+
+    expect(byDay.get("2026-08-07")).toEqual({ credits: 30, costUsd: 0.015, outputTokens: 50 });
+    expect(byDay.get("2026-08-08")).toMatchObject({ credits: 42, outputTokens: 50 });
   });
 
   it("counts tokens but not cost for a model with no rate", () => {

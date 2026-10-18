@@ -5,6 +5,7 @@ import {
   type UsageBucket,
   type UsageCategoryCost,
   type UsageDay,
+  type UsageProviderKind,
   type UsageResolution,
   type UsageTokenTotals,
 } from "@t3tools/contracts";
@@ -90,6 +91,11 @@ export interface AggregateOptions {
   readonly resolution?: UsageResolution;
   readonly sinceTimeMs?: number;
   readonly untilTimeMs?: number;
+  /**
+   * UTC days whose cost comes from a provider's billing ledger. The ledger's
+   * own records carry that cost; other records for those days add tokens only.
+   */
+  readonly billedDays?: ReadonlyMap<UsageProviderKind, ReadonlySet<string>>;
 }
 
 export function resolveModelAliases(
@@ -154,7 +160,11 @@ export class UsageAggregator {
   }
 
   add(input: CreditedUsageRecord, sourcePath?: string): boolean {
+    // Claude Code labels locally generated messages (errors, interruptions)
+    // `<synthetic>`. They were never sent to a model, so they are not usage.
+    if (input.model === "<synthetic>") return false;
     const record = this.#mapModel(input);
+    if (record.billingDay !== undefined && this.#hourlyWindow !== null) return false;
     if (record.dedupeKey !== null) {
       if (this.#seen.has(record.dedupeKey)) {
         this.#duplicatesDropped += 1;
@@ -172,7 +182,7 @@ export class UsageAggregator {
       return false;
     }
 
-    const day = this.#toDay(record.timestampMs);
+    const day = record.billingDay ?? this.#toDay(record.timestampMs);
     if (
       this.#hourlyWindow === null &&
       (day < this.#options.sinceDay || day > this.#options.untilDay)
@@ -198,15 +208,21 @@ export class UsageAggregator {
       isCredit,
     );
 
+    const billedElsewhere =
+      record.billingDay === undefined &&
+      this.#options.billedDays
+        ?.get(record.provider)
+        ?.has(new Date(record.timestampMs).toISOString().slice(0, 10)) === true;
     // Codex auto-review spends no paid credits or USD.
-    const priced = isCodexAutoReview
-      ? ({
-          costUsd: 0,
-          costSource: "modelPriced",
-          categoryCostUsd: null,
-          speedPremiumUsd: 0,
-        } as const)
-      : priceUsage(this.#options.rates, record, this.#options.priceOverrides);
+    const priced =
+      isCodexAutoReview || billedElsewhere
+        ? ({
+            costUsd: 0,
+            costSource: "modelPriced",
+            categoryCostUsd: null,
+            speedPremiumUsd: 0,
+          } as const)
+        : priceUsage(this.#options.rates, record, this.#options.priceOverrides);
 
     const totals = bucket.totals;
     totals.uncachedInputTokens += record.totals.uncachedInputTokens;
@@ -215,7 +231,7 @@ export class UsageAggregator {
     totals.outputTokens += record.totals.outputTokens;
     totals.reasoningTokens += record.totals.reasoningTokens;
     bucket.costUsd += priced.costUsd;
-    if (recordCredits > 0) {
+    if (recordCredits > 0 && !billedElsewhere) {
       bucket.credits += recordCredits;
     } else if (record.provider === "abacus") {
       bucket.credits += priced.costUsd > 0 ? usdToAbacusCredits(priced.costUsd) : 0;
@@ -236,9 +252,10 @@ export class UsageAggregator {
     if (record.speed === "fast") bucket.fastCostUsd += priced.costUsd;
     if (record.speed === "ultrafast") bucket.ultrafastCostUsd += priced.costUsd;
     bucket.speedPremiumUsd += priced.speedPremiumUsd;
-    bucket.cacheSavingsUsd += isCodexAutoReview
-      ? 0
-      : cacheSavingsUsd(this.#options.rates, record, this.#options.priceOverrides);
+    bucket.cacheSavingsUsd +=
+      isCodexAutoReview || billedElsewhere
+        ? 0
+        : cacheSavingsUsd(this.#options.rates, record, this.#options.priceOverrides);
     bucket.records += 1;
     if (priced.costSource === "unpriced") bucket.unpricedRecords += 1;
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;

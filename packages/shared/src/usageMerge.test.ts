@@ -1076,6 +1076,39 @@ describe("mergeUsage", () => {
     expect(creditModel?.totalTokens).toBe(0);
   });
 
+  it("keeps credit spend out of period provider columns so they sum to Total", () => {
+    const codexSource = { provider: "codex" as const, hostId: "mac", homePath: "/a" };
+    const totals = {
+      uncachedInputTokens: 10,
+      cachedInputTokens: 0,
+      cacheCreationTokens: 0,
+      outputTokens: 2,
+      reasoningTokens: 0,
+    };
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              bucket({ provider: "codex", model: "gpt-5.6-sol", costUsd: 1, totals }),
+              bucket({ provider: "codex", model: "gpt-5.6-sol", costUsd: 3, credits: 25, totals }),
+            ],
+            [codexSource],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.daily).toHaveLength(1);
+    for (const period of [...merged.daily, ...merged.hourly]) {
+      expect(period.costUsd).toBe(1);
+      expect(period.byProvider.get("codex")?.costUsd).toBe(1);
+    }
+    expect(merged.subscriptionCostUsd).toBe(1);
+  });
+
   it("prices codex auto-review at zero in both model buckets", () => {
     const codexSource = { provider: "codex" as const, hostId: "mac", homePath: "/a" };
     const merged = mergeUsage(

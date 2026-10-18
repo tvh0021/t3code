@@ -1,6 +1,7 @@
 import * as NodeOS from "node:os";
 
 import {
+  normalizeUsageModel,
   type ProviderInstanceConfig,
   ProviderInstanceId,
   USAGE_CONTRACT_VERSION,
@@ -30,6 +31,8 @@ import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
+import { makeAbacusLedgerScanner } from "./abacusLedger.ts";
+import { AbacusDriver } from "../provider/Drivers/AbacusDriver.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { BUILT_IN_USAGE_DRIVERS, type BuiltInUsageReadersEnv } from "../provider/builtInDrivers.ts";
@@ -251,6 +254,7 @@ export const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
   const hostEnvironment = yield* HostProcess.Environment;
+  const scanAbacusLedger = yield* makeAbacusLedgerScanner(config.stateDir);
   const readerContext = yield* Effect.context<BuiltInUsageReadersEnv>();
 
   const fileCache: ScanCache = new Map();
@@ -641,6 +645,7 @@ export const make = Effect.gen(function* () {
     settings: ServerSettingsValue,
     retentionCutoffMs: number,
     awaitRefresh: boolean,
+    resolution: "day" | "hour",
   ) {
     const dirs = yield* resolveTranscriptDirs(settings).pipe(Effect.provideContext(readerContext));
 
@@ -680,7 +685,28 @@ export const make = Effect.gen(function* () {
       [Effect.forEach(dirs, (dir) => scanTranscriptDir(dir, windowStartMs)), scans],
       { concurrency: "unbounded" },
     );
-    const scanned: readonly ScannedDir[] = [...transcripts, ...scanDirs.flat()];
+    // Ledger columns are named for display; map them onto the names T3 records.
+    const abacusModels = new Set([...OFFICIAL_MODEL_RATES.keys(), ...STATIC_FALLBACK_RATES.keys()]);
+    for (const source of transcripts) {
+      if (source.provider !== "abacus") continue;
+      for (const file of source.files ?? []) {
+        for (const record of file.records) abacusModels.add(normalizeUsageModel(record.model));
+      }
+    }
+    const ledger = yield* scanAbacusLedger(
+      yield* usageInstances(AbacusDriver, settings),
+      abacusModels,
+      resolution,
+    );
+    const scanned: readonly ScannedDir[] = [
+      ...transcripts,
+      ...scanDirs.flat(),
+      ...ledger.map((source) => ({
+        ...source,
+        provider: "abacus" as const,
+        volumeId: source.volumeId ?? "",
+      })),
+    ];
     return scanned;
   });
 
@@ -738,11 +764,27 @@ export const make = Effect.gen(function* () {
     const [, scannedDirs] = yield* Effect.all(
       [
         ensureRates(false),
-        collectDirs(windowStartMs, settings, retentionCutoffMs, input.awaitRefresh === true),
+        collectDirs(
+          windowStartMs,
+          settings,
+          retentionCutoffMs,
+          input.awaitRefresh === true,
+          input.resolution ?? "day",
+        ),
       ],
       { concurrency: 2 },
     );
 
+    const billedDays = new Map<UsageProviderKind, Set<string>>();
+    for (const { provider, files } of scannedDirs) {
+      for (const file of files ?? []) {
+        for (const { billingDay } of file.records) {
+          if (billingDay === undefined) continue;
+          const days = billedDays.get(provider) ?? new Set();
+          billedDays.set(provider, days.add(billingDay));
+        }
+      }
+    }
     const aggregator = new UsageAggregator({
       timeZone: input.timeZone,
       sinceDay: input.sinceDay,
@@ -752,6 +794,7 @@ export const make = Effect.gen(function* () {
       rates,
       priceOverrides: createOverrideRateTable(settings.usagePriceOverrides),
       modelAliases: resolveModelAliases(settings.usageModelAliases),
+      billedDays,
     });
 
     const sources: UsageSource[] = [];

@@ -3,12 +3,10 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import {
-  ABACUS_CREDIT_COST_USD,
   ABACUS_DEFAULT_API_BASE_URL,
   AbacusSettings,
   MessageId,
   NodeId,
-  normalizeUsageModel,
   ProviderDriverKind,
   ProviderSessionId,
   type ModelSelection,
@@ -40,11 +38,6 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import { appendProviderTurnUsage } from "../../usage/providerTurnUsageWriter.ts";
-import {
-  fetchAbacusComputePoints,
-  type AbacusComputePointsSnapshot,
-} from "../../provider/abacusUsageLimits.ts";
-import { STATIC_FALLBACK_RATES } from "../../usage/usagePricing.ts";
 
 export const ABACUS_PROVIDER = ProviderDriverKind.make("abacus");
 const decodeAbacusSettings = Schema.decodeSync(AbacusSettings);
@@ -538,18 +531,6 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
   options: AbacusAdapterV2Options,
 ) {
   const fetchFn = options.fetch ?? globalThis.fetch;
-  let lastKnownComputePoints: AbacusComputePointsSnapshot | null = null;
-  // Concurrent first turns must share one baseline taken before any request charges the account.
-  const initializeComputePoints = yield* Effect.cached(
-    Effect.promise(() => fetchAbacusComputePoints(options.apiKey, undefined, fetchFn, 3000)).pipe(
-      Effect.tap((points) =>
-        Effect.sync(() => {
-          lastKnownComputePoints = points;
-        }),
-      ),
-      Effect.catchCause(() => Effect.void),
-    ),
-  );
 
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: options.instanceId,
@@ -693,7 +674,6 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
             outputTokens: 0,
             reasoningTokens: 0,
           };
-          if (options.stateDir) yield* initializeComputePoints;
           let failure: string | undefined;
 
           while (!active.cancelled) {
@@ -1153,28 +1133,9 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
           }
 
           if (options.stateDir) {
-            const currentPoints = yield* Effect.promise(() =>
-              fetchAbacusComputePoints(options.apiKey, undefined, fetchFn, 3000),
-            ).pipe(Effect.catchCause(() => Effect.succeed(null)));
-
-            let credits: number | undefined;
-            if (currentPoints) {
-              if (lastKnownComputePoints) {
-                const usageDelta =
-                  (currentPoints.currMonthUsage ?? 0) -
-                  (lastKnownComputePoints.currMonthUsage ?? 0);
-                const leftDelta =
-                  (lastKnownComputePoints.computePointsLeft ?? 0) -
-                  (currentPoints.computePointsLeft ?? 0);
-                if (usageDelta > 0) {
-                  credits = Math.round(usageDelta * 100) / 100;
-                } else if (leftDelta > 0) {
-                  credits = Math.round(leftDelta * 100) / 100;
-                }
-              }
-              lastKnownComputePoints = currentPoints;
-            }
-
+            // Credits come from Abacus's billing ledger, or from these tokens at
+            // published rates. Balance changes can't be attributed to one turn:
+            // concurrent turns share the account, and charges post late.
             const promptTokens = turnUsage.inputTokens;
             const cachedTokens = turnUsage.cachedInputTokens;
             let outputTokens = turnUsage.outputTokens;
@@ -1189,20 +1150,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
               outputTokens = 1;
             }
 
-            if (credits === undefined || credits === 0) {
-              const normModel = normalizeUsageModel(turnModel);
-              const rate =
-                STATIC_FALLBACK_RATES.get(normModel) ?? STATIC_FALLBACK_RATES.get("route-llm");
-              if (rate) {
-                const cost =
-                  uncachedInput * rate.inputCostPerToken +
-                  cachedTokens * rate.cacheReadCostPerToken +
-                  outputTokens * rate.outputCostPerToken;
-                credits = Math.round((cost / ABACUS_CREDIT_COST_USD) * 100) / 100;
-              }
-            }
-
-            if (uncachedInput > 0 || outputTokens > 0 || (credits !== undefined && credits > 0)) {
+            if (uncachedInput > 0 || outputTokens > 0) {
               yield* Effect.promise(() =>
                 appendProviderTurnUsage({
                   stateDir: options.stateDir!,
@@ -1216,7 +1164,6 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
                     outputTokens,
                     reasoningTokens,
                   },
-                  ...(credits !== undefined ? { credits } : {}),
                 }),
               ).pipe(Effect.catchCause(() => Effect.void));
             }
