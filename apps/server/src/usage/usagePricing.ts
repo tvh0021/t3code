@@ -72,6 +72,8 @@ export const OFFICIAL_MODEL_RATES: RateTable = new Map([
   ["gemini-3.8-flash", ratePerMillion(0.75, 3.75, 0.075)],
   ["gemini-3.1-pro", ratePerMillion(2, 12, 0.2)],
   ["gemini-3.1-pro-preview", ratePerMillion(2, 12, 0.2)],
+  // Introductory rates through 2026-11-30, doubling from 2026-12-01.
+  ["gemini-4-argon", ratePerMillion(2, 10, 0.1)],
 ]);
 
 /**

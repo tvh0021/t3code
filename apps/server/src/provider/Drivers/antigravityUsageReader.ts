@@ -99,6 +99,9 @@ const MODEL_IDS: Record<number, string> = {
   1018: "gemini-3-flash-preview",
   1084: "gemini-3-flash-preview",
   1047: "gemini-3-flash-preview",
+  1318: "gemini-3.8-flash",
+  1322: "gemini-3.8-flash",
+  1401: "claude-opus-5-5",
 };
 
 function modelName(name: string, id: number): string {
@@ -112,7 +115,8 @@ function modelName(name: string, id: number): string {
         .replace(/^claude-(4(?:\.\d+)?)-(sonnet|opus|haiku)/, "claude-$2-$1")
         .replaceAll(".", "-");
     }
-    return normalized;
+    // Access-tier labels such as `gemini-4-argon-trial` bill as the base model.
+    return normalized.replace(/^(gemini-.+?)-(?:trial|n)$/, "$1");
   }
   return MODEL_IDS[id] ?? (id > 0 ? `antigravity-model-${id}` : "");
 }
@@ -261,6 +265,24 @@ const readDatabase = Effect.fn("readDatabase")(function* (
   }).pipe(sql.withTransaction);
 });
 
+const isPlaceholderModel = (model: string) =>
+  model === "antigravity-unknown" || model.startsWith("antigravity-model-");
+
+/**
+ * Some steps, such as context compaction, report usage without naming a
+ * model. They run on the conversation's model, so they take the nearest named
+ * step's model, or failing that the nearest generation's.
+ */
+function nearestModel(entries: ReadonlyArray<{ idx: number; entry: Metadata }>, idx: number) {
+  let before = "";
+  for (const { idx: at, entry } of entries) {
+    if (!entry.model) continue;
+    if (at > idx) return before || entry.model;
+    before = entry.model;
+  }
+  return before;
+}
+
 function usageCandidates(
   sessionId: string,
   generations: ReadonlyArray<{ idx: number; entry: Metadata }>,
@@ -314,6 +336,7 @@ function usageCandidates(
             entry.model ||
             (source === "step" ? generationModels.get(idx) : "") ||
             modelName("", numberAt(usage, 1)) ||
+            (source === "step" ? nearestModel(steps, idx) || nearestModel(generations, idx) : "") ||
             "antigravity-unknown",
           totals,
           reportedCostUsd: null,
@@ -389,12 +412,11 @@ export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* 
     const y = source.record.totals;
     target.record = {
       ...first.record,
-      model:
-        first.record.model === "antigravity-unknown"
-          ? first === target
-            ? source.record.model
-            : target.record.model
-          : first.record.model,
+      model: isPlaceholderModel(first.record.model)
+        ? first === target
+          ? source.record.model
+          : target.record.model
+        : first.record.model,
       timestampMs: bestTime.record.timestampMs,
       totals: {
         uncachedInputTokens: Math.max(x.uncachedInputTokens, y.uncachedInputTokens),

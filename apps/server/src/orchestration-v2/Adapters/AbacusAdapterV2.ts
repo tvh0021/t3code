@@ -539,6 +539,17 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
 ) {
   const fetchFn = options.fetch ?? globalThis.fetch;
   let lastKnownComputePoints: AbacusComputePointsSnapshot | null = null;
+  // Concurrent first turns must share one baseline taken before any request charges the account.
+  const initializeComputePoints = yield* Effect.cached(
+    Effect.promise(() => fetchAbacusComputePoints(options.apiKey, undefined, fetchFn, 3000)).pipe(
+      Effect.tap((points) =>
+        Effect.sync(() => {
+          lastKnownComputePoints = points;
+        }),
+      ),
+      Effect.catchCause(() => Effect.void),
+    ),
+  );
 
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: options.instanceId,
@@ -676,7 +687,13 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
           ];
 
           let stepCount = 0;
-          let finalUsage: unknown;
+          const turnUsage = {
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            outputTokens: 0,
+            reasoningTokens: 0,
+          };
+          if (options.stateDir) yield* initializeComputePoints;
           let failure: string | undefined;
 
           while (!active.cancelled) {
@@ -892,7 +909,26 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
               });
             }
 
-            if (usage !== undefined) finalUsage = usage;
+            if (usage !== undefined) {
+              const stepUsage = usage as {
+                prompt_tokens?: number;
+                input_tokens?: number;
+                completion_tokens?: number;
+                output_tokens?: number;
+                prompt_tokens_details?: { cached_tokens?: number };
+                completion_tokens_details?: { reasoning_tokens?: number };
+                cached_tokens?: number;
+                reasoning_tokens?: number;
+              };
+              turnUsage.inputTokens += stepUsage.prompt_tokens ?? stepUsage.input_tokens ?? 0;
+              turnUsage.cachedInputTokens +=
+                stepUsage.prompt_tokens_details?.cached_tokens ?? stepUsage.cached_tokens ?? 0;
+              turnUsage.outputTokens += stepUsage.completion_tokens ?? stepUsage.output_tokens ?? 0;
+              turnUsage.reasoningTokens +=
+                stepUsage.completion_tokens_details?.reasoning_tokens ??
+                stepUsage.reasoning_tokens ??
+                0;
+            }
 
             const toolCalls: ToolCall[] = Array.from(toolCallAccumulators.entries())
               .sort(([a], [b]) => a - b)
@@ -1139,27 +1175,10 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
               lastKnownComputePoints = currentPoints;
             }
 
-            const usageObj = finalUsage as
-              | {
-                  prompt_tokens?: number;
-                  input_tokens?: number;
-                  completion_tokens?: number;
-                  output_tokens?: number;
-                  prompt_tokens_details?: { cached_tokens?: number };
-                  completion_tokens_details?: { reasoning_tokens?: number };
-                  cached_tokens?: number;
-                  reasoning_tokens?: number;
-                }
-              | undefined;
-            const promptTokens = usageObj?.prompt_tokens ?? usageObj?.input_tokens ?? 0;
-            const cachedTokens =
-              usageObj?.prompt_tokens_details?.cached_tokens ?? usageObj?.cached_tokens ?? 0;
-            let outputTokens = usageObj?.completion_tokens ?? usageObj?.output_tokens ?? 0;
-            const reasoningTokens =
-              usageObj?.completion_tokens_details?.reasoning_tokens ??
-              usageObj?.reasoning_tokens ??
-              0;
-
+            const promptTokens = turnUsage.inputTokens;
+            const cachedTokens = turnUsage.cachedInputTokens;
+            let outputTokens = turnUsage.outputTokens;
+            const reasoningTokens = turnUsage.reasoningTokens;
             let uncachedInput = Math.max(0, promptTokens - cachedTokens);
             if (uncachedInput === 0 && outputTokens === 0) {
               let promptChars = 0;

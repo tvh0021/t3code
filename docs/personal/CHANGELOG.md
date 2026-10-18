@@ -6,6 +6,12 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.7.4 (2026-10-18)
+
+- Issue: Antigravity Usage showed unknown models, split Gemini tiers and unpriced Argon usage → Fix: recover model names, combine access tiers and apply Argon's introductory API rate for Antigravity and ChatLLM (USAGE-007)
+
+- Issue: ChatLLM estimated the first turn's credits and counted only the last request's tokens in tool loops → Fix: read a shared starting balance and accumulate tokens across requests (CHATLLM-USAGE-001)
+
 ### 0.7.3 (2026-10-18)
 
 - Issue: Antigravity's Gemini 5-hour and weekly limits showed an unused quota pool (`100%` / `98%`) and missed Gemini 4 Argon → Fix: the quota probe reports the Antigravity 2.24.0 client version to Google's daily quota endpoint and hides reset countdowns on unused 100% windows (AG-QUOTA-002)

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
+import {
+  resolveModelAliases,
+  UsageAggregator,
+  type CreditedUsageRecord,
+} from "./usageAggregation.ts";
 import { createOverrideRateTable, type RateTable } from "./usagePricing.ts";
 import type { UsageRecord } from "@t3tools/provider-core/server/usage";
 
@@ -34,7 +38,7 @@ const rates: RateTable = new Map([
   ],
 ]);
 
-function record(overrides: Partial<UsageRecord> = {}): UsageRecord {
+function record(overrides: Partial<CreditedUsageRecord> = {}): CreditedUsageRecord {
   return {
     provider: "claude",
     timestampMs: Date.parse("2026-08-07T04:05:13.944Z"),
@@ -221,6 +225,22 @@ describe("UsageAggregator", () => {
 
     expect(result.buckets[0]?.costUsd).toBeCloseTo(0.004625, 9);
     expect(result.buckets[0]?.costSource).toBe("modelPriced");
+  });
+
+  it("prices ChatLLM Argon usage while preserving reported credits", () => {
+    const result = aggregate([
+      record({ provider: "abacus", model: "gemini-4-argon", credits: 42 }),
+    ]);
+
+    expect(result.buckets).toHaveLength(1);
+    expect(result.buckets[0]).toMatchObject({
+      provider: "abacus",
+      model: "gemini-4-argon",
+      costUsd: expect.closeTo(0.00082, 9),
+      costSource: "modelPriced",
+      credits: 42,
+      unpricedRecords: 0,
+    });
   });
 
   it("counts tokens but not cost for a model with no rate", () => {

@@ -209,6 +209,66 @@ describe("readAntigravityUsage", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("names model-less Antigravity steps after their conversation's model", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const dir = yield* tempDir;
+      yield* seedDatabase(path.join(dir, "compaction.db"), (db) =>
+        Effect.gen(function* () {
+          yield* createTables(db);
+          for (const [idx, step] of [
+            protoBytes(9, protoNumber(2, 10)),
+            [
+              ...protoBytes(24, protoText(12, "gemini-4-argon-trial")),
+              ...protoBytes(9, protoNumber(2, 20)),
+            ],
+            protoBytes(9, protoNumber(2, 30)),
+          ].entries()) {
+            yield* db.run("INSERT INTO steps VALUES (?, ?)", [idx, new Uint8Array(step)]);
+          }
+        }),
+      );
+      const result = yield* readAntigravityUsage(dir, 0);
+      assert.deepStrictEqual(result.errors, []);
+      assert.deepStrictEqual(
+        records(result).map((record) => record.model),
+        ["gemini-4-argon", "gemini-4-argon", "gemini-4-argon"],
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps the generation's model name over an unknown step model id", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const dir = yield* tempDir;
+      const usage = [...protoNumber(1, 9999), ...protoNumber(2, 10), ...protoText(11, "req")];
+      yield* seedDatabase(path.join(dir, "unknown-id.db"), (db) =>
+        Effect.gen(function* () {
+          yield* createTables(db);
+          yield* db.run("INSERT INTO steps VALUES (?, ?)", [
+            0,
+            new Uint8Array(protoBytes(9, usage)),
+          ]);
+          yield* db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+            5,
+            new Uint8Array(
+              protoBytes(1, [
+                ...protoText(19, "Claude Opus 5.5 (Medium)"),
+                ...protoBytes(4, usage),
+              ]),
+            ),
+          ]);
+        }),
+      );
+      const result = yield* readAntigravityUsage(dir, 0);
+      assert.deepStrictEqual(result.errors, []);
+      assert.deepStrictEqual(
+        records(result).map((record) => record.model),
+        ["claude-opus-5-5"],
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("merges Antigravity aliases that bridge previously separate step records", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;

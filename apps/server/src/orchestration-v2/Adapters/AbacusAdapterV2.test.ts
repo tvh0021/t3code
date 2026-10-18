@@ -213,7 +213,7 @@ describe("AbacusAdapterV2 unit helpers", () => {
 });
 
 describe("AbacusAdapterV2 session and turn execution", () => {
-  it.effect("sends authenticated streaming requests and writes turn usage", () =>
+  it.effect("records the first charged turn and every request in its tool loop", () =>
     Effect.gen(function* () {
       const tempStateDir = NodeFS.mkdtempSync(
         NodePath.join(NodeOS.tmpdir(), "abacus-usage-state-"),
@@ -225,11 +225,27 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       }> = [];
 
       const fetch: typeof globalThis.fetch = async (input, init) => {
+        if (String(input).includes("_getOrganizationComputePoints")) {
+          return Response.json({
+            success: true,
+            result: {
+              curr_month_usage: requests.length * 40,
+              computePointsLeft: 1000 - requests.length * 40,
+            },
+          });
+        }
         requests.push({
           url: String(input),
           authorization: new Headers(init?.headers).get("authorization"),
           body: JSON.parse(String(init?.body)) as Record<string, unknown>,
         });
+        if (requests.length === 1) {
+          return sseResponse([
+            `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "read-1", function: { name: "list_directory", arguments: JSON.stringify({ path: "." }) } }] }, finish_reason: "tool_calls" }] })}\n\n`,
+            'data: {"choices":[],"usage":{"prompt_tokens":20,"completion_tokens":10,"total_tokens":30}}\n\n',
+            "data: [DONE]\n\n",
+          ]);
+        }
         return sseResponse([
           'data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}\n\n',
           'data: {"choices":[{"delta":{"content":"hello from ChatLLM"},"finish_reason":"stop"}]}\n\n',
@@ -314,7 +330,7 @@ describe("AbacusAdapterV2 session and turn execution", () => {
         },
       });
 
-      expect(requests).toHaveLength(1);
+      expect(requests).toHaveLength(2);
       expect(requests[0]?.url).toBe("https://example.test/v1/chat/completions");
       expect(requests[0]?.authorization).toBe("Bearer secret-test-key");
       expect(requests[0]?.body).toMatchObject({
@@ -335,7 +351,16 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       expect(NodeFS.existsSync(usageSessionPath)).toBe(true);
       const usageContent = NodeFS.readFileSync(usageSessionPath, "utf-8");
       expect(usageContent).toContain("abacus");
-      expect(usageContent).toContain("credits");
+      const usageLine = usageContent
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .find((line) => line.payload?.info?.last_token_usage);
+      expect(usageLine.payload.info.last_token_usage).toMatchObject({
+        input_tokens: 30,
+        output_tokens: 15,
+        credits: 80,
+      });
 
       NodeFS.rmSync(tempStateDir, { recursive: true, force: true });
     }),

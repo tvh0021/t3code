@@ -48,6 +48,8 @@ describe("usage pricing", () => {
     ["claude-opus-4.6", 36.75],
     ["gemini-3.8-flash", 5.325],
     ["gemini-pro-agent", 16.2],
+    ["gemini-pro-default", 16.2],
+    ["gemini-4-argon", 14.1],
     ["gemini-3.1-pro-preview", 16.2],
   ])("prices %s offline at official standard rates", (model, expected) => {
     const priced = priceUsage(new Map(), record(model));

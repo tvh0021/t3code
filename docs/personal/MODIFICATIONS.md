@@ -42,8 +42,11 @@ destructive commands. A turn allows 200 tool calls on models whose id contains
 
 **Decisions.**
 
-- Before 0.0.42: usage accumulates across every step of the loop, not just the
-  last completion.
+- 0.7.4 (CHATLLM-USAGE-001): `AbacusAdapterV2` overwrote usage after each
+  request and first read the balance after charging. It now sums every request's
+  tokens and shares one initial balance read per adapter before requests start.
+  Account deltas still miss delayed charges and cannot reliably separate
+  overlapping models; historical logs cannot recover those charges.
 - 0.6.1 (CHATLLM-STEPS-001): the old 20-call cap ended delegated runs with a
   silent `completed`. The cap now depends on the model, the batch that would
   exceed it is skipped so history has no unanswered calls, and the turn ends
@@ -65,7 +68,8 @@ Effort and thinking variants of a model share one row. Credit-based usage is
 shown separately from subscription usage. The period picker includes All time
 (`Cmd/Ctrl+Shift+5`) and remembers the last period. ChatLLM writes per-turn
 usage logs; every other provider is read from its native transcripts or
-database.
+database. Antigravity model aliases share a priced model row, and unnamed
+steps inherit the nearest named model when available.
 
 **Decisions.**
 
@@ -98,6 +102,19 @@ database.
   response id, and each call appears in its step, its generation and the
   generation's retry list. Identical id-less totals within one database count
   once (`antigravityUsageReader.ts`, upstream's file).
+- 0.7.4 (USAGE-007): Antigravity step rows often carry only a numeric
+  model ID, while their generation rows carry names such as
+  `claude-opus-5-5-medium`. A real name beats an `antigravity-model-<id>`
+  placeholder when the two merge, and IDs 1318, 1322 and 1401 are mapped.
+  Steps with no model at all (context compaction) take the nearest named
+  step's model, then the nearest generation's. Gemini access-tier suffixes
+  `-trial` and `-n` bill as the base model, and `gemini-pro-default` joins
+  `gemini-pro-agent` as Gemini 3.1 Pro.
+- 0.7.4 (USAGE-007): Gemini 4 Argon uses Google's introductory rate of $2
+  input, $10 output and $0.10 cached per 1M tokens, valid through 2026-11-30.
+  The shared rate also prices ChatLLM Argon usage without changing its reported credits.
+  The rate doubles on 2026-12-01 and `usagePricing.ts` must be updated then.
+  Gemini 3.8 Flash's introductory rate likewise doubles on 2027-01-01.
 - A 20,000-bucket merge has a 1,000 ms test budget (`usageMerge.test.ts`).
 
 **Removed.** In the 0.4.0 sync, the fork's Antigravity per-turn logs and its

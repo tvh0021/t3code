@@ -60,8 +60,9 @@ export function normalizeUsageModel(model: string): string {
       /((?:^|\/)(?:gpt-\d[^/[\]]*|claude-(?:opus|sonnet|haiku|fable)-\d[^/[\]]*|gemini-[^/[\]]*))-(none|minimal|low|medium|high|xhigh|max|ultra|ultrathink|thinking|tiered)(?=\[|$)/i,
       "$1",
     );
-  // Antigravity's ACP model list labels this ID "Gemini 3.1 Pro (High)".
-  if (/^gemini-pro-agent$/i.test(trimmed)) {
+  // Antigravity's ACP model list labels this ID "Gemini 3.1 Pro (High)", and
+  // its generation metadata names the same calls `gemini-pro-default`.
+  if (/^gemini-pro-(agent|default)$/i.test(trimmed)) {
     return "gemini-3.1-pro";
   }
   if (/^claude-opus-4-6(-thinking)?$/i.test(trimmed)) {

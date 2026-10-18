@@ -21,13 +21,13 @@ Cause: The companion Zed bridge never sends ACP `usage_update`; T3's adapter han
 Done when: the bridge reports context use and capacity for new and resumed sessions, and the meter shows it.
 History: Native Zed session storage holds nonzero input and output token counts, but the captured ACP stream has no usage updates.
 
-### CHATLLM-USAGE-001: First ChatLLM turn logs an estimate instead of its charge
+### CHATLLM-USAGE-002: ChatLLM credits diverge from Abacus's billing ledger
 
-Open since 2026-10-12.
-Problem: The first charged turn logs an estimated credit count instead of the measured charge (3.36 instead of 40 credits).
-Cause: The account balance is first read after the first charge, so that turn falls back to an unmarked token estimate.
-Done when: a baseline is read before the first charged turn, or estimates are marked as estimates. Baselines stay per instance.
-History: With controlled account responses, two 40-credit turns logged 43.36 credits ($0.022) instead of 80 ($0.04). Later turns measure correctly.
+Open since 2026-10-18.
+Problem: T3's saved Argon usage shows 4,857.39 credits for October 17, while Abacus's online ledger shows 13,558.16.
+Cause: T3 reads account deltas when turns finish; Abacus can post charges up to an hour later. Account-wide deltas also cannot reliably attribute overlapping models.
+Done when: delayed charges reconcile against authoritative model billing, and estimated credits are identified.
+History: The saved records contain no later balance snapshots to recover the missing charges. Release 0.7.4 fixes the missing first-turn baseline and last-request-only token totals, but does not reconstruct historical credits.
 
 ## Known limitations
 
@@ -40,6 +40,10 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 - **Zed effort tests** (ZED-TEST-001): the legacy Zed tests that checked per-model effort lists and rejected unsupported effort values were removed with the pre-v2 adapter. `ZedAdapterV2.test.ts` covers only model-then-effort ordering.
 
 ## Resolved
+
+- **CHATLLM-USAGE-001** (0.7.4): ChatLLM undercounted first-turn credits and tool-loop tokens. Cause: missing starting balance and overwritten usage. Fix: share an initial baseline and sum requests.
+
+- **USAGE-007** (0.7.4): Antigravity usage had unknown models and missing prices. Cause: incomplete model attribution and pricing. Fix: recover names, normalize aliases and price Argon.
 
 - **AG-QUOTA-002** (0.7.3): Gemini quotas showed incorrect balances and omitted Argon. Cause: an outdated client version selected incomplete quotas. Fix: request current quotas and hide unused-window countdowns.
 
