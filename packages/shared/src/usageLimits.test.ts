@@ -1389,13 +1389,21 @@ describe("ChatGPT sharing presentation", () => {
 });
 
 describe("Antigravity limit presentation", () => {
-  it("keeps the shared Claude/GPT bucket separate from Gemini and pairs their windows", () => {
+  it("keeps Argon, Gemini, and shared Claude/GPT balances separate", () => {
     const antigravity = provider({
       instanceId: ProviderInstanceId.make("antigravity"),
       driver: ProviderDriverKind.make("antigravity"),
       usageLimits: {
         checkedAt: "2026-10-09T12:00:00.000Z",
         windows: [
+          {
+            ...window,
+            id: "gemini-argon-wtu-weekly",
+            kind: "weekly",
+            label: "Gemini 4 Argon · Weekly",
+            usedPercent: 15,
+            windowDurationMins: 10080,
+          },
           { ...window, id: "3p-5h", label: "Claude & GPT (shared) · 5-hour", usedPercent: 90 },
           { ...window, id: "gemini-5h", label: "Gemini · 5-hour", usedPercent: 20 },
           {
@@ -1439,9 +1447,13 @@ describe("Antigravity limit presentation", () => {
     expect(windows.map((window) => window.id)).toEqual([
       "gemini-5h",
       "gemini-weekly",
+      "gemini-argon-wtu-weekly",
       "3p-5h",
       "3p-weekly",
     ]);
-    expect(windows.map((window) => window.remainingPercent)).toEqual([80, 90, 10, 0]);
+    expect(windows.find((window) => window.id === "gemini-argon-wtu-weekly")?.label).toBe(
+      "Gemini 4 Argon · Weekly",
+    );
+    expect(windows.map((window) => window.remainingPercent)).toEqual([80, 90, 85, 10, 0]);
   });
 });

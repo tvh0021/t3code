@@ -52,6 +52,7 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
     summary?: unknown;
     /** What the daily endpoint reports when it differs from the production endpoint. */
     dailySummary?: unknown;
+    dailySummaryStatus?: number;
     models?: unknown;
     summaryStatus?: number;
     tokenStatus?: number;
@@ -77,14 +78,14 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
       }),
     );
   if (!options.missingToken) yield* writeToken(options.refreshToken ?? "refresh-a");
-  const requests: Array<{ url: string; body: string }> = [];
+  const requests: Array<{ url: string; body: string; userAgent: string | undefined }> = [];
   const http = HttpClient.make((request, _url, _signal, fiber) =>
     Effect.sync(() => {
       const init = Context.getOrUndefined(fiber.context, FetchHttpClient.RequestInit);
       expect(init?.redirect).toBe("manual");
       const body =
         request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
-      requests.push({ url: request.url, body });
+      requests.push({ url: request.url, body, userAgent: request.headers["user-agent"] });
       if (request.url.endsWith("/token")) {
         expect(new URLSearchParams(body).get("grant_type")).toBe("refresh_token");
         return HttpClientResponse.fromWeb(
@@ -105,14 +106,18 @@ const fixture = Effect.fn("AntigravityUsageTest.fixture")(function* (
         );
       }
       expect(JSON.parse(body)).toEqual({ project: "project-id" });
+      const isDaily = request.url.includes("//daily-");
       return HttpClientResponse.fromWeb(
         request,
         request.url.endsWith(":retrieveUserQuotaSummary")
           ? Response.json(
-              (request.url.includes("//daily-") ? options.dailySummary : undefined) ??
-                options.summary ??
-                summary,
-              { status: options.summaryStatus ?? 200 },
+              (isDaily ? options.dailySummary : undefined) ?? options.summary ?? summary,
+              {
+                status:
+                  (isDaily ? options.dailySummaryStatus : undefined) ??
+                  options.summaryStatus ??
+                  200,
+              },
             )
           : Response.json(options.models ?? { models: {} }),
       );
@@ -150,13 +155,13 @@ describe("Antigravity subscription limits", () => {
       expect(requests.filter((request) => request.url.endsWith("/token"))).toHaveLength(1);
       expect(
         requests.filter((request) => request.url.endsWith(":retrieveUserQuotaSummary")),
-      ).toHaveLength(4);
+      ).toHaveLength(2);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("keeps Gemini limits when the daily endpoint reports only the shared pool", () =>
+  it.effect("falls back to the non-daily endpoint only when the daily endpoint fails", () =>
     Effect.gen(function* () {
-      const { probe } = yield* fixture({ dailySummary: { groups: [summary.groups[1]] } });
+      const { probe, requests } = yield* fixture({ dailySummaryStatus: 503 });
       const limits = yield* probe;
       expect(limits.windows.map((window) => window.id).toSorted()).toEqual([
         "3p-5h",
@@ -164,9 +169,97 @@ describe("Antigravity subscription limits", () => {
         "gemini-5h",
         "gemini-weekly",
       ]);
-      expect(limits.windows.find((window) => window.id === "gemini-weekly")?.label).toBe(
-        "Gemini · Weekly",
+      expect(
+        requests.filter((request) => request.url.endsWith(":retrieveUserQuotaSummary")),
+      ).toHaveLength(2);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("reports the separate Argon weekly pool using the current Hub client", () =>
+    Effect.gen(function* () {
+      const { probe, requests } = yield* fixture({
+        dailySummary: {
+          groups: [
+            {
+              displayName: "Gemini Models",
+              buckets: [
+                {
+                  bucketId: "gemini-weekly",
+                  window: "weekly",
+                  remainingFraction: 0.9322691,
+                  resetTime: "2026-10-24T15:49:52Z",
+                },
+                {
+                  bucketId: "gemini-5h",
+                  window: "5h",
+                  remainingFraction: 0.94987154,
+                  resetTime: "2026-10-18T08:03:09Z",
+                },
+              ],
+            },
+            {
+              displayName: "Claude and GPT models",
+              buckets: [
+                {
+                  bucketId: "3p-weekly",
+                  window: "weekly",
+                  remainingFraction: 0.9713824,
+                  resetTime: "2026-10-22T17:39:17Z",
+                },
+                {
+                  bucketId: "3p-5h",
+                  window: "5h",
+                  remainingFraction: 1,
+                  resetTime: "2026-10-18T09:15:37Z",
+                },
+              ],
+            },
+            {
+              displayName: "Gemini 4 Argon",
+              buckets: [
+                {
+                  bucketId: "gemini-argon-wtu-weekly",
+                  displayName: "Gemini 4 Argon Weekly Limit",
+                  window: "weekly",
+                  remainingFraction: 0.39,
+                  resetTime: "2026-10-24T16:26:40Z",
+                },
+              ],
+            },
+          ],
+        },
+      });
+      const limits = yield* probe;
+      expect(limits.windows).toHaveLength(5);
+      expect(
+        limits.windows.find((window) => window.id === "gemini-argon-wtu-weekly"),
+      ).toMatchObject({
+        label: "Gemini 4 Argon · Weekly",
+        kind: "weekly",
+        windowDurationMins: 10080,
+        resetsAt: "2026-10-24T16:26:40.000Z",
+      });
+      expect(
+        limits.windows.find((window) => window.id === "gemini-argon-wtu-weekly")?.usedPercent,
+      ).toBeCloseTo(61);
+      expect(
+        limits.windows.find((window) => window.id === "gemini-weekly")?.usedPercent,
+      ).toBeCloseTo(6.77309);
+      expect(limits.windows.find((window) => window.id === "gemini-5h")?.usedPercent).toBeCloseTo(
+        5.012846,
       );
+      expect(limits.windows.find((window) => window.id === "3p-5h")).toEqual({
+        id: "3p-5h",
+        kind: "session",
+        label: "Claude & GPT (shared) · 5-hour",
+        usedPercent: 0,
+        windowDurationMins: 300,
+      });
+      const summaryRequests = requests.filter((request) =>
+        request.url.endsWith(":retrieveUserQuotaSummary"),
+      );
+      expect(summaryRequests).toHaveLength(1);
+      expect(summaryRequests[0]?.userAgent).toMatch(/^antigravity\/hub\/2\.24\.0 /);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

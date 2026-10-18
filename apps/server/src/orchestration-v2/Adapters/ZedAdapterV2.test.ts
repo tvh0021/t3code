@@ -2,9 +2,10 @@ import { describe, expect, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
+import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
-import { applyZedModelSelection } from "./ZedAdapterV2.ts";
+import { applyZedModelSelection, zedPromptFailure } from "./ZedAdapterV2.ts";
 
 const instanceId = ProviderInstanceId.make("zed");
 
@@ -64,4 +65,26 @@ describe("applyZedModelSelection", () => {
       expect(yield* bridge.calls).toEqual([]);
     }),
   );
+});
+
+describe("zedPromptFailure", () => {
+  const bridgeError = (errorMessage: string) =>
+    new EffectAcpErrors.AcpRequestError({ code: -32000, errorMessage });
+
+  it("shows Zed's out-of-credit reason as a usage limit", () => {
+    for (const reason of [
+      "Student plan credits consumed.",
+      "Insufficient credits. Add credits to your account.",
+    ]) {
+      const failure = zedPromptFailure(bridgeError(`Prompt failed: ${reason}`));
+      expect(failure.class).toBe("usage_limit");
+      expect(failure.message).toBe(reason);
+    }
+  });
+
+  it("keeps other bridge errors as provider errors with their reason", () => {
+    const failure = zedPromptFailure(bridgeError("Prompt failed: model not found"));
+    expect(failure).toMatchObject({ class: "provider_error", message: "model not found" });
+    expect(zedPromptFailure(new Error("credits consumed")).class).toBe("provider_error");
+  });
 });

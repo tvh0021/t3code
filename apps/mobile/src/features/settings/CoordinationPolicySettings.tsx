@@ -54,7 +54,7 @@ export function CoordinationPolicySettings({
     } catch (error) {
       Alert.alert(
         "Invalid model limits",
-        error instanceof Error ? error.message : "Use model=turns or model=unlimited.",
+        error instanceof Error ? error.message : "Use model=attempts or model=unlimited.",
       );
     } finally {
       setPending(false);
@@ -81,15 +81,16 @@ export function CoordinationPolicySettings({
     <SettingsSection title={`Delegated task limits · ${environmentLabel}`}>
       <View className="gap-3 p-4">
         <AppText>
-          Monthly maintenance refreshes models and pricing. Output prices above $10 per million
-          tokens get one turn, below $1 are unlimited, and $1 through $10 get four turns. Named
-          defaults and overrides take precedence.
+          Monthly maintenance refreshes models and pricing. Limits cap how many times one task can
+          be delegated to a model. Output prices above $10 per million tokens get one attempt, below
+          $1 are unlimited, and $1 through $10 get four. Named defaults and overrides take
+          precedence.
         </AppText>
         <AppText>
-          Overrides, one model=turns or model=unlimited per line. Blank restores defaults.
+          Overrides, one model=attempts or model=unlimited per line. Blank restores defaults.
         </AppText>
         <TextInput
-          accessibilityLabel="Model turn limit overrides"
+          accessibilityLabel="Model attempt limit overrides"
           multiline
           autoCapitalize="none"
           autoCorrect={false}

@@ -54,7 +54,12 @@ export function firstEligibleQuotaFallback(input: {
   readonly canRunProviderModel?: (provider: ServerProvider, model: string) => boolean;
 }): { readonly provider: ServerProvider; readonly model: string } | undefined {
   const modelKey = coordinationModelKey(input.sourceModel);
-  const fallbacks = input.fallbackModels[input.sourceModel] ?? input.fallbackModels[modelKey] ?? [];
+  const fallbacks =
+    input.fallbackModels[input.sourceModel] ??
+    Object.entries(input.fallbackModels).find(
+      ([source]) => coordinationModelKey(source) === modelKey,
+    )?.[1] ??
+    [];
   for (const model of fallbacks) {
     if (input.canRunModel && !input.canRunModel(model)) continue;
     const candidates = input.providers.filter(

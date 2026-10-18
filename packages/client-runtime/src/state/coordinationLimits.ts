@@ -1,14 +1,14 @@
 import { coordinationModelKey } from "@t3tools/contracts";
 import { parseCoordinationQuotaHandoffs } from "./coordinationQuotaHandoffs.ts";
 
-/** Human-editable model=turns lines. A blank editor restores the built-in and price defaults. */
+/** Human-editable model=attempts lines. A blank editor restores the built-in and price defaults. */
 export function parseCoordinationLimits(text: string): Record<string, number | null> {
   const entries: Record<string, number | null> = {};
   for (const [index, raw] of text.split("\n").entries()) {
     const line = raw.trim();
     if (!line) continue;
     const match = /^(\S+)\s*=\s*(unlimited|\d+)$/i.exec(line);
-    if (!match) throw new Error(`Line ${index + 1}: use model=turns or model=unlimited.`);
+    if (!match) throw new Error(`Line ${index + 1}: use model=attempts or model=unlimited.`);
     const model = coordinationModelKey(match[1]!);
     if (Object.hasOwn(entries, model))
       throw new Error(`Line ${index + 1}: ${model} already has a limit.`);

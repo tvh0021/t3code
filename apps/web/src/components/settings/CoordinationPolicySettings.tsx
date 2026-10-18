@@ -83,9 +83,10 @@ export function CoordinationPolicySettings({
         Delegated task limits
       </h2>
       <p className="text-sm text-muted-foreground">
-        Each thread may delegate one task to a model above $10 per million output tokens and four to
-        a model from $1 through $10. Models below $1 are unlimited. Maintenance refreshes models and
-        pricing monthly while the server is running.
+        A thread may delegate the same task once to a model above $10 per million output tokens and
+        four times to a model from $1 through $10, so a stuck task is not resubmitted forever.
+        Different tasks have separate limits. Models below $1 are unlimited. Maintenance refreshes
+        models and pricing monthly while the server is running.
       </p>
       <p className="text-sm text-muted-foreground">
         Named defaults:{" "}
@@ -95,7 +96,8 @@ export function CoordinationPolicySettings({
         .
       </p>
       <label htmlFor="coordination-model-limits" className="text-sm">
-        Overrides, one model=turns or model=unlimited per line. A blank field restores the defaults.
+        Overrides, one model=attempts or model=unlimited per line. A blank field restores the
+        defaults.
       </label>
       <Textarea
         id="coordination-model-limits"

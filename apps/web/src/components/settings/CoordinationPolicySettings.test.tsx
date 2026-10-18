@@ -81,7 +81,7 @@ it("keeps invalid edits visible, then saves canonical limits for the selected en
     environmentId,
     input: {
       patch: {
-        coordinationModelLimits: { "gpt-6-sol": 2, "glm-5.3-flash": null },
+        coordinationModelLimits: { "gpt-sol": 2, "glm-flash": null },
         coordinationQuotaHandoffFallbacks: state.settings.coordinationQuotaHandoffFallbacks,
         coordinationQuotaHandoffThresholdPercent: 95,
       },
@@ -126,7 +126,7 @@ it("saves the environment quota threshold and ordered fallback mappings", async 
     environmentId,
     input: {
       patch: {
-        coordinationModelLimits: { "gpt-6-sol": 2 },
+        coordinationModelLimits: { "gpt-sol": 2 },
         coordinationQuotaHandoffThresholdPercent: 90,
         coordinationQuotaHandoffFallbacks: {
           "gpt-6-sol": ["claude-opus-5.5", "claude-opus-5"],

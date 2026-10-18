@@ -126,8 +126,10 @@ is refused while the runtime is in use.
 ## Check access and troubleshoot
 
 Open **Usage > Limits** to see the remaining Gemini and shared Claude/GPT allowances
-for Google sign-ins. Each group has separate five-hour and weekly limits and reset
-times. Limits refresh with provider status and include usage outside T3 Code.
+for Google sign-ins. Paid Pro accounts also show a separate weekly-only Gemini 4
+Argon allowance when Google reports it. The regular Gemini and shared Claude/GPT
+groups have five-hour and weekly limits. Limits refresh with provider status and
+include usage outside T3 Code.
 
 A server restart keeps your Google sign-in. The provider shows the saved account
 until a session, a refresh, or a sign-out reports something new.

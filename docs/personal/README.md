@@ -15,8 +15,8 @@ was October 17, 2026 (upstream `a7025639c0`).
   ChatLLM compute points, and Zed account spend.
 - **Quota handoff.** A thread that hits its usage limit continues on the first
   fallback model with quota left (95% threshold by default).
-- **Delegation budgets.** Per-model limits on how many child tasks an agent may
-  start, and delegated reviews of a chosen commit.
+- **Delegation limits.** Per-model limits on how many times an agent may
+  resubmit the same child task, and delegated reviews of a chosen commit.
 - **LaTeX math and larger default fonts.**
 
 ## Install

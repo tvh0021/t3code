@@ -106,17 +106,23 @@ protobuf trace decoder gave way to upstream's SQLite scanner.
 ## Limits
 
 **Now.** Limits shows reset countdowns for Antigravity, ChatLLM and Zed besides
-upstream's providers. Antigravity has a Gemini pool and a shared "Claude & GPT"
-pool, shortest window first. ChatLLM shows monthly compute points. Zed shows
-`$X of $Y spent`, or `$X spent, no limit`. After rollover, T3 advances
+upstream's providers. Antigravity has a Gemini pool, a separate Gemini 4 Argon
+weekly pool when reported, and a shared "Claude & GPT" pool. ChatLLM shows monthly
+compute points. Zed shows `$X of $Y spent`, or `$X spent, no limit`. After rollover, T3 advances
 an ended billing period by calendar months and rereads spend once.
 
 **Decisions.**
 
 - 0.4.0: the fork adopted upstream's Antigravity quota probe and its shared
   Claude & GPT bucket instead of keeping its own converter.
-- 0.6.2 (AG-QUOTA-001): Google's daily endpoint can leave out the Gemini group,
-  so the probe asks both endpoints and merges their windows.
+- 0.7.3 (AG-QUOTA-002): Google's daily quota endpoint omits both
+  the Gemini and Gemini 4 Argon groups when the request identifies as
+  `antigravity/hub/1.0.0`. Personal 0.6.2 merged the non-daily endpoint to fill
+  in Gemini, but that endpoint reports a separate unused Gemini quota (98%
+  weekly and 100% five-hour). Identifying as `antigravity/hub/2.24.0` returns
+  the real Gemini and Argon pools in `makeAntigravityUsageProbe` without mixing in the
+  non-daily pool, and unspent rolling windows omit their synthetic `now + 5h`
+  reset timestamp.
 - 0.5.0 (ZED-001): Zed's own credential can't read billing, so spend comes from
   `cloud.zed.dev` with a dashboard sign-in. Desktop signs in with **Connect** in
   Zed provider settings; other clients paste the dashboard Cookie header. The
@@ -163,7 +169,8 @@ through `--list-models`, labeled by upstream provider, and keeps custom models.
 A failed refresh keeps the last list and shows a warning. Answers, tools, child
 agents and approvals stream into the thread. Thinking effort uses Zed's native
 values. After an app restart, a bridge without session resume support starts
-a fresh provider session with saved conversation context.
+a fresh provider session with saved conversation context. A failed prompt
+shows Zed's reason, and running out of credits shows as a usage limit.
 
 **Decisions.**
 
@@ -171,6 +178,11 @@ a fresh provider session with saved conversation context.
   `AcpSessionRuntime` now identifies the unsupported restore method so the
   existing ACP adapter fallback can start a fresh session and carry context
   forward through `ProviderTurnStartService`.
+- 0.7.3 (ZED-CREDITS-001): prompt failures showed only "Provider turn failed."
+  The bridge sends Zed's error as the text of a generic `-32000`, losing Zed's
+  payment-required category, so `zedPromptFailure` passes the text through and
+  matches credit wording to classify a usage limit. It sets no reset time, so
+  limit recovery doesn't auto-resume Zed threads.
 - Before 0.0.42: identical completed tool snapshots are dropped; repeating them
   split answers mid-word and flooded the activity list.
 - 0.1.3: web search, child-agent forwarding and streaming tool updates need
@@ -201,11 +213,16 @@ a fresh provider session with saved conversation context.
 **Now.** Agents delegate through upstream's `delegate_task`. The fork adds two
 things:
 
-- **Per-model budgets.** A parent may start a limited number of children per
-  model across aliases and instances. The count never resets, so waiting for
-  children doesn't restore budget. Provider-native subagents don't count.
+- **Per-task attempt limits.** A parent may delegate the same task to one
+  model family a limited number of times. A family spans generations, aliases,
+  and instances (6.1 Sol, 6 Sol, and 5.6 Sol are all `gpt-sol`), so an agent
+  can't get around the limit by retrying on an older generation. The limit
+  stops a parent from resubmitting a task that is going nowhere; it is not a
+  cap on how many tasks a thread delegates. A task is its title, or its prompt
+  when untitled, since review rounds resend the title with new findings.
+  Finished attempts still count. Provider-native subagents don't count.
   Named defaults and overrides beat price bands: above $10 per million output
-  tokens gets one turn, $1 to $10 gets four, below $1 is unlimited. Unpriced
+  tokens gets one attempt, $1 to $10 gets four, below $1 is unlimited. Unpriced
   models need an override. Settings shows the live policy
   (`apps/server/src/orchestration-v2/delegationGuards.ts`).
 - **Review worktrees.** A `reviewRef` is resolved to a commit and passed to
@@ -218,8 +235,12 @@ Maintenance).
 
 **Decisions.**
 
+- 0.7.3: thread-wide budgets blocked unrelated tasks. `taskAttemptsExceeded` in
+  `delegationGuards.ts` counts attempts at the same task; `coordinationModelKey`
+  groups generations so retrying on an older model consumes the same limit.
+
 - 0.4.0: upstream's `delegate_task` replaced the fork's orchestration layers;
-  the fork kept only its budgets and review isolation, as guards on it.
+  the fork kept only its limits and review isolation, as guards on it.
 - 0.4.0: clearing limit overrides deep-merged an empty map and kept the old
   values; cleared overrides are now removed.
 - 0.6.5: upstream added worktree isolation for delegated tasks, so the fork's

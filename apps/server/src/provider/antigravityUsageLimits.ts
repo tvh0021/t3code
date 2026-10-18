@@ -85,12 +85,15 @@ function quotaWindow(
   if (quota.remainingFraction === undefined || !Number.isFinite(quota.remainingFraction)) {
     return undefined;
   }
-  const resetsAt = iso(quota.resetTime);
+  const usedPercent = (1 - Math.max(0, Math.min(1, quota.remainingFraction))) * 100;
+  // Unspent rolling windows report a synthetic now + window resetTime that
+  // shifts forward on every poll; only active windows have a real reset clock.
+  const resetsAt = usedPercent > 0 ? iso(quota.resetTime) : undefined;
   return {
     id,
     label,
     kind,
-    usedPercent: (1 - Math.max(0, Math.min(1, quota.remainingFraction))) * 100,
+    usedPercent,
     ...(resetsAt ? { resetsAt } : {}),
     ...(windowDurationMins === undefined ? {} : { windowDurationMins }),
   };
@@ -104,11 +107,13 @@ function summaryWindows(summary: typeof Summary.Type) {
   for (const group of groups ?? []) {
     for (const bucket of group.buckets ?? []) {
       if (bucket.disabled) continue;
-      const family = bucket.bucketId.startsWith("gemini-")
-        ? "Gemini"
-        : bucket.bucketId.startsWith("3p-")
-          ? "Claude & GPT (shared)"
-          : group.displayName?.trim() || bucket.bucketId;
+      const family = bucket.bucketId.startsWith("gemini-argon-")
+        ? "Gemini 4 Argon"
+        : bucket.bucketId.startsWith("gemini-")
+          ? "Gemini"
+          : bucket.bucketId.startsWith("3p-")
+            ? "Claude & GPT (shared)"
+            : group.displayName?.trim() || bucket.bucketId;
       const weekly = bucket.window === "weekly";
       const session = bucket.window === "5h";
       const window = quotaWindow(
@@ -246,36 +251,29 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
       accessToken = cached.accessToken;
       account = cached.account;
     }
-    // Endpoints can each report only some quota groups (the daily endpoint has
-    // omitted Gemini), so ask all of them and merge windows by id.
     const fetchWindows = Effect.fn("AntigravityUsageProbe.fetchWindows")(function* <E>(
       operation: string,
       parse: (response: unknown) => Effect.Effect<ServerProviderUsageWindow[], E>,
     ) {
-      const reported = yield* Effect.forEach(
-        ENDPOINTS,
-        (endpoint) =>
-          request(
-            HttpClientRequest.post(`${endpoint}/v1internal:${operation}`).pipe(
-              HttpClientRequest.setHeaders({
-                Authorization: `Bearer ${accessToken}`,
-                "User-Agent": `antigravity/hub/1.0.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`,
-              }),
-              HttpClientRequest.bodyJsonUnsafe(
-                token.project_id ? { project: token.project_id } : {},
-              ),
-            ),
-          ).pipe(
-            Effect.flatMap(parse),
-            Effect.orElseSucceed(() => []),
+      for (const endpoint of ENDPOINTS) {
+        const windows = yield* request(
+          HttpClientRequest.post(`${endpoint}/v1internal:${operation}`).pipe(
+            HttpClientRequest.setHeaders({
+              Authorization: `Bearer ${accessToken}`,
+              // Google's daily endpoint omits the Gemini and Argon pools for
+              // older Hub client versions, while the non-daily endpoint reports
+              // a separate unused Gemini quota.
+              "User-Agent": `antigravity/hub/2.24.0 (aidev_client; os_type=${platform}; arch=${architecture}; cl=963137146)`,
+            }),
+            HttpClientRequest.bodyJsonUnsafe(token.project_id ? { project: token.project_id } : {}),
           ),
-        { concurrency: "unbounded" },
-      );
-      const windows = new Map<string, ServerProviderUsageWindow>();
-      for (const window of reported.flat()) {
-        if (!windows.has(window.id)) windows.set(window.id, window);
+        ).pipe(
+          Effect.flatMap(parse),
+          Effect.orElseSucceed(() => []),
+        );
+        if (windows.length > 0) return windows;
       }
-      return [...windows.values()];
+      return [];
     });
     const summary = yield* fetchWindows("retrieveUserQuotaSummary", (response) =>
       decodeSummary(response).pipe(Effect.map(summaryWindows)),

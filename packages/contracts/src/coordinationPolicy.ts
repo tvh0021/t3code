@@ -8,36 +8,39 @@ export const CoordinationBudget = Schema.Struct({
 });
 export type CoordinationBudget = typeof CoordinationBudget.Type;
 
-/** One budget identity across provider prefixes, aliases, and dated releases. */
+/**
+ * One budget identity per model family across generations, provider prefixes,
+ * and dated releases, so a limit on the newest generation can't be sidestepped
+ * by delegating to an older one.
+ */
 export function coordinationModelKey(model: string): string {
   const name = model.trim().toLowerCase().split("/").at(-1) ?? model;
   const normalized = name
     .replaceAll("_", "-")
     .replace(/-(?:thinking|latest|default)$/, "")
     .replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, "");
-  const aliases: ReadonlyArray<readonly [RegExp, string]> = [
-    [/^(?:gpt-)?6[.-]astra(?:-|$)/, "gpt-6-astra"],
-    [/^(?:gpt-)?6[.-]sol(?:-|$)/, "gpt-6-sol"],
-    [/^(?:gpt-)?6[.-]luna(?:-|$)/, "gpt-6-luna"],
-    [/^(?:claude-)?sonnet-5(?:[.-]0)?$/, "claude-sonnet-5"],
-    [/^(?:claude-)?opus-5[.-]5$/, "claude-opus-5.5"],
-    [/^(?:claude-)?fable-5[.-]1$/, "claude-fable-5.1"],
-    [/^glm-5[.-]3-flash$/, "glm-5.3-flash"],
-    [/^gemini-3[.-]8-flash(?:-.*)?$/, "gemini-3.8-flash"],
+  const families: ReadonlyArray<readonly [RegExp, string]> = [
+    [/^(?:gpt-)?\d+(?:[.-]\d+)?-(astra|sol|luna)(?:-|$)/, "gpt-$1"],
+    [/^(?:claude-)?(?:\d+(?:[.-]\d+)?-)?(opus|sonnet|fable|haiku)(?:-\d|$)/, "claude-$1"],
+    [/^glm-\d+(?:[.-]\d+)?-flash$/, "glm-flash"],
+    [/^gemini-\d+(?:[.-]\d+)?-flash(?:-.*)?$/, "gemini-flash"],
   ];
-  return aliases.find(([pattern]) => pattern.test(normalized))?.[1] ?? normalized;
+  for (const [pattern, family] of families) {
+    const match = pattern.exec(normalized);
+    if (match) return family.replace("$1", match[1] ?? "");
+  }
+  return normalized;
 }
 
 export const DEFAULT_COORDINATION_LIMITS: Readonly<Record<string, number | null>> = {
-  "gpt-6-astra": 1,
-  "gpt-6-sol": 2,
-  "gpt-6-luna": null,
-  "gemini-3.8-flash": null,
-  "claude-sonnet-5": 1,
-  "claude-opus-5": 1,
-  "claude-opus-5.5": 1,
-  "claude-fable-5.1": 1,
-  "glm-5.3-flash": null,
+  "gpt-astra": 1,
+  "gpt-sol": 2,
+  "gpt-luna": null,
+  "gemini-flash": null,
+  "claude-sonnet": 1,
+  "claude-opus": 1,
+  "claude-fable": 1,
+  "glm-flash": null,
 };
 
 /** Undefined means unpriced; null explicitly means unlimited. */

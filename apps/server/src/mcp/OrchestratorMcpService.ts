@@ -1978,11 +1978,15 @@ const make = Effect.gen(function* () {
           parent.thread.interactionMode,
           input.interactionMode,
         );
-        // Personal fork: per-model turn budgets. Retries of an accepted
-        // delegation were already counted.
+        // Personal fork: per-model attempts at one task. Retries of an
+        // accepted delegation were already counted.
         if (!isRetryOfAcceptedDelegation && Option.isSome(delegationGuards)) {
           yield* delegationGuards.value
-            .checkTurnBudget(parent.subagents, target.modelSelection.model)
+            .checkTaskAttempts(parent.subagents, {
+              model: target.modelSelection.model,
+              title: input.title ?? null,
+              prompt: taskPrompt(input),
+            })
             .pipe(Effect.mapError((message) => failure("invalid_request", message)));
         }
         let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;

@@ -7,7 +7,7 @@ import {
 
 it("accepts zero, unlimited, and provider aliases while rejecting duplicate model budgets", () => {
   expect(parseCoordinationLimits("openai/gpt-6-sol=2\nGLM-5.3-Flash=unlimited\nunknown=0")).toEqual(
-    { "gpt-6-sol": 2, "glm-5.3-flash": null, unknown: 0 },
+    { "gpt-sol": 2, "glm-flash": null, unknown: 0 },
   );
   expect(() => parseCoordinationLimits("gpt-6-sol=2\nopenai/gpt-6-sol=4")).toThrow(
     "already has a limit",
@@ -19,7 +19,7 @@ it("accepts zero, unlimited, and provider aliases while rejecting duplicate mode
 });
 
 it("keeps overrides when editing a saved policy", () => {
-  const saved = { "claude-sonnet-5": 1, "gpt-6-sol": 2, "glm-5.3-flash": null };
+  const saved = { "claude-sonnet": 1, "gpt-sol": 2, "glm-flash": null };
   expect(parseCoordinationLimits(formatCoordinationLimits(saved))).toEqual(saved);
 });
 
@@ -33,7 +33,7 @@ it("builds canonical limits and ordered fallbacks with an inclusive quota thresh
         thresholdError: "threshold error",
       }),
     ).toEqual({
-      coordinationModelLimits: { "gpt-6-sol": 2 },
+      coordinationModelLimits: { "gpt-sol": 2 },
       coordinationQuotaHandoffFallbacks: { "gpt-6-sol": ["claude-opus-5", "claude-fable-5-1"] },
       coordinationQuotaHandoffThresholdPercent: threshold,
     });
@@ -78,7 +78,7 @@ it("preserves each surface's threshold error and validates limits before fallbac
       fallbacksText: "invalid",
       threshold: 0,
     }),
-  ).toThrow("use model=turns or model=unlimited.");
+  ).toThrow("use model=attempts or model=unlimited.");
   expect(() =>
     buildCoordinationPolicyPatch({
       ...input,

@@ -579,7 +579,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerProviderInstallationRefresh,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
-  // Personal fork: delegate_task turn budgets. The policy
+  // Personal fork: delegate_task per-task attempt limits. The policy
   // also serves the Settings refresh and re-reads prices daily.
   DelegationGuards.layer.pipe(Layer.provideMerge(CoordinationPolicy.layer)),
 ).pipe(

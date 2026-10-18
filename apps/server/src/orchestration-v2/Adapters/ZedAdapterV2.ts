@@ -28,6 +28,7 @@ import {
   type ProviderAdapterDriver,
   type ProviderAdapterDriverCreateInput,
 } from "@t3tools/provider-core/server/adapterDriver";
+import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
@@ -119,6 +120,23 @@ export const applyZedModelSelection = Effect.fnUntraced(function* (
   return requestedModel;
 });
 
+const isAcpRequestError = Schema.is(EffectAcpErrors.AcpRequestError);
+// zed-acp-server flattens Zed's payment-required category into the text of a
+// generic -32000 error, and the cloud's wording varies by plan.
+const zedOutOfCredits =
+  /\bcredits?\s+(?:consumed|exhausted|depleted)\b|\b(?:insufficient|out of|no remaining)\s+(?:\w+\s+)?credits?\b/i;
+
+export function zedPromptFailure(cause: unknown) {
+  if (!isAcpRequestError(cause)) return makeProviderFailure({ cause, class: "provider_error" });
+  const message = cause.errorMessage.replace(/^Prompt failed:\s*/, "");
+  return makeProviderFailure({
+    cause,
+    message,
+    code: String(cause.code),
+    class: zedOutOfCredits.test(message) ? "usage_limit" : "provider_error",
+  });
+}
+
 export function makeZedAcpAdapterFlavor(
   options: ZedAdapterV2Options & ZedFlavorServices,
 ): AcpAdapterV2Flavor {
@@ -159,6 +177,7 @@ export function makeZedAcpAdapterFlavor(
     ...(options.onSessionEvent === undefined ? {} : { onSessionEvent: options.onSessionEvent }),
     applyModelSelection: ({ runtime, modelSelection }) =>
       applyZedModelSelection(runtime, modelSelection),
+    promptFailure: zedPromptFailure,
     approvalOptions: (request) => {
       const options: ProviderApprovalOption[] = [];
       const optionWithKind = (kind: EffectAcpSchema.PermissionOption["kind"]) =>

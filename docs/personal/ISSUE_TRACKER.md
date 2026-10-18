@@ -41,6 +41,10 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 
 ## Resolved
 
+- **AG-QUOTA-002** (0.7.3): Gemini quotas showed incorrect balances and omitted Argon. Cause: an outdated client version selected incomplete quotas. Fix: request current quotas and hide unused-window countdowns.
+
+- **ZED-CREDITS-001** (0.7.3): Zed failures hid credit errors. Cause: the adapter discarded bridge error text. Fix: preserve the reason and classify exhausted credits as usage limits.
+
 - **ZED-RESUME-001** (0.7.2): Zed continuation failed after restart. Cause: the unsupported-resume error bypassed recovery. Fix: identify the failed method so context recovery runs.
 
 - **ZED-RESET-001** (0.7.2): Zed showed "resets now" after rollover. Cause: stale billing period and cached spend. Fix: advance the period and reread spend once.
@@ -53,7 +57,7 @@ History: With controlled account responses, two 40-credit turns logged 43.36 cre
 - **ZED-001** (0.5.0): Zed Limits needed real account spend. Cause: native credential can't read billing. Fix: dashboard cookie session; user confirmed spend matches the dashboard.
 - **CODEX-CREDIT-001** (closed 2026-10-16, no fix): Parser skips a repeated `token_count` payload with a newer credit balance. Never observed; totals unaffected.
 - **MOBILE-002** (0.6.3): Phone Usage empty on App Store 2.0.0. Cause: unknown abacus provider fails the whole RPC decode. Fix: host drops ChatLLM entries for mobile.
-- **AG-QUOTA-001** (0.6.2): Antigravity Limits missing the Gemini pool. Cause: probe stopped at the daily endpoint, which omits Gemini. Fix: query both endpoints and merge windows.
+- **AG-QUOTA-001** (0.6.2): Antigravity Limits missing the Gemini pool. Cause: `antigravity/hub/1.0.0` made the daily endpoint omit Gemini. Superseded by AG-QUOTA-002.
 - **CHATLLM-STEPS-001** (0.6.1): Delegated ChatLLM runs ended silently after 20 tool calls. Cause: hidden cap message. Fix: 200/50 per-model cap, visible stop message, per-request timeout.
 - **USAGE-004** (0.6.1): Claude Fast spend never appeared in Usage. Cause: extra usage off, so Claude Code silently ran standard speed. Fix: thread notice with the reason.
 - **USAGE-003** (0.6.0): Older Codex costs missing from Usage. Cause: scanner skipped compressed `.jsonl.zst` rollouts and `archived_sessions`. Fix: read both, dedupe sessions, keep saved usage.

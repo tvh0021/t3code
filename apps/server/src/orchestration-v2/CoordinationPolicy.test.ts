@@ -102,7 +102,7 @@ it.effect(
           expect.arrayContaining([
             { model: "new", limit: 7, used: 0 },
             { model: "cheap", limit: null, used: 0 },
-            { model: "claude-sonnet-5", limit: 1, used: 0 },
+            { model: "claude-sonnet", limit: 1, used: 0 },
           ]),
         );
         expect(first.budgets.some((budget) => budget.model === "unpriced")).toBe(false);

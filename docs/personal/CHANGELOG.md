@@ -6,6 +6,14 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.7.3 (2026-10-18)
+
+- Issue: Antigravity's Gemini 5-hour and weekly limits showed an unused quota pool (`100%` / `98%`) and missed Gemini 4 Argon → Fix: the quota probe reports the Antigravity 2.24.0 client version to Google's daily quota endpoint and hides reset countdowns on unused 100% windows (AG-QUOTA-002)
+
+- Issue: delegated task limits capped every child a thread started on a model, so a second unrelated Sol task was refused → Fix: limits count resubmissions of the same task only, and older generations of a model (such as 6 Sol for 6.1 Sol) share its limit
+
+- Issue: Zed prompts that ran out of credits showed only "Provider turn failed." → Fix: Zed's reason is shown, and out-of-credit errors show as "Usage limit reached" (ZED-CREDITS-001)
+
 ### 0.7.2 (2026-10-17)
 
 - Issue: Zed threads failed to continue after restarting T3 → Fix: T3 starts a fresh provider session with saved conversation context (ZED-RESUME-001)
@@ -113,42 +121,3 @@ User-visible changes per release, newest first. Current behavior is in
 - Issue: Zed bridge crashes when a tool calls `search_web` → Fix: headless web search initialized
 - New feature: Zed subagent tool updates and approvals appear in the thread
 - New feature: Zed tool calls update live as they stream
-
-### 0.1.2 (2026-10-05)
-
-- New feature: Antigravity always runs with full access
-- New feature: Zed model catalog discovery. Zed lists its hosted models using the existing sign-in, and refresh picks the newest Sonnet and Luna (shipped in a 0.1.2 rebuild on 2026-10-05)
-
-### 0.1.1 (2026-09-28)
-
-- Issue: parent keeps calling coordination tools after `wait_for_children` → Fix: the turn stops there
-- Issue: Antigravity children prompt for approval on T3 report tools → Fix: scoped report and read tools run without a prompt
-- New feature: About shows the release version
-
-### 0.1.0 (2026-09-28)
-
-- New feature: quota handoff to a fallback provider at 95% usage, or continuation after reset
-- New feature: Antigravity can lead an orchestration layer
-
-### 0.0.42.2 (2026-09-27)
-
-- New feature: thread MCP tools for cross-model and cross-provider handoffs
-- New feature: orchestration workflows with child queues, reports, shared model budgets and lifecycle controls
-- New feature: named limits, price-band defaults and per-model overrides for workflows
-- New feature: provider worker restrictions, with Zed worker mode and ChatLLM parent access
-
-### Before 0.0.42 (2026-09-18 to 2026-09-24)
-
-- Upstream sync: merged upstream/main (2026-09-18)
-- Upstream sync: merged upstream/main (2026-09-22)
-- New feature: ChatLLM (Abacus / RouteLLM) provider with an autonomous tool loop and command safety filters
-- New feature: Zed provider over ACP, with Claude Sonnet 5 and GPT 5.6 Luna
-- New feature: Antigravity and ChatLLM Limits with reset countdowns
-- New feature: token and cost tracking for Antigravity and ChatLLM, including Antigravity history
-- New feature: Codex credit balances and credit-based cost at $0.04 per credit
-- New feature: LaTeX math in chat, including tables and bold or italic text
-- New feature: larger default font sizes and a two-line `T3 Code / personal` sidebar title
-- New feature: Gemini 3.8 Flash tiers combined into one Usage model
-- Issue: App Store 1.3.0 Usage tab fails on new providers → Fix: host sends the older Usage format to mobile 1.2 and 1.3 (MOBILE-001)
-- Issue: Zed answers split mid-word and flood the activity list → Fix: repeated tool snapshots suppressed
-- Issue: Zed context meter empty → Fix: adapter reads Zed context usage, though the bridge still sends none (ZED-CONTEXT-001)
