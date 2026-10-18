@@ -40,6 +40,7 @@ export const PROVIDER_PRESENTATION = {
     color: "#4d9f8a",
     driverKind: ProviderDriverKind.make("pi"),
   },
+  zed: { label: "Zed", color: "#70a5ff", driverKind: ProviderDriverKind.make("zed") },
   abacus: {
     label: "ChatLLM",
     color: "#8b5cf6",

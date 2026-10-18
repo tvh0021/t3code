@@ -10,6 +10,7 @@ export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
   "antigravity",
   "pi",
   "abacus",
+  "zed",
 ];
 
 export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
@@ -21,6 +22,7 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   antigravity: "Antigravity",
   pi: "Pi",
   abacus: "ChatLLM",
+  zed: "Zed",
 };
 
 export const DRIVER_LABEL: Record<string, string> = {
@@ -49,6 +51,7 @@ export function useProviderColors(): Record<UsageProviderKind, string> {
     antigravity: "#8c7bd1",
     pi: "#4d9f8a",
     abacus: "#8b5cf6",
+    zed: "#70a5ff",
   };
 }
 

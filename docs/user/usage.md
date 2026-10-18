@@ -6,7 +6,7 @@ desktop when the terminal is not focused. Customize `usage.open` in
 
 ## Understand your usage
 
-**Usage** combines Codex, Claude Code, Grok Build, OpenCode, Antigravity, Pi, and Cursor history
+**Usage** combines Codex, Claude Code, Grok Build, OpenCode, Antigravity, Pi, Cursor, and Zed history
 from your connected environments. It shows token use, cache savings, model breakdowns, and estimated API-equivalent
 cost, split by token type and by speed. These estimates are not your subscription bill.
 **Premium** is what Fast and Ultrafast requests cost above standard rates. Cost that cannot be
@@ -32,6 +32,15 @@ notice instead of incomplete local totals. T3 does not estimate missing tokens f
 On macOS, choose **Enable Cursor usage** on Usage to allow T3 to read your existing CLI login
 from Keychain. You can turn it off in **Settings → Providers → Usage providers**. macOS may ask
 you to allow access on the server Mac.
+
+Zed reads your personal account's model usage through the dashboard session connected in
+**Settings → Providers → Zed**. This includes usage outside T3. Zed reports daily UTC totals,
+so its usage does not appear in hourly charts and has no session counts. Refreshes may lag
+behind requests. T3 retains the daily history it has read, but cannot recover dates the dashboard
+no longer supplies. Costs use Zed's reported token cost before allowance and prepaid adjustments;
+**Limits** shows allowance spend separately. A zero invoice balance does not mean zero usage.
+When a reported cost is missing, T3 estimates known models using observed Zed invoice rates.
+Use custom prices to match your account's rates when needed.
 
 Usage includes each configured account's history, including disabled accounts. Custom homes follow
 the account's home setting or its `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, or `GROK_HOME` environment

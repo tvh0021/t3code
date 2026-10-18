@@ -74,6 +74,17 @@ export const OFFICIAL_MODEL_RATES: RateTable = new Map([
   ["gemini-3.1-pro-preview", ratePerMillion(2, 12, 0.2)],
 ]);
 
+/** Account invoice rates observed 2026-10-17, before allowance and prepaid adjustments. */
+export const ZED_MODEL_RATES: RateTable = new Map([
+  ["zed.dev/claude-sonnet-5", ratePerMillion(2.2, 11, 0.22, 2.75)],
+  ["zed.dev/claude-sonnet-5-5", ratePerMillion(2.2, 11, 0.22, 2.75)],
+  ["zed.dev/claude-haiku-5-5", ratePerMillion(0.11, 0.55, 0.011, 0.1375)],
+  ["zed.dev/gpt-5.6-luna", ratePerMillion(0.22, 1.32, 0.022, 0.275)],
+  ["zed.dev/gpt-6-luna", ratePerMillion(0.11, 0.55, 0.011, 0.1375)],
+  // The invoice has no Gemini cache rate; fall back to input pricing, never free tokens.
+  ["zed.dev/gemini-4-argon", ratePerMillion(2.2, 11, 2.2)],
+]);
+
 /**
  * Fallback rates for models known from online documentation that are not
  * present in or aliased identically by LiteLLM.
@@ -331,6 +342,10 @@ function resolveRate(table: RateTable, model: string): ModelRate | null {
   const bareName = bareModelName(key);
   if (bareName.length === 0 || UNPRICEABLE_MODELS.has(bareName)) return null;
   const candidates = candidateRateKeys(key);
+  for (const candidate of candidates) {
+    const zed = ZED_MODEL_RATES.get(candidate);
+    if (zed !== undefined) return zed;
+  }
 
   const fromTable = candidates
     .map((candidate) => table.get(candidate))

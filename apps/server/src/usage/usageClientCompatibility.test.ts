@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 
 import { projectUsageSummaryForClient } from "./usageClientCompatibility.ts";
 
-const providers = ["claude", "codex", "grok", "antigravity", "abacus"] as const;
+const providers = ["claude", "codex", "grok", "antigravity", "abacus", "zed"] as const;
 const day = Schema.decodeSync(UsageDay)("2026-09-23");
 const summary: UsageSummary = {
   contractVersion: 6,

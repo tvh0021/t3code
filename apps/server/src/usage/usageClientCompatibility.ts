@@ -4,7 +4,7 @@ const LEGACY_USAGE_PROVIDERS = new Set(["claude", "codex", "grok"]);
 // Fork-only providers. Upstream mobile builds reject the whole RPC response on an
 // unknown provider literal: ForwardCompatibleArray does not drop elements inside
 // the RPC Exit wrapper.
-const FORK_ONLY_USAGE_PROVIDERS = new Set(["abacus"]);
+const FORK_ONLY_USAGE_PROVIDERS = new Set(["abacus", "zed"]);
 
 /**
  * Projects a Usage summary onto the provider schema of App Store mobile builds:

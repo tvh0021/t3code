@@ -155,6 +155,7 @@ export class UsageAggregator {
 
   add(input: CreditedUsageRecord, sourcePath?: string): boolean {
     const record = this.#mapModel(input);
+    if (record.billingDay !== undefined && this.#hourlyWindow !== null) return false;
     if (record.dedupeKey !== null) {
       if (this.#seen.has(record.dedupeKey)) {
         this.#duplicatesDropped += 1;
@@ -172,7 +173,7 @@ export class UsageAggregator {
       return false;
     }
 
-    const day = this.#toDay(record.timestampMs);
+    const day = record.billingDay ?? this.#toDay(record.timestampMs);
     if (
       this.#hourlyWindow === null &&
       (day < this.#options.sinceDay || day > this.#options.untilDay)

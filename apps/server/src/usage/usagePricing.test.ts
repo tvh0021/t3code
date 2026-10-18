@@ -55,6 +55,48 @@ describe("usage pricing", () => {
     expect(priced.costUsd).toBeCloseTo(expected, 9);
   });
 
+  it.each([
+    ["zed.dev/claude-sonnet-5", 16.17],
+    ["zed.dev/claude-sonnet-5-5", 16.17],
+    ["zed.dev/claude-haiku-5-5", 0.8085],
+    ["zed.dev/gpt-5.6-luna", 1.837],
+    ["zed.dev/gpt-6-luna", 0.8085],
+    ["zed.dev/gemini-4-argon", 17.6],
+  ])(
+    "prices %s at observed Zed invoice rates without changing direct API rates",
+    (model, expected) => {
+      expect(priceUsage(new Map(), record(model)).costUsd).toBeCloseTo(expected, 9);
+    },
+  );
+
+  it("reconciles Zed invoice token quantities and keeps raw cost distinct from allowance", () => {
+    const zed = {
+      ...record("zed.dev/gpt-6-luna"),
+      totals: {
+        uncachedInputTokens: 336,
+        cachedInputTokens: 28_950,
+        cacheCreationTokens: 124_725,
+        outputTokens: 392,
+        reasoningTokens: 0,
+      },
+    };
+    const priced = priceUsage(new Map(), zed);
+    expect(priced.costUsd).toBeCloseTo(0.0177206975, 10);
+    expect(priced.categoryCostUsd?.cacheWrite).toBeCloseTo(0.0171496875, 10);
+    expect(priceUsage(new Map(), { ...zed, reportedCostUsd: 0 }).costUsd).toBe(0);
+    expect(priceUsage(new Map(), { ...zed, reportedCostUsd: 2 }).costSource).toBe(
+      "providerReported",
+    );
+    expect(cacheSavingsUsd(new Map(), zed)).toBeCloseTo(0.00286605, 10);
+    const override = createOverrideRateTable({
+      "zed.dev/gpt-6-luna": { inputCostPerMillionTokens: 1, outputCostPerMillionTokens: 2 },
+    });
+    expect(priceUsage(new Map(), { ...zed, reportedCostUsd: 2 }, override).costSource).toBe(
+      "modelPriced",
+    );
+    expect(priceUsage(new Map(), record("zed.dev/unknown-model")).costSource).toBe("unpriced");
+  });
+
   it("uses verified rates ahead of stale public rates while honoring custom and reported costs", () => {
     const table = parseRateTable({ "claude-sonnet-5-5": rate(1) });
     expect(priceUsage(table, record("claude-sonnet-5-5-medium")).costUsd).toBeCloseTo(14.6);

@@ -408,3 +408,21 @@ describe("resolveModelAliases", () => {
     );
   });
 });
+
+describe("daily account snapshots", () => {
+  it("keeps the UTC billing day across client time zones and excludes hourly charts", () => {
+    const daily = record({
+      provider: "zed",
+      model: "zed.dev/gpt-6-luna",
+      timestampMs: Date.parse("2026-08-07T00:00:00Z"),
+      billingDay: "2026-08-07",
+      sessionId: "",
+    });
+    expect(aggregate([daily], "America/Los_Angeles").buckets[0]).toMatchObject({
+      day: "2026-08-07",
+      sessions: 0,
+    });
+    expect(aggregate([daily], "Pacific/Kiritimati").buckets[0]?.day).toBe("2026-08-07");
+    expect(aggregate([daily], "UTC", "hour").buckets).toEqual([]);
+  });
+});

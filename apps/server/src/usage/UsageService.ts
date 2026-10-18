@@ -29,6 +29,8 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
+import { makeZedUsageScanner } from "./zedUsage.ts";
+import { ZedDriver } from "../provider/Drivers/ZedDriver.ts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -55,6 +57,7 @@ import {
   OFFICIAL_MODEL_RATES,
   parseRateTable,
   STATIC_FALLBACK_RATES,
+  ZED_MODEL_RATES,
   type RateTable,
 } from "./usagePricing.ts";
 import {
@@ -251,6 +254,7 @@ export const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
   const hostEnvironment = yield* HostProcess.Environment;
+  const scanZedUsage = yield* makeZedUsageScanner(config.stateDir);
   const readerContext = yield* Effect.context<BuiltInUsageReadersEnv>();
 
   const fileCache: ScanCache = new Map();
@@ -641,6 +645,7 @@ export const make = Effect.gen(function* () {
     settings: ServerSettingsValue,
     retentionCutoffMs: number,
     awaitRefresh: boolean,
+    resolution: "day" | "hour",
   ) {
     const dirs = yield* resolveTranscriptDirs(settings).pipe(Effect.provideContext(readerContext));
 
@@ -680,7 +685,16 @@ export const make = Effect.gen(function* () {
       [Effect.forEach(dirs, (dir) => scanTranscriptDir(dir, windowStartMs)), scans],
       { concurrency: "unbounded" },
     );
-    const scanned: readonly ScannedDir[] = [...transcripts, ...scanDirs.flat()];
+    const zed = yield* scanZedUsage(yield* usageInstances(ZedDriver, settings), resolution);
+    const scanned: readonly ScannedDir[] = [
+      ...transcripts,
+      ...scanDirs.flat(),
+      ...zed.map((source) => ({
+        ...source,
+        provider: "zed" as const,
+        volumeId: source.volumeId ?? "",
+      })),
+    ];
     return scanned;
   });
 
@@ -738,7 +752,13 @@ export const make = Effect.gen(function* () {
     const [, scannedDirs] = yield* Effect.all(
       [
         ensureRates(false),
-        collectDirs(windowStartMs, settings, retentionCutoffMs, input.awaitRefresh === true),
+        collectDirs(
+          windowStartMs,
+          settings,
+          retentionCutoffMs,
+          input.awaitRefresh === true,
+          input.resolution ?? "day",
+        ),
       ],
       { concurrency: 2 },
     );
@@ -903,6 +923,7 @@ export const make = Effect.gen(function* () {
         ...STATIC_FALLBACK_RATES,
         ...rates,
         ...OFFICIAL_MODEL_RATES,
+        ...ZED_MODEL_RATES,
         ...createOverrideRateTable(settings.usagePriceOverrides),
       ].map(([model, rate]) => [model, rate.outputCostPerToken * 1_000_000]),
     );

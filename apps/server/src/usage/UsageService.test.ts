@@ -120,6 +120,7 @@ const layerService = (input: {
   readonly settings: Parameters<typeof ServerSettings.layerTest>[0];
   readonly onRatesFetch?: () => void;
   readonly ratesDocument?: unknown;
+  readonly zedUsageDocument?: unknown;
   readonly environment?: NodeJS.ProcessEnv;
   readonly platform?: NodeJS.Platform;
 }) =>
@@ -141,6 +142,18 @@ const layerService = (input: {
         HttpClient.HttpClient,
         HttpClient.make((request) =>
           Effect.sync(() => {
+            if (request.url === "https://cloud.zed.dev/frontend/session") {
+              return HttpClientResponse.fromWeb(
+                request,
+                Response.json({ organizations: [{ id: "org-test", is_personal: true }] }),
+              );
+            }
+            if (request.url.startsWith("https://cloud.zed.dev/frontend/organizations/")) {
+              return HttpClientResponse.fromWeb(
+                request,
+                Response.json(input.zedUsageDocument ?? {}),
+              );
+            }
             input.onRatesFetch?.();
             return HttpClientResponse.fromWeb(request, Response.json(input.ratesDocument ?? {}));
           }),
@@ -1995,6 +2008,68 @@ describe("UsageService", () => {
       assert.isUndefined(
         orphanedAt,
         `interruption left the next matching request pending at scheduler check ${orphanedAt}`,
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("includes Zed dashboard usage in model buckets with invoice fallback pricing", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      const zedSettings = {
+        ...settings,
+        providerInstances: {
+          ...settings.providerInstances,
+          [ProviderInstanceId.make("zed")]: {
+            driver: ProviderDriverKind.make("zed"),
+            config: { dashboardSession: "session=test" },
+          },
+        },
+      };
+      yield* Effect.gen(function* () {
+        const service = yield* UsageService.make;
+        const summary = yield* service.readSummary({
+          timeZone: "America/Los_Angeles",
+          sinceDay: UsageDay.make("2026-08-01"),
+          untilDay: UsageDay.make("2026-08-02"),
+        });
+        const buckets = summary.buckets.filter((bucket) => bucket.provider === "zed");
+        assert.lengthOf(buckets, 1);
+        assert.strictEqual(buckets[0]?.day, "2026-08-01");
+        assert.strictEqual(buckets[0]?.model, "zed.dev/gpt-6-luna");
+        assert.closeTo(buckets[0]!.costUsd, 0.0177206975, 1e-10);
+        assert.strictEqual(buckets[0]?.totals.uncachedInputTokens, 336);
+        assert.strictEqual(buckets[0]?.sessions, 0);
+        assert.strictEqual(
+          summary.sources.find((source) => source.fingerprint.provider === "zed")?.status,
+          "ok",
+        );
+        yield* service.awaitPersisted;
+      }).pipe(
+        Effect.provide(
+          layerService({
+            prefix: "zed-usage-test",
+            home,
+            settings: zedSettings,
+            zedUsageDocument: {
+              usage_by_model: {
+                "GPT-6 Luna": [
+                  {
+                    date: "2026-08-01",
+                    tokens: {
+                      input: 336,
+                      input_cache_creation: 124725,
+                      input_cache_read: 28950,
+                      output: 392,
+                      total: 154403,
+                    },
+                    cost_in_cents: null,
+                    spend_in_cents: 0,
+                  },
+                ],
+              },
+            },
+          }),
+        ),
       );
     }).pipe(Effect.scoped),
   );
