@@ -314,6 +314,13 @@ need a password are skipped (`apps/desktop/src/electron/MacKeychain.ts`).
 
 ## Upstream sync
 
+**Decisions.**
+
+- 0.8.0: `AgentSessionScanner` compared resolved session paths with unresolved
+  managed roots, so symlinked T3 directories could appear as import candidates.
+  Resolve managed roots for each scan and import, including directories created
+  after startup.
+
 Run the `blast-radius` skill before merging (see `AGENTS.md`). Then:
 
 - Merge `upstream/main`; don't rebase. Merges keep the fork's history and

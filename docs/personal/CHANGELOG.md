@@ -6,6 +6,11 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.8.0 (2026-10-19)
+
+- Upstream sync: merged upstream ab6be13d43
+- Issue: session import could offer T3-managed workspaces reached through symlinks → Fix: resolve managed roots before listing or importing sessions
+
 ### 0.7.5 (2026-10-18)
 
 - Issue: on Usage → Day, provider columns included Codex credit spend that Total left out → Fix: day and hour columns, Total and charts all use subscription cost, matching the headline; credit spend stays in provider and model totals (USAGE-002)
