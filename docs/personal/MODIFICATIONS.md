@@ -153,9 +153,10 @@ an ended billing period by calendar months and rereads spend once.
   `antigravity/hub/1.0.0`. Personal 0.6.2 merged the non-daily endpoint to fill
   in Gemini, but that endpoint reports a separate unused Gemini quota (98%
   weekly and 100% five-hour). Identifying as `antigravity/hub/2.24.0` returns
-  the real Gemini and Argon pools in `makeAntigravityUsageProbe` without mixing in the
-  non-daily pool, and unspent rolling windows omit their synthetic `now + 5h`
-  reset timestamp.
+  the real Gemini and Argon pools in `makeAntigravityUsageProbe`. The probe retains
+  upstream's merge of both quota endpoints, keeping the higher used percentage
+  when both report a bucket, so a missing group on one endpoint stays visible.
+  Unspent rolling windows omit their synthetic `now + 5h` reset timestamp.
 - 0.5.0 (ZED-001): Zed's own credential can't read billing, so spend comes from
   `cloud.zed.dev` with a dashboard sign-in. Desktop signs in with **Connect** in
   Zed provider settings; other clients paste the dashboard Cookie header. The
