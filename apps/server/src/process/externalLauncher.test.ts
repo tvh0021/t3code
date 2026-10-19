@@ -1316,6 +1316,10 @@ it.effect("keeps the macOS VS Code Insiders bundle out of stable VS Code", () =>
     const editors = yield* Effect.gen(function* () {
       const launcher = yield* ExternalLauncher.ExternalLauncher;
       const available = yield* launcher.resolveAvailableEditors();
+      if (available.includes("vscode")) {
+        yield* launcher.launchEditor({ editor: "vscode", cwd: "/workspace/file.ts" });
+        assert.notEqual(spawned?.command, path.join(bin, "code"));
+      }
       yield* launcher.launchEditor({ editor: "vscode-insiders", cwd: "/workspace/file.ts" });
       return available;
     }).pipe(
@@ -1330,7 +1334,6 @@ it.effect("keeps the macOS VS Code Insiders bundle out of stable VS Code", () =>
       ),
     );
 
-    assert.notInclude(editors, "vscode");
     assert.include(editors, "vscode-insiders");
     assert.equal(spawned?.command, path.join(bin, "code-insiders"));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

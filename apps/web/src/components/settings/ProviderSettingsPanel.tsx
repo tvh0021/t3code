@@ -1387,7 +1387,7 @@ function ProviderInstanceRow({
           <ZedDashboardSection
             connected={configuredDashboardSession(instance.config)}
             onConnect={(dashboardSession) =>
-              actions.updateInstance(instanceId, instance, {
+              actions.enableInstance(instanceId, {
                 ...instance,
                 config: {
                   ...(instance.config !== null && typeof instance.config === "object"

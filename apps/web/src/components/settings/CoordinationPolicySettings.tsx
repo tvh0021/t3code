@@ -57,9 +57,8 @@ export function CoordinationPolicySettings({
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Invalid model limits.");
-    } finally {
-      setPending(false);
     }
+    setPending(false);
   };
   const maintain = async () => {
     setPending(true);
@@ -73,9 +72,10 @@ export function CoordinationPolicySettings({
           ? "Models and pricing refreshed. New delegated tasks use the updated policy."
           : "Could not refresh model policy. The previous policy remains available.",
       );
-    } finally {
-      setPending(false);
+    } catch {
+      setMessage("Could not refresh model policy. The previous policy remains available.");
     }
+    setPending(false);
   };
   return (
     <section className="flex flex-col gap-3 px-4 py-5" aria-labelledby="coordination-policy-title">

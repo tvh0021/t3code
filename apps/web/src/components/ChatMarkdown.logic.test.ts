@@ -19,37 +19,43 @@ describe("canUseMarkdownFileShellActions", () => {
 });
 
 describe("shouldUseMarkdownFileBrowserPrimaryAction", () => {
-  const html = { iconPath: "/tmp/report.html", canOpenInBrowser: true };
+  const markdown = { iconPath: "/tmp/report.md", canOpenInBrowser: true };
 
-  it("uses the browser only when it is the sole action, except for PDFs", () => {
+  it("uses the browser for markdown only when it is the sole action", () => {
     expect(
       shouldUseMarkdownFileBrowserPrimaryAction({
-        ...html,
+        ...markdown,
         canOpenInEditor: false,
         canOpenInPanel: false,
       }),
     ).toBe(true);
     expect(
       shouldUseMarkdownFileBrowserPrimaryAction({
-        ...html,
+        ...markdown,
         canOpenInEditor: true,
         canOpenInPanel: false,
       }),
     ).toBe(false);
     expect(
       shouldUseMarkdownFileBrowserPrimaryAction({
-        ...html,
+        ...markdown,
         canOpenInEditor: false,
         canOpenInPanel: true,
       }),
     ).toBe(false);
-    expect(
-      shouldUseMarkdownFileBrowserPrimaryAction({
-        iconPath: "/tmp/report.pdf",
-        canOpenInEditor: true,
-        canOpenInBrowser: true,
-        canOpenInPanel: true,
-      }),
-    ).toBe(true);
   });
+
+  it.each(["pdf", "html", "htm"])(
+    "opens %s in the browser ahead of editor and panel actions",
+    (extension) => {
+      expect(
+        shouldUseMarkdownFileBrowserPrimaryAction({
+          iconPath: `/tmp/report.${extension}`,
+          canOpenInEditor: true,
+          canOpenInBrowser: true,
+          canOpenInPanel: true,
+        }),
+      ).toBe(true);
+    },
+  );
 });

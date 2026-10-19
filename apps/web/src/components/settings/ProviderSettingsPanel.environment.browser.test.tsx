@@ -216,7 +216,7 @@ async function render(options?: {
 }
 
 const button = (name: string) => page.getByRole("button", { name, exact: true });
-const refreshButton = () => page.getByRole("button", { name: /^Refresh provider status/ });
+const refreshButton = () => page.getByRole("button", { name: /^Refresh providers and models/ });
 // The section header and the end of the provider list both offer Add provider.
 const addProvider = () => page.getByRole("button", { name: "Add provider" }).first();
 const select = (name: string) => button(`Select ${name}`);

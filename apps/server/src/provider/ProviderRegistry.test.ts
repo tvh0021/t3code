@@ -3440,6 +3440,7 @@ it.layer(
             );
 
             assert.deepStrictEqual(providers.map((provider) => provider.instanceId).toSorted(), [
+              "abacus",
               "antigravity",
               "claudeAgent",
               "codex",
@@ -3448,6 +3449,7 @@ it.layer(
               "muse",
               "opencode",
               "pi",
+              "zed",
             ]);
             assert.strictEqual(cursorProvider?.enabled, false);
             assert.strictEqual(cursorProvider?.status, "disabled");
