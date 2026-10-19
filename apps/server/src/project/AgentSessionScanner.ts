@@ -602,7 +602,11 @@ export const make = Effect.gen(function* () {
     path.join(homeDir, "Documents", "Codex"),
   ];
 
-  const isExcludedProjectPath = (candidatePath: string) =>
+  const isExcludedProjectPath = (
+    candidatePath: string,
+    managedBaseDir = baseDir,
+    managedWorktreesDir = worktreesDir,
+  ) =>
     excludedProjectRoots.has(normalizeProjectPathForComparison(candidatePath)) ||
     excludedProjectAncestors.some((ancestor) =>
       normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
@@ -610,9 +614,15 @@ export const make = Effect.gen(function* () {
       ),
     ) ||
     normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
-      normalizeForWorktreeMatch(baseDir, foldWorktreeCase),
+      normalizeForWorktreeMatch(managedBaseDir, foldWorktreeCase),
     ) ||
-    isT3ManagedWorktree(candidatePath, worktreesDir, foldWorktreeCase);
+    isT3ManagedWorktree(candidatePath, managedWorktreesDir, foldWorktreeCase);
+
+  // Managed directories may be created after startup, so resolve them per operation.
+  const canonicalManagedRoots = Effect.all([
+    fileSystem.realPath(baseDir).pipe(Effect.orElseSucceed(() => baseDir)),
+    fileSystem.realPath(worktreesDir).pipe(Effect.orElseSucceed(() => worktreesDir)),
+  ]);
 
   const listDirectory = (directory: string) =>
     fileSystem.readDirectory(directory).pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
@@ -1139,6 +1149,7 @@ export const make = Effect.gen(function* () {
     >();
     const directoryKeys = new Map<string, string>();
     const gitIdentities = new Map<string, AgentSessionProjectGit | null>();
+    const [canonicalBaseDir, canonicalWorktreesDir] = yield* canonicalManagedRoots;
 
     for (const candidate of raw) {
       const expanded = expandHomePath(candidate.cwd.trim(), homeDir);
@@ -1157,7 +1168,7 @@ export const make = Effect.gen(function* () {
           .pipe(Effect.orElseSucceed(() => resolved));
         // A symlink can point into the worktrees directory even when its own
         // spelling doesn't; check again with links resolved.
-        if (isExcludedProjectPath(realPath)) {
+        if (isExcludedProjectPath(realPath, canonicalBaseDir, canonicalWorktreesDir)) {
           key = "";
         } else {
           const gitIdentity = yield* readGitIdentity(resolved);
@@ -1250,7 +1261,12 @@ export const make = Effect.gen(function* () {
   ) {
     const root = path.resolve(expandHomePath(workspaceRoot, homeDir));
     const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
-    if (isExcludedProjectPath(root) || isExcludedProjectPath(realRoot)) return Stream.empty;
+    const [canonicalBaseDir, canonicalWorktreesDir] = yield* canonicalManagedRoots;
+    if (
+      isExcludedProjectPath(root) ||
+      isExcludedProjectPath(realRoot, canonicalBaseDir, canonicalWorktreesDir)
+    )
+      return Stream.empty;
     const rootIdentity = yield* directoryIdentity(root);
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const cutoffMs = nowMs - RECENT_THREAD_WINDOW_MS;

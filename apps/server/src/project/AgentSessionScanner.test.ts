@@ -2386,6 +2386,16 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         });
 
         expect(threads).toEqual([]);
+        const linkParent = yield* makeTempDir("t3code-scanner-links-");
+        const linkedWorkspace = path.join(linkParent, "innocent-project");
+        yield* fileSystem.symlink(workspace, linkedWorkspace);
+        const linkedThreads = yield* runRecentThreads({
+          claudeHomePath,
+          codexHomePath,
+          configBaseDir,
+          workspaceRoot: linkedWorkspace,
+        });
+        expect(linkedThreads).toEqual([]);
       }),
     );
 
