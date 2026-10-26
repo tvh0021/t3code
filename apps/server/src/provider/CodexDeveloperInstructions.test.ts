@@ -1,11 +1,30 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Writes fixture files for the synchronous user-rules reader.
 import * as NodeAssert from "node:assert/strict";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
-import { describe, it } from "vite-plus/test";
+import { T3_CODE_ORCHESTRATION_SECTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
+import { USER_ORCHESTRATION_INSTRUCTIONS_ENV } from "@t3tools/provider-core/server/userOrchestrationInstructions";
+import { afterAll, beforeAll, describe, it } from "vite-plus/test";
 
 import {
   buildCodexAdditionalContext,
   CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES,
 } from "./CodexDeveloperInstructions.ts";
+
+let userRulesDir: string;
+beforeAll(() => {
+  userRulesDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-codex-rules-"));
+  process.env[USER_ORCHESTRATION_INSTRUCTIONS_ENV] = NodePath.join(
+    userRulesDir,
+    "ORCHESTRATION.md",
+  );
+});
+afterAll(() => {
+  delete process.env[USER_ORCHESTRATION_INSTRUCTIONS_ENV];
+  NodeFS.rmSync(userRulesDir, { recursive: true, force: true });
+});
 
 describe("buildCodexAdditionalContext", () => {
   describe.each([
@@ -79,3 +98,28 @@ describe("Codex orchestration context", () => {
 function runtimeInstructions(runtime: Parameters<typeof buildCodexAdditionalContext>[0]) {
   return buildCodexAdditionalContext(runtime).t3_code_runtime!.value;
 }
+describe("buildCodexAdditionalContext with user orchestration rules", () => {
+  it("keeps every entry under the cap when the user's file is large", () => {
+    const path = process.env[USER_ORCHESTRATION_INSTRUCTIONS_ENV]!;
+    const paragraph = "Delegate research to Opus at medium effort. ".repeat(20);
+    NodeFS.writeFileSync(path, Array.from({ length: 30 }, () => paragraph).join("\n\n"));
+    try {
+      const context = buildCodexAdditionalContext({
+        model: "gpt-5.3-codex",
+        reasoningEffort: "high",
+      });
+      const sections = Object.keys(context)
+        .filter((key) => key.startsWith("t3_code_orchestration_"))
+        .sort()
+        .map((key) => context[key]!.value);
+
+      NodeAssert.ok(sections.length > T3_CODE_ORCHESTRATION_SECTIONS.length + 1);
+      NodeAssert.match(sections.join("\n\n"), /## User orchestration rules/);
+      for (const value of sections) {
+        NodeAssert.ok(Buffer.byteLength(value, "utf8") <= CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES);
+      }
+    } finally {
+      NodeFS.rmSync(path, { force: true });
+    }
+  });
+});

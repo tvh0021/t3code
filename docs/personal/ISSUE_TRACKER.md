@@ -12,6 +12,23 @@ Problem: The context meter stays empty for Zed threads.
 Cause: The companion Zed bridge never sends ACP `usage_update`; T3's adapter handles it when present.
 Done when: the bridge reports context use and capacity for new and resumed sessions, and the meter shows it.
 History: Native Zed session storage holds nonzero input and output token counts, but the captured ACP stream has no usage updates.
+Status (2026-10-18): fixed in the `~/git_repos/zed-dev` checkout, not yet committed or released: the bridge forwards native `TokenUsageUpdated` as `usage_update` with `used` and `size` for top-level sessions. Close once a bridge release ships to `~/.local/bin` and the meter fills on a live Zed thread.
+
+### ZED-USAGE-001: Zed per-model usage is unverified
+
+Open since 2026-10-18.
+Problem: `feat/zed-usage-tracking` (`0b0c98441b`) reads per-model daily totals from Zed's dashboard billing API, but has never run against a live account.
+Cause: the monthly Zed allowance is exhausted until about 2026-11-15, so no real Zed turn or authenticated dashboard read was possible.
+Done when: after the reset, dashboard auth works, model and category counts and raw costs match Orb invoices, accounts dedupe across environments, a real Zed turn triggers a refresh, and the Usage UI shows it. Then rebase on `main` and merge.
+History: offline tests, typechecks and lint pass. The branch predates 0.7.4 and the USAGE-002 fix; its Zed buckets carry no credits, so they count as subscription cost in day and hour totals. `main` now adds the same `UsageRecord.billingDay` field and hourly skip for the ChatLLM ledger; keep one copy when rebasing.
+
+### CHATLLM-CANCEL-001: `task_cancel` doesn't stop a ChatLLM delegate
+
+Open since 2026-10-26.
+Problem: a running ChatLLM (`abacus`) delegate can't be stopped. `task_cancel` returns `cancel_requested` and `t3_thread_interrupt` returns `interrupt_requested`, but the run stays `running` and the model keeps issuing tool calls. Stop and steer from the UI don't work either. Background processes the child started keep running too.
+Cause: unknown. The interrupt signal is recorded on the thread (a `run_interrupt_request` item), so the request reaches orchestration; the ChatLLM adapter's tool loop seems not to check for it between tool calls.
+Done when: cancelling or interrupting a ChatLLM delegate settles the run within seconds, no further tool calls run, queued runs are dropped, and shell processes the child started are stopped or reported.
+History: seen on a `zai-org/GLM-5.3-Flash` research delegate (`12-month flight-time sample (GLM 5.3 Flash)`, 2026-10-26). Two `task_cancel` calls (about 17:04 and 17:10 UTC) and a `t3_thread_interrupt` on run ordinal 1 (17:15:21 UTC) all returned success; the child ran another shell command at 17:15:33 UTC. A second run (ordinal 2) appeared `queued` at 17:14:42 UTC, probably from a steer attempt, behind the stuck run. Orphaned Python fetch scripts (parent PID 1) it had started kept writing files until killed by hand, and the child relaunched one within two minutes of the kill. Not yet checked: whether cancel works for Codex, Antigravity and Zed delegates.
 
 ## Known limitations
 

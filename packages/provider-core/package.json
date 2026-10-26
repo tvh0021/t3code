@@ -91,6 +91,10 @@
       "types": "./src/server/orchestrationInstructions.ts",
       "import": "./src/server/orchestrationInstructions.ts"
     },
+    "./server/userOrchestrationInstructions": {
+      "types": "./src/server/userOrchestrationInstructions.ts",
+      "import": "./src/server/userOrchestrationInstructions.ts"
+    },
     "./server/pathExpansion": {
       "types": "./src/server/pathExpansion.ts",
       "import": "./src/server/pathExpansion.ts"

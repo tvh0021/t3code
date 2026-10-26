@@ -287,6 +287,14 @@ things:
 - **Review worktrees.** A `reviewRef` is resolved to a commit and passed to
   upstream's `isolation: "worktree"` as its base, so the child reviews that
   commit instead of the parent's current one (`OrchestratorMcpService.ts`).
+- **User orchestration rules.** `~/.agents/ORCHESTRATION.md` (or the path in
+  `T3_USER_ORCHESTRATION_INSTRUCTIONS`) is appended to the orchestration
+  instructions every MCP-enabled provider receives: Claude, Codex, ACP
+  (Antigravity, Gemini, Grok), Cursor and OpenCode. It is reread at each session
+  start, and on every turn for Codex, so edits need no rebuild. Codex gets it
+  split into entries under its 4,000-byte cap
+  (`userOrchestrationInstructions.ts`). Pi bakes its instructions into its
+  extension at build time and doesn't get the file.
 
 The policy is checked daily but refetches models and prices only when the month
 changes or a refresh is forced from Settings > Providers. Mobile has no editor

@@ -1,5 +1,7 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 
+import { readUserOrchestrationSections } from "./userOrchestrationInstructions.ts";
+
 // Codex truncates entries over 4,000 bytes; keep each section self-contained and below that limit.
 export const T3_CODE_ORCHESTRATION_SECTIONS: ReadonlyArray<string> = [
   `## T3 Code orchestration
@@ -26,6 +28,18 @@ export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
 
 ${T3_CODE_ORCHESTRATION_SECTIONS.join("\n\n")}
 `;
+
+/**
+ * Built-in sections followed by the user's own orchestration rules, read fresh
+ * so edits apply to the next session or turn.
+ */
+export function t3OrchestrationSections(): ReadonlyArray<string> {
+  return [...T3_CODE_ORCHESTRATION_SECTIONS, ...readUserOrchestrationSections()];
+}
+
+export function t3OrchestrationInstructions(): string {
+  return `\n\n${t3OrchestrationSections().join("\n\n")}\n`;
+}
 
 export const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
@@ -72,7 +86,7 @@ export function t3AcpPromptWithInstructions(input: {
     ...(input.state.hasT3Mcp
       ? [
           T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(),
-          T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim(),
+          t3OrchestrationInstructions().trim(),
           T3_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS,
         ]
       : []),
@@ -81,7 +95,7 @@ export function t3AcpPromptWithInstructions(input: {
 }
 
 function prependT3OrchestrationInstructions(prompt: string): string {
-  return `<t3_code_orchestration_instructions>${T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
+  return `<t3_code_orchestration_instructions>${t3OrchestrationInstructions().trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
 }
 
 export function t3OrchestrationPromptForFirstRun(input: {
@@ -95,5 +109,5 @@ export function t3OrchestrationPromptForFirstRun(input: {
 }
 
 export function t3OrchestrationSystemPrompt(hasT3Mcp: boolean): string | undefined {
-  return hasT3Mcp ? T3_CODE_ORCHESTRATION_INSTRUCTIONS : undefined;
+  return hasT3Mcp ? t3OrchestrationInstructions() : undefined;
 }
