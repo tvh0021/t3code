@@ -49,7 +49,8 @@ models. Its agent loop streams tool calls and runs `read_file`, `write_file`,
 `edit_file`, `list_directory` and `execute_command`, with filters for known
 destructive commands. A turn allows 200 tool calls on models whose id contains
 `flash` and 50 on others (`abacusMaxTurnSteps`); `requestTimeoutMs` (default
-600 s) applies to each request.
+600 s) applies to each request. Stop interrupts the active request or command,
+and a final turn update clears the running status.
 
 **Decisions.**
 

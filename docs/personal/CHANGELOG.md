@@ -6,6 +6,14 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.10.0 (2026-10-26)
+
+- Issue: ChatLLM ignored Stop and kept finished turns marked as running → Fix: interrupts reach active turns and completion updates clear their running status (CHATLLM-CANCEL-001)
+- New feature: usage prices follow the dated launch rates for Gemini 4 Argon and Gemini 3.8 Flash while preserving historical prices
+- New feature: removed automatic quota handoff to fallback models; limited threads use upstream's reset-based retry
+- New feature: delegated task limits are edited on desktop or web; the duplicate mobile editor was removed
+- New feature: retired Usage compatibility for App Store 1.2 and 1.3; mobile clients receive the current format without ChatLLM
+
 ### 0.9.0 (2026-10-25)
 
 - Upstream sync: merged upstream 1a13127c15

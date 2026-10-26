@@ -2,7 +2,7 @@
 
 A personal fork of [T3 Code](https://github.com/pingdotgg/t3code) with two extra
 providers and deeper usage tracking. It merges upstream regularly; the last sync
-was October 17, 2026 (upstream `a7025639c0`).
+was October 25, 2026 (upstream `1a13127c15`).
 
 ## Why use it
 

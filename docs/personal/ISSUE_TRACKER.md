@@ -16,7 +16,6 @@ History: Native Zed session storage holds nonzero input and output token counts,
 ## Known limitations
 
 - **ChatLLM ledger days are UTC**: Abacus bills by UTC day, so ChatLLM credits land on the UTC date even when Usage uses another time zone; turn tokens use local days.
-- **App Store 1.2 and 1.3 Usage** (MOBILE-001): these phone apps show only Claude, Codex and Grok usage. The host sends them the older Usage format.
 - **ChatLLM on the phone**: newer phone apps don't know the ChatLLM provider, so the host leaves ChatLLM out of their Usage tab (MOBILE-002). Desktop and web show it.
 - **app.t3.codes Usage**: the hosted web app probably fails Usage against this host the way the phone did, because it receives ChatLLM entries. Untested.
 - **Antigravity on eduroam** (WORKFLOW-003): Antigravity sign-in times out because eduroam's IPv6 path stalls and the native client has no IPv4 fallback. Hotspot and other networks work.
@@ -26,7 +25,7 @@ History: Native Zed session storage holds nonzero input and output token counts,
 
 ## Resolved
 
-- **CHATLLM-CANCEL-001** (0.10.0): ChatLLM turns ignored Stop and `t3_thread_interrupt` until the server restarted, and stayed `running` after they ended. Cause: `startTurn` ran the tool loop inline, so the start effect held the thread's outbox lane and the interrupt was never claimed; the adapter never emitted a completed `provider_turn.updated`. Fix: the loop runs in a fiber forked into the session scope, and every turn ends with a final `provider_turn.updated` before `turn.terminal`.
+- **CHATLLM-CANCEL-001** (0.10.0): ChatLLM ignored Stop and stayed running after completion. Cause: inline execution blocked interrupts; completion updates were missing. Fix: fork execution and publish final status.
 
 - **CHATLLM-USAGE-002** (0.7.5): ChatLLM credits diverged from Abacus's dashboard. Cause: balance changes missed delayed charges and mixed concurrent turns. Fix: use daily ledger credits.
 
