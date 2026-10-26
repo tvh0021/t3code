@@ -13,8 +13,6 @@ was October 17, 2026 (upstream `a7025639c0`).
   history including compressed and archived sessions.
 - **More in Limits.** Both Antigravity pools (Gemini, and Claude & GPT),
   ChatLLM compute points, and Zed account spend.
-- **Quota handoff.** A thread that hits its usage limit continues on the first
-  fallback model with quota left (95% threshold by default).
 - **Delegation limits.** Per-model limits on how many times an agent may
   resubmit the same child task, and delegated reviews of a chosen commit.
 - **LaTeX math and larger default fonts.**

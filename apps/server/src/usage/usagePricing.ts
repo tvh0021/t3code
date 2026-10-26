@@ -19,6 +19,11 @@ export interface TokenRates {
 export interface ModelRate extends TokenRates {
   readonly fast: TokenRates | null;
   readonly ultrafast: TokenRates | null;
+  /** Launch pricing for standard-speed usage before `endsBeforeMs`; the base rates apply after. */
+  readonly introductory?: {
+    readonly endsBeforeMs: number;
+    readonly rates: TokenRates;
+  };
 }
 
 export type RateTable = ReadonlyMap<string, ModelRate>;
@@ -39,6 +44,11 @@ function ratePerMillion(
   };
 }
 
+/** The standard rate, with a dated launch rate so history before the change keeps its price. */
+function introductoryUntil(standard: ModelRate, endsBefore: string, launch: ModelRate): ModelRate {
+  return { ...standard, introductory: { endsBeforeMs: Date.parse(endsBefore), rates: launch } };
+}
+
 /**
  * Official OpenAI, Anthropic (5-minute cache write), and Google base-tier API
  * rates verified 2026-10-11; transcripts omit long-context tier modifiers.
@@ -56,13 +66,22 @@ export const OFFICIAL_MODEL_RATES: RateTable = new Map([
   ["claude-sonnet-5-5", ratePerMillion(2, 10, 0.1, 2.5)],
   ["claude-opus-4-6", ratePerMillion(5, 25, 0.5, 6.25)],
   ["claude-opus-4.6", ratePerMillion(5, 25, 0.5, 6.25)],
-  // Introductory rates through 2026-12-31. Gemini publishes cache storage
-  // separately; cache creation uses the input rate and excludes storage fees.
-  ["gemini-3.8-flash", ratePerMillion(0.75, 3.75, 0.075)],
+  // Gemini publishes cache storage separately; cache creation uses the input
+  // rate and excludes storage fees. Launch rates double on the dates given.
+  [
+    "gemini-3.8-flash",
+    introductoryUntil(
+      ratePerMillion(1.5, 7.5, 0.15),
+      "2027-01-01",
+      ratePerMillion(0.75, 3.75, 0.075),
+    ),
+  ],
   ["gemini-3.1-pro", ratePerMillion(2, 12, 0.2)],
   ["gemini-3.1-pro-preview", ratePerMillion(2, 12, 0.2)],
-  // Introductory rates through 2026-11-30, doubling from 2026-12-01.
-  ["gemini-4-argon", ratePerMillion(2, 10, 0.1)],
+  [
+    "gemini-4-argon",
+    introductoryUntil(ratePerMillion(4, 20, 0.2), "2026-12-01", ratePerMillion(2, 10, 0.1)),
+  ],
 ]);
 
 /**
@@ -211,8 +230,15 @@ function mergeAliasRate(a: ModelRate, b: ModelRate): ModelRate | null {
   return { ...a, fast, ultrafast };
 }
 
-function ratesAt(rate: ModelRate, speed: UsageSpeed): TokenRates {
-  return (speed === "standard" ? null : rate[speed]) ?? rate;
+function standardRatesAt(rate: ModelRate, timestampMs: number): TokenRates {
+  const introductory = rate.introductory;
+  return introductory !== undefined && timestampMs < introductory.endsBeforeMs
+    ? introductory.rates
+    : rate;
+}
+
+function ratesAt(rate: ModelRate, speed: UsageSpeed, timestampMs: number): TokenRates {
+  return (speed === "standard" ? null : rate[speed]) ?? standardRatesAt(rate, timestampMs);
 }
 
 function normalizeRateKey(model: string): string {
@@ -342,7 +368,7 @@ function findOverride(overrides: RateTable | undefined, model: string): ModelRat
 
 export type PricedRecord = Pick<
   UsageRecord,
-  "model" | "rateModel" | "totals" | "speed" | "reportedCostUsd"
+  "model" | "rateModel" | "totals" | "speed" | "reportedCostUsd" | "timestampMs"
 >;
 
 export interface PricedUsage {
@@ -388,11 +414,14 @@ export function priceUsage(
     return reported === null ? unsplit(0, "unpriced") : unsplit(reported, "providerReported");
   }
 
-  const listCost = costByCategory(totals, ratesAt(rate, record.speed));
+  const listCost = costByCategory(totals, ratesAt(rate, record.speed, record.timestampMs));
   const listCostUsd = sumCategories(listCost);
   if (reported !== null && listCostUsd <= 0) return unsplit(reported, "providerReported");
   const premiumUsd =
-    record.speed === "standard" ? 0 : listCostUsd - sumCategories(costByCategory(totals, rate));
+    record.speed === "standard"
+      ? 0
+      : listCostUsd -
+        sumCategories(costByCategory(totals, standardRatesAt(rate, record.timestampMs)));
   const scale = reported === null ? 1 : reported / listCostUsd;
   return {
     costUsd: reported ?? listCostUsd,
@@ -415,6 +444,6 @@ export function cacheSavingsUsd(
   const rate =
     findOverride(overrides, record.model) ?? lookupRate(table, record.rateModel ?? record.model);
   if (rate === null) return 0;
-  const rates = ratesAt(rate, record.speed);
+  const rates = ratesAt(rate, record.speed, record.timestampMs);
   return record.totals.cachedInputTokens * (rates.inputCostPerToken - rates.cacheReadCostPerToken);
 }

@@ -19,7 +19,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { RUNTIME_MODE_CHOICES } from "../threads/thread-settings-options";
 import { SettingsScreen } from "./components/SettingsScreen";
-import { CoordinationPolicySettings } from "./CoordinationPolicySettings";
 import {
   AndroidSettingsEnvironmentFilter,
   SettingsEnvironmentFilterHeader,
@@ -493,16 +492,6 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                   </SettingsSection>
                 </>
               ) : null}
-              {props.page === "maintenance" && !projectSelected
-                ? targets.map((target) => (
-                    <CoordinationPolicySettings
-                      key={target.environment.environmentId}
-                      environmentId={target.environment.environmentId}
-                      settings={target.settings}
-                      environmentLabel={target.environment.label}
-                    />
-                  ))
-                : null}
             </>
           )}
         </ScrollView>

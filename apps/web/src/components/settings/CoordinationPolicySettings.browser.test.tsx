@@ -8,15 +8,7 @@ import { render } from "../../../test/render";
 const state = vi.hoisted(() => ({
   persist: vi.fn(),
   refresh: vi.fn(),
-  settings: {
-    coordinationModelLimits: { "gpt-6-sol": 2 },
-    coordinationQuotaHandoffThresholdPercent: 95,
-    coordinationQuotaHandoffFallbacks: {
-      "gpt-6-sol": ["claude-opus-5"],
-      "gpt-6-astra": ["claude-fable-5-1"],
-      "gpt-6-luna": ["gemini-3.8-flash-high"],
-    },
-  },
+  settings: { coordinationModelLimits: { "gpt-6-sol": 2 } },
 }));
 vi.mock("../../hooks/useSettings", () => ({ useEnvironmentSettings: () => state.settings }));
 vi.mock("../../state/server", () => ({
@@ -63,8 +55,6 @@ it("keeps invalid edits visible, then saves canonical limits for the selected en
     input: {
       patch: {
         coordinationModelLimits: { "gpt-sol": 2, "glm-flash": null },
-        coordinationQuotaHandoffFallbacks: state.settings.coordinationQuotaHandoffFallbacks,
-        coordinationQuotaHandoffThresholdPercent: 95,
       },
     },
   });
@@ -92,26 +82,4 @@ it("blocks edits without admin access and reports a failed maintenance refresh",
   expect(screen.container.querySelector('[role="status"]')?.textContent).toContain(
     "previous policy remains available",
   );
-});
-
-it("saves the environment quota threshold and ordered fallback mappings", async () => {
-  await using screen = await setup();
-  await userEvent.fill(page.getByRole("spinbutton"), "90");
-  await userEvent.fill(
-    page.getByRole("textbox").last(),
-    "gpt-6-sol=claude-opus-5.5,claude-opus-5",
-  );
-  await save();
-  expect(state.persist).toHaveBeenCalledWith({
-    environmentId,
-    input: {
-      patch: {
-        coordinationModelLimits: { "gpt-sol": 2 },
-        coordinationQuotaHandoffThresholdPercent: 90,
-        coordinationQuotaHandoffFallbacks: {
-          "gpt-6-sol": ["claude-opus-5.5", "claude-opus-5"],
-        },
-      },
-    },
-  });
 });

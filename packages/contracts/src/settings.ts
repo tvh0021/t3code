@@ -1206,21 +1206,6 @@ export const StorageCleanupSettings = Schema.Struct({
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
 export const ServerSettings = Schema.Struct({
-  coordinationQuotaHandoffThresholdPercent: Schema.Int.check(
-    Schema.isBetween({ minimum: 1, maximum: 100 }),
-  ).pipe(Schema.withDecodingDefault(Effect.succeed(95))),
-  coordinationQuotaHandoffFallbacks: Schema.Record(
-    TrimmedNonEmptyString,
-    Schema.Array(TrimmedNonEmptyString),
-  ).pipe(
-    Schema.withDecodingDefault(
-      Effect.succeed({
-        "gpt-6-sol": ["claude-opus-5"],
-        "gpt-6-astra": ["claude-fable-5-1"],
-        "gpt-6-luna": ["gemini-3.8-flash-high"],
-      }),
-    ),
-  ),
   coordinationModelLimits: Schema.optionalKey(
     Schema.Record(
       TrimmedNonEmptyString,
@@ -1550,12 +1535,6 @@ const ModelSelectionPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
-  coordinationQuotaHandoffThresholdPercent: Schema.optionalKey(
-    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
-  ),
-  coordinationQuotaHandoffFallbacks: Schema.optionalKey(
-    Schema.Record(TrimmedNonEmptyString, Schema.Array(TrimmedNonEmptyString)),
-  ),
   coordinationModelLimits: Schema.optionalKey(
     Schema.Record(
       TrimmedNonEmptyString,

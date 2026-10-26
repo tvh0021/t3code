@@ -49,18 +49,7 @@ const summary: UsageSummary = {
 };
 
 describe("projectUsageSummaryForClient", () => {
-  it.each(["1.2.0", "1.3.0", "1.3.2"])("sends only v5 providers to mobile %s", (appVersion) => {
-    const projected = projectUsageSummaryForClient(summary, { surface: "mobile", appVersion });
-    expect(projected.contractVersion).toBe(5);
-    expect(projected.buckets.map((bucket) => bucket.provider)).toEqual(["claude", "codex", "grok"]);
-    expect(projected.sources.map((source) => source.fingerprint.provider)).toEqual([
-      "claude",
-      "codex",
-      "grok",
-    ]);
-  });
-
-  it.each(["1.4.0", "2.0.0"])("drops fork-only providers for mobile %s", (appVersion) => {
+  it.each(["1.3.0", "2.0.0"])("drops fork-only providers for mobile %s", (appVersion) => {
     const projected = projectUsageSummaryForClient(summary, { surface: "mobile", appVersion });
     const upstreamProviders = ["claude", "codex", "grok", "antigravity"];
     expect(projected.contractVersion).toBe(6);

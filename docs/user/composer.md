@@ -144,18 +144,8 @@ and Fable 5.1 get one each; GLM 5.3 Flash is unlimited. Unnamed models above $10
 per million output tokens get one task; below $1, unlimited; from $1 through
 $10, four. Unlimited means no task limit; provider charges and rate limits still
 apply. Change these under **Settings → Providers → Delegated task limits** on
-web and desktop, or **Settings → Maintenance** on mobile. Monthly maintenance
-refreshes model catalogs and pricing while the server runs.
-
-### Switch providers when a quota runs out
-
-When a thread hits a usage limit and **Auto-resume limited threads** is on, T3
-can resume it on another model instead of waiting for the reset. Configure the
-ordered fallbacks and the quota threshold in the same settings section. The
-defaults map Sol to Opus, Astra to Fable, and Luna to Gemini Flash High, with a
-95% threshold. T3 picks the first fallback whose provider is signed in and whose
-quota is below the threshold. If none qualifies, the thread waits for its reset
-as usual. Leave the fallbacks blank to always wait.
+web and desktop. Monthly maintenance refreshes model catalogs and pricing while
+the server runs.
 
 ## Quote an assistant response
 

@@ -150,9 +150,6 @@ export class UsageAggregator {
   }
 
   add(input: CreditedUsageRecord, sourcePath?: string): boolean {
-    // Claude Code labels locally generated messages (errors, interruptions)
-    // `<synthetic>`. They were never sent to a model, so they are not usage.
-    if (input.model === "<synthetic>") return false;
     const record = this.#mapModel(input);
     if (record.billingDay !== undefined && this.#hourlyWindow !== null) return false;
     if (record.dedupeKey !== null) {

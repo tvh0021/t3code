@@ -113,13 +113,6 @@ describe("UsageAggregator", () => {
     expect(result.buckets[0]?.totals.outputTokens).toBe(50);
   });
 
-  it("leaves Claude's locally generated <synthetic> messages out of usage", () => {
-    const result = aggregate([record(), record({ model: "<synthetic>" })]);
-
-    expect(result.buckets.map((bucket) => bucket.model)).toEqual([record().model]);
-    expect(result.buckets[0]?.records).toBe(1);
-  });
-
   it("still sums records that carry no dedupe key", () => {
     const result = aggregate([record(), record()]);
 
@@ -202,7 +195,6 @@ describe("UsageAggregator", () => {
       "2026-08-07T03:37:00.000Z",
     ]);
   });
-
 
   it("prices ChatLLM Argon usage while preserving reported credits", () => {
     const result = aggregate([

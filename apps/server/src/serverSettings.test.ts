@@ -94,29 +94,6 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
-  it.effect("persists an empty quota fallback map across settings reload", () =>
-    Effect.gen(function* () {
-      const settings = yield* ServerSettingsModule.ServerSettingsService;
-      const config = yield* ServerConfig.ServerConfig;
-      const fileSystem = yield* FileSystem.FileSystem;
-      yield* settings.updateSettings({ coordinationQuotaHandoffFallbacks: {} });
-      const persisted = yield* decodeServerSettingsJson(
-        yield* fileSystem.readFileString(config.settingsPath),
-      );
-      assert.deepEqual(persisted.coordinationQuotaHandoffFallbacks, {});
-
-      const reloaded = yield* Effect.gen(function* () {
-        const fresh = yield* ServerSettingsModule.ServerSettingsService;
-        return yield* fresh.getSettings;
-      }).pipe(
-        Effect.provide(
-          Layer.fresh(ServerSettingsModule.layer).pipe(Layer.provide(ServerSecretStore.layer)),
-        ),
-      );
-      assert.deepEqual(reloaded.coordinationQuotaHandoffFallbacks, {});
-    }).pipe(Effect.provide(layerServerSettings())),
-  );
-
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

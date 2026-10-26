@@ -89,8 +89,6 @@ steps inherit the nearest named model when available.
 
 **Decisions.**
 
-- Before 0.0.42 (MOBILE-001): App Store 1.2.x and 1.3.x reject Usage contract
-  v6, so the host sends them v5 with only Claude, Codex and Grok.
 - 0.6.3 (MOBILE-002): newer phone apps reject the whole Usage reply when it
   contains ChatLLM. `ForwardCompatibleArray` doesn't drop unknown entries inside
   RPC replies, so the host removes ChatLLM for every mobile client
@@ -129,8 +127,11 @@ steps inherit the nearest named model when available.
 - 0.7.4 (USAGE-007): Gemini 4 Argon uses Google's introductory rate of $2
   input, $10 output and $0.10 cached per 1M tokens, valid through 2026-11-30.
   The shared rate also prices ChatLLM Argon usage without changing its reported credits.
-  The rate doubles on 2026-12-01 and `usagePricing.ts` must be updated then.
-  Gemini 3.8 Flash's introductory rate likewise doubles on 2027-01-01.
+- 0.10.0: launch rates carry their end date (`introductoryUntil` in
+  `usagePricing.ts`) and each record is priced by its own timestamp, so Argon
+  doubles on 2026-12-01 and Gemini 3.8 Flash on 2027-01-01 without an edit, and
+  history before the change keeps its launch price. GPT-5.6 Sol's promotional
+  rate has no published successor, so its row is undated.
 - 0.7.5 (CHATLLM-USAGE-002): the ledger is the undocumented
   `_getOrganizationComputePointLog` endpoint behind the Abacus billing page.
   It returns 30 UTC days per model, so `usage-abacus-ledger.json` keeps older
@@ -140,12 +141,14 @@ steps inherit the nearest named model when available.
 - 0.7.5 (USAGE-002): `mergeUsage` included credit spend in period provider
   columns but omitted it from Total. Both now use subscription costs.
 - 0.7.5 (USAGE-008): Claude's local errors and interruptions appeared as an
-  unpriced model. `UsageAggregator.add` skips `<synthetic>` records, including
-  records loaded from earlier scan caches.
+  unpriced model. The fork skipped `<synthetic>` records in aggregation; since
+  0.10.0 upstream drops them in the Claude parser and the scan cache instead.
 - A 20,000-bucket merge has a 1,000 ms test budget (`usageMerge.test.ts`).
 
 **Removed.** In the 0.4.0 sync, the fork's Antigravity per-turn logs and its
-protobuf trace decoder gave way to upstream's SQLite scanner.
+protobuf trace decoder gave way to upstream's SQLite scanner. In 0.10.0, the
+v5 Usage contract for App Store 1.2.x and 1.3.x (MOBILE-001); those builds are
+gone, and every mobile client now gets v6 without ChatLLM.
 
 ## Limits
 
@@ -275,8 +278,9 @@ things:
   commit instead of the parent's current one (`OrchestratorMcpService.ts`).
 
 The policy is checked daily but refetches models and prices only when the month
-changes or a refresh is forced from Settings > Providers (mobile: Settings >
-Maintenance).
+changes or a refresh is forced from Settings > Providers. Mobile has no editor
+for it; the limits are server-wide, so the web or desktop screen covers every
+client.
 
 **Decisions.**
 
@@ -294,21 +298,13 @@ Maintenance).
 
 **Removed.** In the 0.4.0 sync: orchestration layers, their UI and coordination
 state, thread handoff MCP tools, and worker restrictions (0.0.42.2 to 0.1.1).
-Threads from old layers import as ordinary threads.
-
-## Quota handoff
-
-**Now.** Built on upstream's usage-limit recovery. When a thread hits a usage
-limit, auto-resume is on and the environment has a fallback map, the recovery
-worker skips the limited instance and picks the first mapped model whose
-provider is ready and whose quota is fresh and below the threshold (95% by
-default). If none qualifies it refreshes quota once; otherwise upstream's
-reset-based retry applies.
-
-**Decisions.**
-
-- 0.4.0: rebuilt on upstream's recovery worker instead of the fork's layer
-  reactor, which the sync removed. Live fallback has not been exercised since.
+Threads from old layers import as ordinary threads. In 0.10.0: the mobile
+limits editor, which duplicated the web screen for a server-wide setting on a
+surface this fork doesn't verify, and quota handoff. Quota handoff let the
+usage-limit recovery worker resume a limited thread on a mapped fallback model
+whose quota was below a threshold. It was rebuilt on upstream's recovery worker
+in 0.4.0 and never exercised live after that, and it patched the recovery
+worker on every sync, so usage limits now follow upstream's reset-based retry.
 
 ## Desktop and macOS
 

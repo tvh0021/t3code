@@ -28,11 +28,13 @@ describe("usage pricing", () => {
     model: string,
     reportedCostUsd: number | null = null,
     speed: UsageSpeed = "standard",
+    timestampMs = Date.parse("2026-10-11T00:00:00Z"),
   ) => ({
     model,
     totals,
     reportedCostUsd,
     speed,
+    timestampMs,
   });
 
   it.each([
@@ -56,6 +58,22 @@ describe("usage pricing", () => {
     expect(priced.costSource).toBe("modelPriced");
     expect(priced.costUsd).toBeCloseTo(expected, 9);
   });
+
+  it.each([
+    ["gemini-4-argon", "2026-11-30T23:59:59Z", 14.1, "2026-12-01T00:00:00Z", 28.2],
+    ["gemini-3.8-flash", "2026-12-31T23:59:59Z", 5.325, "2027-01-01T00:00:00Z", 10.65],
+  ])(
+    "prices %s by the record's date once its launch rate ends",
+    (model, before, launchCost, after, standardCost) => {
+      const at = (iso: string) => record(model, null, "standard", Date.parse(iso));
+      expect(priceUsage(new Map(), at(before)).costUsd).toBeCloseTo(launchCost, 9);
+      expect(priceUsage(new Map(), at(after)).costUsd).toBeCloseTo(standardCost, 9);
+      expect(cacheSavingsUsd(new Map(), at(after))).toBeCloseTo(
+        2 * cacheSavingsUsd(new Map(), at(before)),
+        9,
+      );
+    },
+  );
 
   it("uses verified rates ahead of stale public rates while honoring custom and reported costs", () => {
     const table = parseRateTable({ "claude-sonnet-5-5": rate(1) });
@@ -326,13 +344,12 @@ describe("usage pricing", () => {
       },
     });
 
-    // Reasoning effort tiers and tiered variant map to base gemini-3.8-flash
-    expect(lookupRate(table, "gemini-3.8-flash-high")?.inputCostPerToken).toBe(0.75 / 1_000_000);
-    expect(lookupRate(table, "gemini-3.8-flash-medium")?.outputCostPerToken).toBe(3.75 / 1_000_000);
-    expect(lookupRate(table, "gemini-3.8-flash-low")?.cacheReadCostPerToken).toBe(
-      0.075 / 1_000_000,
-    );
-    expect(lookupRate(table, "gemini-3.8-flash-tiered")?.inputCostPerToken).toBe(0.75 / 1_000_000);
+    // Reasoning effort tiers and tiered variant map to base gemini-3.8-flash,
+    // whose standard rate outranks the table; the launch rate applies per record.
+    expect(lookupRate(table, "gemini-3.8-flash-high")?.inputCostPerToken).toBe(1.5 / 1_000_000);
+    expect(lookupRate(table, "gemini-3.8-flash-medium")?.outputCostPerToken).toBe(7.5 / 1_000_000);
+    expect(lookupRate(table, "gemini-3.8-flash-low")?.cacheReadCostPerToken).toBe(0.15 / 1_000_000);
+    expect(lookupRate(table, "gemini-3.8-flash-tiered")?.inputCostPerToken).toBe(1.5 / 1_000_000);
 
     // claude-opus-4-6-thinking maps to claude-opus-4-6
     expect(lookupRate(table, "claude-opus-4-6-thinking")?.inputCostPerToken).toBe(5.0 / 1_000_000);

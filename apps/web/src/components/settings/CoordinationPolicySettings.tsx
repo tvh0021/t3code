@@ -1,6 +1,5 @@
 import {
   formatCoordinationLimits,
-  formatCoordinationQuotaHandoffs,
   buildCoordinationPolicyPatch,
 } from "@t3tools/client-runtime/state/threads";
 import { DEFAULT_COORDINATION_LIMITS, type EnvironmentId } from "@t3tools/contracts";
@@ -10,7 +9,6 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
-import { Input } from "../ui/input";
 
 export function CoordinationPolicySettings({
   environmentId,
@@ -23,21 +21,12 @@ export function CoordinationPolicySettings({
   const persist = useAtomCommand(serverEnvironment.updateSettings);
   const refresh = useAtomCommand(serverEnvironment.refreshProviders);
   const [draft, setDraft] = useState<string | null>(null);
-  const [fallbackDraft, setFallbackDraft] = useState<string | null>(null);
-  const [thresholdDraft, setThresholdDraft] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const text = draft ?? formatCoordinationLimits(settings.coordinationModelLimits ?? {});
   const save = async () => {
     try {
-      const patch = buildCoordinationPolicyPatch({
-        limitsText: text,
-        fallbacksText:
-          fallbackDraft ??
-          formatCoordinationQuotaHandoffs(settings.coordinationQuotaHandoffFallbacks),
-        threshold: thresholdDraft ?? settings.coordinationQuotaHandoffThresholdPercent,
-        thresholdError: "Choose a quota threshold from 1 to 100.",
-      });
+      const patch = buildCoordinationPolicyPatch({ limitsText: text });
       setPending(true);
       const result = await persist({
         environmentId,
@@ -50,11 +39,7 @@ export function CoordinationPolicySettings({
           ? "Saved. New delegated tasks use these limits."
           : "Could not save limits. Reconnect and retry.",
       );
-      if (result._tag === "Success") {
-        setDraft(null);
-        setFallbackDraft(null);
-        setThresholdDraft(null);
-      }
+      if (result._tag === "Success") setDraft(null);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Invalid model limits.");
     }
@@ -106,35 +91,6 @@ export function CoordinationPolicySettings({
         disabled={readOnly || pending}
         placeholder="my-model=4"
         onChange={(event) => setDraft(event.target.value)}
-      />
-      <label htmlFor="coordination-quota-threshold" className="text-sm">
-        When a thread hits a usage limit and auto-resume is on, switch to a fallback only if its
-        quota windows are below this percentage.
-      </label>
-      <Input
-        id="coordination-quota-threshold"
-        type="number"
-        min={1}
-        max={100}
-        value={thresholdDraft ?? settings.coordinationQuotaHandoffThresholdPercent}
-        disabled={readOnly || pending}
-        onChange={(event) => setThresholdDraft(Number(event.target.value))}
-      />
-      <label htmlFor="coordination-quota-fallbacks" className="text-sm">
-        Ordered provider fallbacks, one source-model=target-model,target-model per line. Leave blank
-        to wait for quota resets without switching. Defaults map Sol to Opus, Astra to Fable, and
-        Luna to Gemini Flash High.
-      </label>
-      <Textarea
-        id="coordination-quota-fallbacks"
-        rows={4}
-        value={
-          fallbackDraft ??
-          formatCoordinationQuotaHandoffs(settings.coordinationQuotaHandoffFallbacks)
-        }
-        disabled={readOnly || pending}
-        placeholder="gpt-6-sol=claude-opus-5"
-        onChange={(event) => setFallbackDraft(event.target.value)}
       />
       <div className="flex flex-wrap gap-2">
         <Button

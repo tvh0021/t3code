@@ -96,19 +96,6 @@ describe("serverSettings helpers", () => {
     });
   });
 
-  it("replaces quota handoff mappings so users can remove defaults", () => {
-    const custom = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      coordinationQuotaHandoffFallbacks: { "gpt-6-sol": ["claude-opus-5.5"] },
-    });
-    expect(custom.coordinationQuotaHandoffFallbacks).toEqual({
-      "gpt-6-sol": ["claude-opus-5.5"],
-    });
-    expect(
-      applyServerSettingsPatch(custom, { coordinationQuotaHandoffFallbacks: {} })
-        .coordinationQuotaHandoffFallbacks,
-    ).toEqual({});
-  });
-
   it("replaces delegated task limit overrides so a blank field restores defaults", () => {
     const custom = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       coordinationModelLimits: { "gpt-6-luna": 3 },
