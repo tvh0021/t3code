@@ -21,7 +21,7 @@ browser in the context menu.
   plugins, so ordinary chat pays nothing for KaTeX.
 - 0.3.1: KaTeX markup and stylesheet are pinned to the same version (0.18.7).
   A mismatch drew vector accents inside their letters.
-- 2026-10-25 sync: upstream's shared math pipeline (`@t3tools/shared/markdownMath`,
+- 0.9.0: upstream's shared math pipeline (`@t3tools/shared/markdownMath`,
   `MarkdownMath.tsx`, `MathTypeset.tsx`) replaces the fork's `chatMarkdownMath.ts`
   preprocessor and `rehype-katex`. It covers the same cases (`$skill` tokens,
   currency, `\( \)` and `\[ \]`, tables) and renders markup and stylesheet from
@@ -30,10 +30,8 @@ browser in the context menu.
   fraction denominators and radical lines, hidden overflow on display math) is
   gone too: it compensated for that mismatch, and on correct markup it pushed
   the inner denominator of a nested fraction into the outer bar and clipped
-  tall inline fractions. Accents, nested fractions, powers under bars, and
-  radicals were checked in Chromium before switching. The fork keeps
-  `mathRenderingEnabled` defaulting to on (`packages/contracts/src/settings.ts`);
-  upstream defaults it to off.
+  tall inline fractions. The fork keeps `mathRenderingEnabled` defaulting to on
+  (`packages/contracts/src/settings.ts`); upstream defaults it to off.
 - 0.3.1: HTML files are served by the environment that owns them, including
   files outside the workspace. PDFs are unchanged.
 - 0.3.3: upstream's provider badge helpers are back. An earlier sync had

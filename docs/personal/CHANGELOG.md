@@ -6,6 +6,12 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.9.0 (2026-10-25)
+
+- Upstream sync: merged upstream 1a13127c15
+- New feature: chat math uses the shared upstream renderer, with a Math rendering switch in Appearance settings that stays on by default
+- Issue: a nested fraction drew its main bar through the inner denominator, and tall inline fractions were clipped → Fix: removed the fork's KaTeX spacing overrides, which upstream's renderer no longer needs
+
 ### 0.8.0 (2026-10-19)
 
 - Upstream sync: merged upstream ab6be13d43
