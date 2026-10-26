@@ -26,8 +26,13 @@ browser in the context menu.
   preprocessor and `rehype-katex`. It covers the same cases (`$skill` tokens,
   currency, `\( \)` and `\[ \]`, tables) and renders markup and stylesheet from
   one `katex` import, so the 0.18.7 pin is gone and upstream's `katex` range
-  applies. Accent placement was verified in Chromium before switching. The fork
-  keeps `mathRenderingEnabled` defaulting to on (`packages/contracts/src/settings.ts`);
+  applies. The fork's KaTeX "clearance" CSS in `apps/web/src/index.css` (shifted
+  fraction denominators and radical lines, hidden overflow on display math) is
+  gone too: it compensated for that mismatch, and on correct markup it pushed
+  the inner denominator of a nested fraction into the outer bar and clipped
+  tall inline fractions. Accents, nested fractions, powers under bars, and
+  radicals were checked in Chromium before switching. The fork keeps
+  `mathRenderingEnabled` defaulting to on (`packages/contracts/src/settings.ts`);
   upstream defaults it to off.
 - 0.3.1: HTML files are served by the environment that owns them, including
   files outside the workspace. PDFs are unchanged.
