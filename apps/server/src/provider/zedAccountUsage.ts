@@ -16,7 +16,7 @@ import {
 } from "@t3tools/provider-core/server/usageLimits";
 
 const ZED_CLOUD_URL = "https://cloud.zed.dev";
-export const ZED_DASHBOARD_URL = "https://dashboard.zed.dev";
+const ZED_DASHBOARD_URL = "https://dashboard.zed.dev";
 const ZED_EXTERNAL_USAGE = { label: "Zed dashboard", url: ZED_DASHBOARD_URL } as const;
 
 export const ZED_SPEND_WINDOW_ID = "zed_token_spend";

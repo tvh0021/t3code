@@ -101,7 +101,7 @@ export function antigravityPermissionMode(runtimeMode: RuntimeMode): string {
   }
 }
 
-export function antigravityModelOptions(
+function antigravityModelOptions(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
 ) {
   const model = configOptions.find((option) => option.id === "model");

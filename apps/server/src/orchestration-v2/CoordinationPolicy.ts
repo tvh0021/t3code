@@ -46,7 +46,7 @@ export class CoordinationPolicy extends Context.Service<
   }
 >()("t3/orchestration-v2/CoordinationPolicy") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -154,14 +154,3 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(CoordinationPolicy, make);
-export const layerTest = Layer.succeed(CoordinationPolicy, {
-  read: () =>
-    Effect.succeed({
-      updatedAt: "2026-09-27T00:00:00.000Z",
-      budgets: Object.entries(DEFAULT_COORDINATION_LIMITS).map(([model, limit]) => ({
-        model,
-        limit,
-        used: 0,
-      })),
-    }),
-});

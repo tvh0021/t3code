@@ -248,37 +248,3 @@ export const readAbacusUsageLimits = Effect.fn("readAbacusUsageLimits")(function
       }),
   });
 });
-
-export interface AbacusComputePointsSnapshot {
-  readonly computePointsLeft?: number | undefined;
-  readonly currMonthUsage?: number | undefined;
-}
-
-export async function fetchAbacusComputePoints(
-  apiKey?: string,
-  sessionCookie?: string,
-  fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  timeoutMs = 5000,
-): Promise<AbacusComputePointsSnapshot | null> {
-  if (!apiKey && !sessionCookie) return null;
-  const headers = buildAbacusAuthHeaders(apiKey, sessionCookie);
-  try {
-    const res = await fetchFn(ABACUS_COMPUTE_POINTS_URL, {
-      method: "GET",
-      headers,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as AbacusComputePointsResponse;
-    const result = data?.result;
-    if (!result) return null;
-    const computePointsLeft = result.computePointsLeft ?? result.curr_month_avail_points;
-    const currMonthUsage = result.curr_month_usage;
-    return {
-      ...(computePointsLeft !== undefined ? { computePointsLeft } : {}),
-      ...(currMonthUsage !== undefined ? { currMonthUsage } : {}),
-    };
-  } catch {
-    return null;
-  }
-}

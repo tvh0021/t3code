@@ -2331,12 +2331,9 @@ describe("AcpAdapterV2", () => {
         const path = yield* Path.Path;
         const selfInvocation = yield* resolveSelfInvocation();
         const mockAgentPath = yield* path.fromFileUrl(
-          new URL(
-            restoreFailure === "unsupported"
-              ? "../../../scripts/acp-no-resume-mock-agent.ts"
-              : "../../../scripts/acp-mock-agent.ts",
-            import.meta.url,
-          ),
+          restoreFailure === "unsupported"
+            ? new URL("../../../scripts/acp-no-resume-mock-agent.ts", import.meta.url)
+            : new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
         );
         const protocolEvents = yield* Queue.unbounded<EffectAcpProtocol.AcpProtocolLogEvent>();
         const instanceId = ProviderInstanceId.make("acp-test-stale-eager-resume");

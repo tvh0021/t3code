@@ -72,7 +72,7 @@ export class DelegationGuards extends Context.Service<
   }
 >()("t3/orchestration-v2/delegationGuards") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const policy = yield* CoordinationPolicy;
   return DelegationGuards.of({
     checkTaskAttempts: (subagents, task) =>

@@ -25,7 +25,7 @@ import {
 import { buildZedAcpSpawnInput } from "./acp/ZedAcpSupport.ts";
 import { zedUsageNotYetRead, zedUsageWithoutSession } from "./zedAccountUsage.ts";
 
-export const ZED_PRESENTATION = {
+const ZED_PRESENTATION = {
   displayName: "Zed",
   supportsConversationRollback: false,
   badgeLabel: "Preview",
@@ -113,9 +113,7 @@ export function parseZedModels(output: string): ReadonlyArray<ServerProviderMode
   });
 }
 
-export const ZED_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [
-  COMPACT_SLASH_COMMAND,
-];
+const ZED_SLASH_COMMANDS: ReadonlyArray<ServerProviderSlashCommand> = [COMPACT_SLASH_COMMAND];
 
 function zedModelsFromSettings(
   customModels: ZedSettings["customModels"],

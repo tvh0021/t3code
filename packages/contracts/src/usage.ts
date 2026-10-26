@@ -30,14 +30,10 @@ export function usdToAbacusCredits(usd: number): number {
   return usd / ABACUS_CREDIT_COST_USD;
 }
 
-export const CODEX_CREDIT_COST_USD = 0.04;
+const CODEX_CREDIT_COST_USD = 0.04;
 
 export function codexCreditsToUsd(credits: number): number {
   return credits * CODEX_CREDIT_COST_USD;
-}
-
-export function usdToCodexCredits(usd: number): number {
-  return usd / CODEX_CREDIT_COST_USD;
 }
 
 /**

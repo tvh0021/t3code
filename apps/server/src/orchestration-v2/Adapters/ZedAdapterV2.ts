@@ -25,7 +25,6 @@ import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEve
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import {
   ProviderAdapterDriverCreateError,
-  type ProviderAdapterDriver,
   type ProviderAdapterDriverCreateInput,
 } from "@t3tools/provider-core/server/adapterDriver";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
@@ -41,9 +40,8 @@ import {
 import { makeZedAcpRuntime, type ZedAcpRuntimeInput } from "../../provider/acp/ZedAcpSupport.ts";
 
 const ZED_PROVIDER = ProviderDriverKind.make("zed");
-const decodeZedSettings = Schema.decodeSync(ZedSettings);
 
-export const ZedProviderCapabilitiesV2 = {
+const ZedProviderCapabilitiesV2 = {
   ...AcpProviderCapabilitiesV2,
   sessions: {
     ...AcpProviderCapabilitiesV2.sessions,
@@ -137,7 +135,7 @@ export function zedPromptFailure(cause: unknown) {
   });
 }
 
-export function makeZedAcpAdapterFlavor(
+function makeZedAcpAdapterFlavor(
   options: ZedAdapterV2Options & ZedFlavorServices,
 ): AcpAdapterV2Flavor {
   const makeRuntime = Effect.fn("ZedAdapterV2.makeRuntime")(
@@ -199,9 +197,7 @@ export function makeZedAcpAdapterFlavor(
   };
 }
 
-export const makeZedAdapterV2 = Effect.fn("makeZedAdapterV2")(function* (
-  options: ZedAdapterV2Options,
-) {
+const makeZedAdapterV2 = Effect.fn("makeZedAdapterV2")(function* (options: ZedAdapterV2Options) {
   const services: ZedFlavorServices = {
     crypto: yield* Crypto.Crypto,
     fileSystem: yield* FileSystem.FileSystem,
@@ -273,10 +269,3 @@ export const createZedAdapterV2 = Effect.fn("ZedAdapterV2Driver.create")(
       ),
     ),
 );
-
-export const ZedAdapterV2Driver: ProviderAdapterDriver<ZedSettings, ZedAdapterV2DriverEnv> = {
-  driverKind: ZED_PROVIDER,
-  configSchema: ZedSettings,
-  defaultConfig: (): ZedSettings => decodeZedSettings({}),
-  create: (input) => createZedAdapterV2(input, {}),
-};
