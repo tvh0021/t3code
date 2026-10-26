@@ -90,5 +90,4 @@ it.skipIf(HostProcess.Platform.defaultValue() !== "darwin")(
       await NodeFSP.rm(temporary, { recursive: true, force: true });
     }
   },
-  30_000,
 );

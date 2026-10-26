@@ -16,9 +16,11 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as TestClock from "effect/testing/TestClock";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
+import * as Orchestrator from "./Orchestrator.ts";
 import { ThreadManagementService } from "./ThreadManagementService.ts";
 import { limitRecoveryCommand, makeSweep } from "./UsageLimitRecoveryWorker.ts";
 
@@ -202,8 +204,9 @@ describe("UsageLimitRecoveryWorker limitRecoveryCommand", () => {
 });
 
 describe("UsageLimitRecoveryWorker makeSweep", () => {
+  const FIXED_NOW_MS = Date.parse("2026-10-18T12:00:00.000Z");
   const getDynamicTimes = () => {
-    const nowTime = Date.now();
+    const nowTime = FIXED_NOW_MS;
     const nowIso = new Date(nowTime).toISOString();
     const resetTime = nowTime + 3600_000;
     const resetIso = new Date(resetTime).toISOString();
@@ -248,6 +251,23 @@ describe("UsageLimitRecoveryWorker makeSweep", () => {
           Ref.update(dispatchedCommands, (prev) => [...prev, cmd]),
       } as unknown as ThreadManagementService["Service"]);
 
+      const mockOrchestrator = Layer.succeed(Orchestrator.OrchestratorV2, {
+        autoArmLimitRecovery: (input: {
+          readonly commandId: CommandId;
+          readonly threadId: ThreadId;
+          readonly limitRecovery: NonNullable<OrchestrationV2ThreadShell["limitRecovery"]>;
+        }) =>
+          Ref.update(dispatchedCommands, (prev) => [
+            ...prev,
+            {
+              type: "thread.metadata.update" as const,
+              commandId: input.commandId,
+              threadId: input.threadId,
+              limitRecovery: input.limitRecovery,
+            },
+          ]),
+      } as unknown as Orchestrator.OrchestratorV2["Service"]);
+
       let currentProviders = [...params.providers];
       const mockProviderRegistry = Layer.succeed(ProviderRegistry, {
         getProviders: Effect.sync(() => currentProviders),
@@ -262,9 +282,10 @@ describe("UsageLimitRecoveryWorker makeSweep", () => {
           ),
       } as unknown as ProviderRegistry["Service"]);
 
+      yield* TestClock.setTime(FIXED_NOW_MS);
       const sweep = yield* makeSweep.pipe(
         Effect.provide(
-          Layer.mergeAll(mockSettings, mockProjections, mockThreadManagement, mockProviderRegistry),
+          Layer.mergeAll(mockSettings, mockProjections, mockThreadManagement, mockOrchestrator, mockProviderRegistry),
         ),
       );
 
@@ -273,7 +294,7 @@ describe("UsageLimitRecoveryWorker makeSweep", () => {
       const commands = yield* Ref.get(dispatchedCommands);
       const refreshes = yield* Ref.get(refreshedInstances);
       return { commands, refreshes };
-    }).pipe(Effect.runPromise);
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise);
 
   it("dispatches fallback handoff when eligible fallback exists", async () => {
     const { nowIso, resetIso } = getDynamicTimes();

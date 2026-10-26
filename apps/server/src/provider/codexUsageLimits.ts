@@ -28,6 +28,10 @@ export interface CodexRateLimitSnapshot {
     readonly unlimited: boolean;
     readonly balance?: string | null;
   } | null;
+  readonly individualLimit?: {
+    readonly remainingPercent: number;
+    readonly resetsAt: number;
+  } | null;
 }
 
 export interface CodexResetCreditsSummary {
@@ -91,12 +95,11 @@ function mapWindow(
   };
 }
 
+/** primary/secondary are positions; without windowDurationMins, paid plans use 5-hour/weekly windows and Free/Go use monthly. */
 function codexRateLimitsToWindows(
   snapshot: CodexRateLimitSnapshot,
-): readonly ServerProviderUsageWindow[] {
-  // Spark notifications arrive on the same channel but describe a separate
-  // allowance (`limitId === "codex_bengalfox"`). Never map them: they would
-  // clobber the primary/secondary windows the main model runs against.
+): ReadonlyArray<ServerProviderUsageWindow> {
+  // Keep model-specific limits out of main allowance rows; older CLIs omit limit IDs.
   if (snapshot.limitId && snapshot.limitId !== "codex") return [];
   const windows: ServerProviderUsageWindow[] = [];
   if (snapshot.primary) {
@@ -107,6 +110,17 @@ function codexRateLimitsToWindows(
   }
   if (snapshot.secondary) {
     windows.push(mapWindow("secondary", snapshot.secondary, WEEK_MINS));
+  }
+  const individualLimit = snapshot.individualLimit;
+  if (individualLimit && Number.isFinite(individualLimit.remainingPercent)) {
+    const resetsAt = isoFromEpochSeconds(individualLimit.resetsAt);
+    windows.push({
+      id: "individual",
+      kind: "monthly",
+      label: "Monthly credit limit",
+      usedPercent: clampPercent(100 - individualLimit.remainingPercent),
+      ...(resetsAt ? { resetsAt } : {}),
+    });
   }
   return windows;
 }
@@ -187,18 +201,12 @@ export function codexRateLimitsFailureMessage(error: CodexErrors.CodexAppServerE
   }
 }
 
-/**
- * Codex sends `account/rateLimits/updated` as a partial view of the snapshot: a
- * field the update omits keeps the value observed earlier in the session, so a
- * later notification that only names the limit it reached must not drop the
- * windows an earlier one carried.
- */
+/** Rate-limit notifications are partial: omitted fields preserve earlier session values. */
 export function mergeCodexRateLimits(
   previous: CodexRateLimitSnapshot | undefined,
   update: CodexRateLimitSnapshot,
 ): CodexRateLimitSnapshot | undefined {
-  // Model-specific snapshots (such as Spark) describe a different allowance
-  // and must not overwrite the main one, the same rule the usage rows apply.
+  // Model-specific snapshots must not overwrite the main allowance.
   if (update.limitId && update.limitId !== "codex") return previous;
   if (!previous) return update;
   return {
@@ -211,6 +219,7 @@ export function mergeCodexRateLimits(
     ...(update.primary !== undefined ? { primary: update.primary } : {}),
     ...(update.secondary !== undefined ? { secondary: update.secondary } : {}),
     ...(update.credits !== undefined ? { credits: update.credits } : {}),
+    ...(update.individualLimit !== undefined ? { individualLimit: update.individualLimit } : {}),
   };
 }
 

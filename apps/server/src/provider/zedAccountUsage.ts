@@ -1,12 +1,6 @@
 /**
- * Zed account token spend, read from the routes dashboard.zed.dev uses.
- *
- * Zed's native credential cannot read billing (those routes return 401 to it),
- * so this needs the dashboard's own cookie session for cloud.zed.dev. The
- * routes are undocumented; any failure becomes an explicit unavailable state,
- * never a zeroed bar.
- *
- * @module provider/zedAccountUsage
+ * Zed account token spend from cloud.zed.dev cookie-authenticated billing routes;
+ * undocumented route failures report unavailable rather than a zeroed bar.
  */
 import type { ServerProviderUsageLimits } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";

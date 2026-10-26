@@ -214,11 +214,8 @@ export function isInsideWorkspace(targetPath: string, workspaceDir: string): boo
 }
 
 /**
- * Resolves a write target to its real path, returning it only when it lies
- * inside the workspace. Symlinks resolve before the check, so a link inside the
- * workspace cannot redirect a write outside it. Missing segments are re-appended
- * to the nearest existing ancestor; an entry that exists but cannot be resolved,
- * like a dangling link, is refused.
+ * Resolves a write target to its real path inside `cwd`, re-appending missing
+ * segments to the nearest existing ancestor and refusing dangling links.
  */
 export function resolveWorkspaceWritePath(filePath: string, cwd: string): string | null {
   const missing: Array<string> = [];
@@ -597,8 +594,9 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
           return thread;
         });
 
-      const startTurn = (turnInput: ProviderAdapter.ProviderAdapterV2TurnInput) =>
-        Effect.gen(function* () {
+      const startTurn = Effect.fn("AbacusAdapterV2.startTurn")(function* (
+        turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
+      ) {
           if (turnInput.message.attachments.length > 0) {
             return yield* Effect.fail(
               new ProviderAdapter.ProviderAdapterProtocolError({
@@ -1216,8 +1214,9 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
           yield* Ref.set(activeTurnRef, null);
         });
 
-      const interruptTurn = (_interruptInput: ProviderAdapter.ProviderAdapterV2InterruptInput) =>
-        Effect.gen(function* () {
+      const interruptTurn = Effect.fn("AbacusAdapterV2.interruptTurn")(function* (
+        _interruptInput: ProviderAdapter.ProviderAdapterV2InterruptInput,
+      ) {
           const active = yield* Ref.get(activeTurnRef);
           if (active && !active.settled) {
             active.cancelled = true;

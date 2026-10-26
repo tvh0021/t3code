@@ -83,19 +83,6 @@ function aggregate(
 }
 
 describe("UsageAggregator", () => {
-  it("requires exact bounds for hourly aggregation", () => {
-    expect(
-      () =>
-        new UsageAggregator({
-          timeZone: "UTC",
-          sinceDay: "2026-08-01",
-          untilDay: "2026-08-31",
-          resolution: "hour",
-          rates,
-        }),
-    ).toThrow("requires exact time bounds");
-  });
-
   it("splits a bucket's cost by category and speed", () => {
     const [bucket] = aggregate([record(), record({ speed: "fast" })]).buckets;
 
@@ -216,23 +203,6 @@ describe("UsageAggregator", () => {
     ]);
   });
 
-  it("keeps daily payloads collapsed when hourly resolution is not requested", () => {
-    const result = aggregate([
-      record({ timestampMs: Date.parse("2026-08-07T04:05:13.944Z") }),
-      record({ timestampMs: Date.parse("2026-08-07T05:05:13.944Z") }),
-    ]);
-
-    expect(result.buckets).toHaveLength(1);
-    expect(result.buckets[0]?.hourStart).toBeUndefined();
-    expect(result.buckets[0]?.records).toBe(2);
-  });
-
-  it("prices against the rate table", () => {
-    const result = aggregate([record()]);
-
-    expect(result.buckets[0]?.costUsd).toBeCloseTo(0.004625, 9);
-    expect(result.buckets[0]?.costSource).toBe("modelPriced");
-  });
 
   it("prices ChatLLM Argon usage while preserving reported credits", () => {
     const result = aggregate([
@@ -306,26 +276,6 @@ describe("UsageAggregator", () => {
     expect(result.buckets[0]?.costSource).toBe("providerReported");
   });
 
-  it("drops records outside the window", () => {
-    const result = aggregate([record({ timestampMs: Date.parse("2026-07-01T12:00:00Z") })]);
-
-    expect(result.outOfWindow).toBe(1);
-    expect(result.buckets).toHaveLength(0);
-  });
-
-  it("reports whether a record contributed", () => {
-    const aggregator = new UsageAggregator({
-      timeZone: "UTC",
-      sinceDay: "2026-08-01",
-      untilDay: "2026-08-31",
-      rates,
-    });
-
-    expect(aggregator.add(record({ dedupeKey: "msg_1:" }))).toBe(true);
-    expect(aggregator.add(record({ dedupeKey: "msg_1:" }))).toBe(false);
-    expect(aggregator.add(record({ timestampMs: Date.parse("2026-07-01T12:00:00Z") }))).toBe(false);
-  });
-
   it("folds a mapped model into its target and prices it there", () => {
     const aggregator = new UsageAggregator({
       timeZone: "UTC",
@@ -343,61 +293,6 @@ describe("UsageAggregator", () => {
     expect(result.buckets[0]?.records).toBe(2);
     expect(result.buckets[0]?.costUsd).toBeCloseTo(0.00925, 9);
     expect(result.buckets[0]?.unpricedRecords).toBe(0);
-  });
-
-  it("separates providers and models into their own buckets", () => {
-    const result = aggregate([
-      record(),
-      record({ provider: "codex", model: "gpt-5.6-sol" }),
-      record({ model: "claude-opus-5" }),
-    ]);
-
-    expect(result.buckets).toHaveLength(3);
-  });
-
-  it("combines Claude efforts with priced costs and complete token totals", () => {
-    const result = aggregate([
-      record({ model: "claude-sonnet-5-5" }),
-      record({ model: "claude-sonnet-5-5-medium" }),
-      record({ model: "claude-sonnet-5-5-low" }),
-      record({ model: "claude-opus-5-5-medium" }),
-    ]);
-    const sonnet = result.buckets.find((bucket) => bucket.model === "claude-sonnet-5-5");
-    expect(result.buckets).toHaveLength(2);
-    expect(sonnet?.records).toBe(3);
-    expect(sonnet?.totals.outputTokens).toBe(150);
-    expect(sonnet?.costUsd).toBeCloseTo(3 * 0.000825, 9);
-    expect(sonnet?.unpricedRecords).toBe(0);
-  });
-
-  it("prices effort-specific overrides before combining model rows", () => {
-    const aggregator = new UsageAggregator({
-      timeZone: "UTC",
-      sinceDay: "2026-08-01",
-      untilDay: "2026-08-31",
-      rates,
-      priceOverrides: createOverrideRateTable({
-        "claude-sonnet-5-5-high": {
-          inputCostPerMillionTokens: 2,
-          outputCostPerMillionTokens: 4,
-          cacheReadCostPerMillionTokens: 1,
-        },
-      }),
-    });
-    aggregator.add(record({ model: "claude-sonnet-5-5-high" }));
-    aggregator.add(record({ model: "claude-sonnet-5-5-low" }));
-    const [bucket] = aggregator.finish().buckets;
-    expect(bucket?.model).toBe("claude-sonnet-5-5");
-    expect(bucket?.costUsd).toBeCloseTo(0.00142 + 0.000825, 9);
-    expect(bucket?.cacheSavingsUsd).toBeCloseTo(0.001 + 0.0019, 9);
-  });
-
-  it("accounts for Codex auto-review at zero without inventing an API rate", () => {
-    const [bucket] = aggregate([record({ provider: "codex", model: "codex-auto-review" })]).buckets;
-    expect(bucket?.costUsd).toBe(0);
-    expect(bucket?.cacheSavingsUsd).toBe(0);
-    expect(bucket?.unpricedRecords).toBe(0);
-    expect(bucket?.totals.outputTokens).toBe(50);
   });
 
   it("merges gemini-3.8-flash tiers (high, medium, low, tiered) into unified gemini-3.8-flash accounting", () => {

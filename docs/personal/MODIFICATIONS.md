@@ -21,6 +21,14 @@ browser in the context menu.
   plugins, so ordinary chat pays nothing for KaTeX.
 - 0.3.1: KaTeX markup and stylesheet are pinned to the same version (0.18.7).
   A mismatch drew vector accents inside their letters.
+- 2026-10-25 sync: upstream's shared math pipeline (`@t3tools/shared/markdownMath`,
+  `MarkdownMath.tsx`, `MathTypeset.tsx`) replaces the fork's `chatMarkdownMath.ts`
+  preprocessor and `rehype-katex`. It covers the same cases (`$skill` tokens,
+  currency, `\( \)` and `\[ \]`, tables) and renders markup and stylesheet from
+  one `katex` import, so the 0.18.7 pin is gone and upstream's `katex` range
+  applies. Accent placement was verified in Chromium before switching. The fork
+  keeps `mathRenderingEnabled` defaulting to on (`packages/contracts/src/settings.ts`);
+  upstream defaults it to off.
 - 0.3.1: HTML files are served by the environment that owns them, including
   files outside the workspace. PDFs are unchanged.
 - 0.3.3: upstream's provider badge helpers are back. An earlier sync had

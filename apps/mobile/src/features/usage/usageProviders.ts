@@ -10,9 +10,9 @@ export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
   "antigravity",
   "pi",
   "abacus",
+  "muse",
 ];
 
-/** The usage series a provider driver reports under, or null for drivers without one. */
 export function usageProviderKind(driver: string): UsageProviderKind | null {
   if (driver === "claudeAgent") return "claude";
   return PROVIDER_ORDER.find((kind) => kind === driver) ?? null;
@@ -27,6 +27,7 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   antigravity: "Antigravity",
   pi: "Pi",
   abacus: "ChatLLM",
+  muse: "Muse Code",
 };
 
 export const DRIVER_LABEL: Record<string, string> = {
@@ -36,6 +37,7 @@ export const DRIVER_LABEL: Record<string, string> = {
   antigravity: "Antigravity",
   abacus: "ChatLLM",
   chatllm: "ChatLLM",
+  muse: "Muse Code",
 };
 
 export function getDriverLabel(driver: string): string {
@@ -55,6 +57,7 @@ export function useProviderColors(): Record<UsageProviderKind, string> {
     antigravity: "#8c7bd1",
     pi: "#4d9f8a",
     abacus: "#8b5cf6",
+    muse: "#0866ff",
   };
 }
 

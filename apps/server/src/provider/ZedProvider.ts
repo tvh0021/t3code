@@ -144,36 +144,36 @@ function buildDisabledZedProviderSnapshot(
   });
 }
 
-export function buildInitialZedProviderSnapshot(
+export const buildInitialZedProviderSnapshot: (
   zedSettings: ZedSettings,
-): Effect.Effect<ServerProviderDraft> {
-  return Effect.gen(function* () {
-    const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
-    const models = zedModelsFromSettings(zedSettings.customModels);
+) => Effect.Effect<ServerProviderDraft> = Effect.fn("buildInitialZedProviderSnapshot")(function* (
+  zedSettings: ZedSettings,
+) {
+  const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
+  const models = zedModelsFromSettings(zedSettings.customModels);
 
-    if (!zedSettings.enabled) {
-      return buildDisabledZedProviderSnapshot(checkedAt, models);
-    }
+  if (!zedSettings.enabled) {
+    return buildDisabledZedProviderSnapshot(checkedAt, models);
+  }
 
-    return buildServerProvider({
-      presentation: ZED_PRESENTATION,
-      enabled: true,
-      checkedAt,
-      models,
-      slashCommands: ZED_SLASH_COMMANDS,
-      probe: {
-        installed: false,
-        version: null,
-        status: "warning",
-        auth: { status: "unknown" },
-        message: "Zed discovery has not completed yet.",
-        usageLimits: zedSettings.dashboardSession
-          ? zedUsageNotYetRead(checkedAt)
-          : zedUsageWithoutSession(checkedAt),
-      },
-    });
+  return buildServerProvider({
+    presentation: ZED_PRESENTATION,
+    enabled: true,
+    checkedAt,
+    models,
+    slashCommands: ZED_SLASH_COMMANDS,
+    probe: {
+      installed: false,
+      version: null,
+      status: "warning",
+      auth: { status: "unknown" },
+      message: "Zed discovery has not completed yet.",
+      usageLimits: zedSettings.dashboardSession
+        ? zedUsageNotYetRead(checkedAt)
+        : zedUsageWithoutSession(checkedAt),
+    },
   });
-}
+});
 
 export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(function* (
   zedSettings: ZedSettings,

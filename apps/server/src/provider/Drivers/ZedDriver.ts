@@ -57,8 +57,7 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
   },
   configSchema: ZedSettings,
   defaultConfig: (): ZedSettings => decodeZedSettings({}),
-  create: (input) =>
-    Effect.gen(function* () {
+  create: Effect.fn("ZedDriver.create")(function* (input) {
       const { instanceId, displayName, accentColor, enabled, config } = input;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;

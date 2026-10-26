@@ -140,8 +140,8 @@ export function zedPromptFailure(cause: unknown) {
 export function makeZedAcpAdapterFlavor(
   options: ZedAdapterV2Options & ZedFlavorServices,
 ): AcpAdapterV2Flavor {
-  const makeRuntime = (input: AcpAdapterV2RuntimeInput) =>
-    Effect.gen(function* () {
+  const makeRuntime = Effect.fn("ZedAdapterV2.makeRuntime")(
+    function* (input: AcpAdapterV2RuntimeInput) {
       const scope = yield* Scope.fork(yield* Effect.scope);
       const runtime = yield* options
         .makeRuntime({ ...input, zedSettings: undefined })
@@ -159,14 +159,14 @@ export function makeZedAcpAdapterFlavor(
               ),
             ),
       };
-    }).pipe(
-      Effect.provideService(Crypto.Crypto, options.crypto),
-      Effect.mapError((cause): EffectAcpErrors.AcpError =>
-        cause._tag === "ProviderSetupError"
-          ? new EffectAcpErrors.AcpTransportError({ detail: cause.detail, cause })
-          : cause,
-      ),
-    );
+    },
+    Effect.provideService(Crypto.Crypto, options.crypto),
+    Effect.mapError((cause): EffectAcpErrors.AcpError =>
+      cause._tag === "ProviderSetupError"
+        ? new EffectAcpErrors.AcpTransportError({ detail: cause.detail, cause })
+        : cause,
+    ),
+  );
 
   return {
     driver: ZED_PROVIDER,

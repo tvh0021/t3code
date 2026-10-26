@@ -64,8 +64,7 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
   },
   configSchema: AbacusSettings,
   defaultConfig: (): AbacusSettings => decodeAbacusSettings({}),
-  create: (input) =>
-    Effect.gen(function* () {
+  create: Effect.fn("AbacusDriver.create")(function* (input) {
       const { instanceId, displayName, accentColor, enabled, config, environment } = input;
       const resolvedDisplayName =
         displayName && displayName.trim().toLowerCase() !== "abacus" ? displayName : "ChatLLM";
@@ -205,18 +204,17 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
         get streamChanges() {
           return Stream.concat(Stream.fromEffect(Ref.get(snapshotRef)), Stream.fromPubSub(changes));
         },
-        applyUsageLimits: (update) =>
-          Effect.gen(function* () {
-            const updated = yield* Ref.updateAndGet(snapshotRef, (current) => ({
-              ...current,
-              usageLimits: applyUsageLimitsUpdate({
-                previous: current.usageLimits,
-                checkedAt: update.checkedAt,
-                update,
-              }),
-            }));
-            yield* PubSub.publish(changes, updated);
-          }),
+        applyUsageLimits: Effect.fn("AbacusDriver.applyUsageLimits")(function* (update) {
+          const updated = yield* Ref.updateAndGet(snapshotRef, (current) => ({
+            ...current,
+            usageLimits: applyUsageLimitsUpdate({
+              previous: current.usageLimits,
+              checkedAt: update.checkedAt,
+              update,
+            }),
+          }));
+          yield* PubSub.publish(changes, updated);
+        }),
       };
 
       const orchestrationAdapter = yield* AbacusAdapterV2Driver.create(input).pipe(

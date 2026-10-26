@@ -45,6 +45,11 @@ export const PROVIDER_PRESENTATION = {
     color: "#8b5cf6",
     driverKind: ProviderDriverKind.make("abacus"),
   },
+  muse: {
+    label: "Muse Code",
+    color: "#0866ff",
+    driverKind: ProviderDriverKind.make("muse"),
+  },
 } satisfies Record<UsageProviderKind, UsageProviderPresentation>;
 
 export const PROVIDER_ORDER = Object.keys(PROVIDER_PRESENTATION) as UsageProviderKind[];
