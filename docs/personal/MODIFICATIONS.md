@@ -66,6 +66,12 @@ destructive commands. A turn allows 200 tool calls on models whose id contains
   inside the project could redirect them outside it. They now check the real
   path (`resolveWorkspaceWritePath`). `execute_command` can still write
   anywhere, so this is not a sandbox.
+- 0.10.0 (CHATLLM-CANCEL-001): `startTurn` ran the whole tool loop before
+  returning, so the `provider-turn.start` effect held the thread's outbox lane
+  and interrupts and steers queued behind it until the turn ended on its own.
+  The loop now runs in a fiber forked into the session scope, as
+  `ClaudeAdapterV2` does, and the turn ends with a final `provider_turn.updated`
+  so the projection shows it finished.
 - 0.10.0: moving ChatLLM onto Pi or OpenCode as a custom OpenAI-compatible
   provider was checked and rejected. RouteLLM handles their tool calling
   (parallel calls, tool results, streamed usage), but neither harness is in use

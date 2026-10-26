@@ -5,36 +5,6 @@ before diagnosing a new bug. Release history is in [CHANGELOG.md](./CHANGELOG.md
 
 ## Open issues
 
-### CHATLLM-CANCEL-001: ChatLLM turns can't be stopped or steered and never show as finished
-
-Open since 2026-10-26.
-Problem: A ChatLLM thread, including a delegated subagent, ignores Stop from the
-user and `t3_thread_interrupt` from the orchestrator agent until the turn ends on
-its own or the server restarts, and queued steers wait just as long. After the
-turn does end, the thread still shows as running, so it can't be steered then
-either.
-Cause: Two defects in `AbacusAdapterV2`. (1) `startTurn` runs the whole tool loop
-inline instead of forking it into the session scope the way `ClaudeAdapterV2`
-does, so the `provider-turn.start` outbox effect stays `running` for the entire
-turn. The outbox claims one effect per thread at a time, so
-`provider-turn.interrupt` and later effects sit unclaimed behind it. (2) The
-adapter emits `provider_turn.updated` with status `running` at the start and
-`turn.terminal` at the end, but never a `provider_turn.updated` with
-`completed`, so the provider-turn projection row stays `running` forever.
-Done when: Stop and `t3_thread_interrupt` end a ChatLLM turn within seconds while
-a tool call is in flight, a steer queued mid-turn is delivered, and finished
-ChatLLM turns show `completed` in the provider-turn projection.
-History: On 2026-10-26 the "12-month flight-time sample (GLM 5.3 Flash)" subagent
-collected 47 unclaimed interrupt effects between 17:03 and 17:52 UTC with
-attempt count 0; all were cancelled by the server shutdown at 17:52:40, which is
-what finally ended the turn. Its sibling "Flight-time cross-check" finished at
-15:25 UTC yet still shows a running provider turn. Every ChatLLM provider turn
-since the projection began on 2026-10-15 is `running` (27 of 28; the other is
-the shutdown cancellation). Claude, Codex, Antigravity and Zed turns complete
-normally, and their interrupts run within a second. Interrupt itself is wired
-correctly (`interruptTurn` sets the cancel flag, kills the current command and
-aborts the request); it just never gets called in time.
-
 ### ZED-CONTEXT-001: Zed context meter gets no token usage
 
 Open since 2026-10-12.
@@ -55,6 +25,8 @@ History: Native Zed session storage holds nonzero input and output token counts,
 - **Zed effort tests** (ZED-TEST-001): the legacy Zed tests that checked per-model effort lists and rejected unsupported effort values were removed with the pre-v2 adapter. `ZedAdapterV2.test.ts` covers only model-then-effort ordering.
 
 ## Resolved
+
+- **CHATLLM-CANCEL-001** (0.10.0): ChatLLM turns ignored Stop and `t3_thread_interrupt` until the server restarted, and stayed `running` after they ended. Cause: `startTurn` ran the tool loop inline, so the start effect held the thread's outbox lane and the interrupt was never claimed; the adapter never emitted a completed `provider_turn.updated`. Fix: the loop runs in a fiber forked into the session scope, and every turn ends with a final `provider_turn.updated` before `turn.terminal`.
 
 - **CHATLLM-USAGE-002** (0.7.5): ChatLLM credits diverged from Abacus's dashboard. Cause: balance changes missed delayed charges and mixed concurrent turns. Fix: use daily ledger credits.
 

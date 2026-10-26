@@ -18,6 +18,7 @@ import {
   type ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -537,6 +538,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
     openSession: Effect.fn("AbacusAdapterV2.openSession")(function* (
       sessionInput: ProviderAdapter.ProviderAdapterV2OpenSessionInput,
     ) {
+      const sessionScope = yield* Effect.scope;
       const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
       const messages: AbacusMessage[] = [];
       const activeTurnRef = yield* Ref.make<ActiveTurn | null>(null);
@@ -649,14 +651,14 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
         };
         yield* Ref.set(activeTurnRef, active);
 
-        const cwd = turnInput.runtimePolicy.cwd ?? process.cwd();
-        const turnModel = turnInput.modelSelection.model || options.defaultModel;
-        const maxTurnSteps = abacusMaxTurnSteps(turnModel);
         const initialMessageCount = messages.length;
         if (messages.length === 0) {
           messages.push({
             role: "system",
-            content: buildAbacusSystemPrompt(cwd, turnModel),
+            content: buildAbacusSystemPrompt(
+              turnInput.runtimePolicy.cwd ?? process.cwd(),
+              turnInput.modelSelection.model || options.defaultModel,
+            ),
           });
         }
         messages.push({ role: "user", content: turnInput.message.text });
@@ -665,6 +667,88 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
           { role: "user", content: turnInput.message.text },
         ];
 
+        // The loop runs in the session scope so startTurn returns at once.
+        // Holding the thread's effect lane for the whole turn would starve the
+        // interrupt and steer effects queued behind it.
+        yield* runTurnLoop(
+          turnInput,
+          providerTurn,
+          syntheticNativeTurnId,
+          active,
+          currentTurnItems,
+          initialMessageCount,
+        ).pipe(
+          Effect.catchCause((cause) => {
+            messages.length = initialMessageCount;
+            return finishTurn({
+              turnInput,
+              providerTurn,
+              active,
+              status: "failed",
+              failure: Cause.pretty(cause),
+            });
+          }),
+          Effect.forkIn(sessionScope),
+        );
+      });
+
+      const finishTurn = Effect.fnUntraced(function* (input: {
+        readonly turnInput: ProviderAdapter.ProviderAdapterV2TurnInput;
+        readonly providerTurn: OrchestrationV2ProviderTurn;
+        readonly active: ActiveTurn;
+        readonly status: "completed" | "interrupted" | "failed";
+        readonly failure?: string;
+      }) {
+        if (input.active.settled) return;
+        input.active.settled = true;
+        const completedAt = yield* DateTime.now;
+        yield* Queue.offer(events, {
+          type: "provider_turn.updated",
+          driver: ABACUS_PROVIDER,
+          threadId: input.turnInput.threadId,
+          providerTurn: { ...input.providerTurn, status: input.status, completedAt },
+        });
+        const terminalBase = {
+          type: "turn.terminal" as const,
+          driver: ABACUS_PROVIDER,
+          providerThreadId: input.turnInput.providerThread.id,
+          providerTurnId: input.providerTurn.id,
+          runOrdinal: input.turnInput.runOrdinal,
+          threadDisposition: "reusable" as const,
+        };
+        yield* Queue.offer(
+          events,
+          input.status === "failed"
+            ? {
+                ...terminalBase,
+                status: "failed",
+                failureItemOrdinal: 1,
+                failure: {
+                  class: "provider_error",
+                  message: (input.failure ?? "ChatLLM turn failed").slice(0, 4096),
+                  code: null,
+                  retryable: false,
+                },
+              }
+            : { ...terminalBase, status: input.status, failure: null },
+        );
+        yield* Ref.update(activeTurnRef, (current) => (current === input.active ? null : current));
+      });
+
+      const runTurnLoop = Effect.fnUntraced(function* (
+        turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
+        providerTurn: OrchestrationV2ProviderTurn,
+        syntheticNativeTurnId: string,
+        active: ActiveTurn,
+        currentTurnItems: Array<{ role: string; content?: string | null }>,
+        initialMessageCount: number,
+      ) {
+        const { controller } = active;
+        const providerTurnId = providerTurn.id;
+        const startedAt = providerTurn.startedAt ?? DateTime.nowUnsafe();
+        const cwd = turnInput.runtimePolicy.cwd ?? process.cwd();
+        const turnModel = turnInput.modelSelection.model || options.defaultModel;
+        const maxTurnSteps = abacusMaxTurnSteps(turnModel);
         let stepCount = 0;
         const turnUsage = {
           inputTokens: 0,
@@ -1166,51 +1250,16 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
           }
         }
 
-        if (!active.settled) {
-          active.settled = true;
-          if (active.cancelled) {
-            yield* Queue.offer(events, {
-              type: "turn.terminal",
-              driver: ABACUS_PROVIDER,
-              providerThreadId: turnInput.providerThread.id,
-              providerTurnId,
-              runOrdinal: turnInput.runOrdinal,
-              status: "interrupted",
-              failure: null,
-              threadDisposition: "reusable",
-            });
-          } else if (failure) {
-            yield* Queue.offer(events, {
-              type: "turn.terminal",
-              driver: ABACUS_PROVIDER,
-              providerThreadId: turnInput.providerThread.id,
-              providerTurnId,
-              runOrdinal: turnInput.runOrdinal,
-              failureItemOrdinal: 1,
-              status: "failed",
-              failure: {
-                class: "provider_error",
-                message: failure.slice(0, 4096),
-                code: null,
-                retryable: false,
-              },
-              threadDisposition: "reusable",
-            });
-          } else {
-            yield* Queue.offer(events, {
-              type: "turn.terminal",
-              driver: ABACUS_PROVIDER,
-              providerThreadId: turnInput.providerThread.id,
-              providerTurnId,
-              runOrdinal: turnInput.runOrdinal,
-              status: "completed",
-              failure: null,
-              threadDisposition: "reusable",
-            });
-          }
-        }
-
-        yield* Ref.set(activeTurnRef, null);
+        yield* finishTurn({
+          turnInput,
+          providerTurn,
+          active,
+          ...(active.cancelled
+            ? { status: "interrupted" as const }
+            : failure
+              ? { status: "failed" as const, failure }
+              : { status: "completed" as const }),
+        });
       });
 
       const interruptTurn = Effect.fn("AbacusAdapterV2.interruptTurn")(function* (

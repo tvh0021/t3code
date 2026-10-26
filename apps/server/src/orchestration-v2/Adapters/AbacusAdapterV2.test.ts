@@ -7,6 +7,7 @@ import {
   MessageId,
   NodeId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionId,
   RunAttemptId,
@@ -14,9 +15,12 @@ import {
   ThreadId,
   type OrchestrationV2AppThread,
 } from "@t3tools/contracts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
 
 import {
   ABACUS_AGENT_TOOLS,
@@ -43,6 +47,15 @@ const sseResponse = (parts: ReadonlyArray<string>) =>
       },
     }),
     { headers: { "Content-Type": "text/event-stream" } },
+  );
+
+// startTurn returns once the turn is running; the work finishes in the background.
+const collectTurnEvents = (session: ProviderAdapter.ProviderAdapterV2SessionRuntime) =>
+  Effect.forkChild(
+    session.events.pipe(
+      Stream.takeUntil((event) => event.type === "turn.terminal"),
+      Stream.runCollect,
+    ),
   );
 
 describe("AbacusAdapterV2 unit helpers", () => {
@@ -301,6 +314,7 @@ describe("AbacusAdapterV2 session and turn execution", () => {
         deletedAt: null,
       };
 
+      const turnEvents = yield* collectTurnEvents(session);
       yield* session.startTurn({
         threadId,
         runId: RunId.make("run-1"),
@@ -320,6 +334,19 @@ describe("AbacusAdapterV2 session and turn execution", () => {
           creationSource: "web",
         },
       });
+      const collected = [...(yield* Fiber.join(turnEvents))];
+      const terminal = collected.at(-1);
+      expect(terminal).toMatchObject({ type: "turn.terminal", status: "completed" });
+      const completedUpdate = collected.find(
+        (event) =>
+          event.type === "provider_turn.updated" && event.providerTurn.status === "completed",
+      );
+      expect(completedUpdate).toBeDefined();
+      expect(collected.indexOf(completedUpdate!)).toBeLessThan(collected.indexOf(terminal!));
+      expect(
+        completedUpdate?.type === "provider_turn.updated" &&
+          completedUpdate.providerTurn.completedAt,
+      ).not.toBeNull();
 
       expect(requests).toHaveLength(2);
       expect(requests[0]?.url).toBe("https://example.test/v1/chat/completions");
@@ -539,6 +566,7 @@ describe("AbacusAdapterV2 session and turn execution", () => {
         deletedAt: null,
       };
 
+      const turnEvents = yield* collectTurnEvents(session);
       yield* session.startTurn({
         threadId,
         runId: RunId.make("run-1"),
@@ -558,6 +586,7 @@ describe("AbacusAdapterV2 session and turn execution", () => {
           creationSource: "web",
         },
       });
+      yield* Fiber.join(turnEvents);
 
       expect(requests).toHaveLength(2);
       const secondMessages = requests[1]?.body.messages as Array<Record<string, unknown>>;
@@ -646,8 +675,9 @@ describe("AbacusAdapterV2 session and turn execution", () => {
         lastVisitedAt: null,
         deletedAt: null,
       };
-      const startTurn = (ordinal: number, text: string) =>
-        session.startTurn({
+      const startTurn = Effect.fn(function* (ordinal: number, text: string) {
+        const turnEvents = yield* collectTurnEvents(session);
+        yield* session.startTurn({
           threadId,
           runId: RunId.make(`run-${ordinal}`),
           attemptId: RunAttemptId.make(`attempt-${ordinal}`),
@@ -666,6 +696,8 @@ describe("AbacusAdapterV2 session and turn execution", () => {
             creationSource: "web",
           },
         });
+        yield* Fiber.join(turnEvents);
+      });
 
       yield* startTurn(1, "Review everything.");
       // 50 answered tool calls, then the request whose call is refused.
@@ -690,6 +722,114 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       expect(calledIds).toEqual(answeredIds);
 
       NodeFS.rmSync(tempDir, { recursive: true, force: true });
+    }),
+  );
+  it.effect("interrupting a turn mid-request ends it without waiting for the request", () =>
+    Effect.gen(function* () {
+      let requestStarted = () => {};
+      const requestPending = new Promise<void>((resolve) => {
+        requestStarted = resolve;
+      });
+      const fetch: typeof globalThis.fetch = (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+          requestStarted();
+        });
+
+      const instanceId = ProviderInstanceId.make("abacus-interrupt-test");
+      const threadId = ThreadId.make("thread-interrupt");
+      const modelSelection = { instanceId, model: "route-llm" } as const;
+      const runtimePolicy = {
+        cwd: process.cwd(),
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+      };
+      const adapter = yield* makeAbacusAdapterV2({
+        instanceId,
+        apiBaseUrl: "https://example.test/v1/",
+        apiKey: "secret-key",
+        defaultModel: "route-llm",
+        fetch,
+      });
+      const session = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("session-interrupt"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* session.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      const appThread: OrchestrationV2AppThread = {
+        id: threadId,
+        createdBy: "user",
+        creationSource: "web",
+        projectId: ProjectId.make("project-1"),
+        title: "Interrupt",
+        providerInstanceId: instanceId,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: process.cwd(),
+        activeProviderThreadId: providerThread.id,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        lastVisitedAt: null,
+        deletedAt: null,
+      };
+
+      const turnEvents = yield* collectTurnEvents(session);
+      // Must return while the request is still pending; a blocking startTurn
+      // holds the thread's effect lane so the interrupt is never delivered.
+      yield* session.startTurn({
+        threadId,
+        runId: RunId.make("run-1"),
+        attemptId: RunAttemptId.make("attempt-1"),
+        rootNodeId: NodeId.make("node-1"),
+        appThread,
+        providerThread,
+        runtimePolicy,
+        modelSelection,
+        runOrdinal: 1,
+        providerTurnOrdinal: 1,
+        message: {
+          messageId: MessageId.make("msg-1"),
+          text: "Hang forever.",
+          attachments: [],
+          createdBy: "user",
+          creationSource: "web",
+        },
+      });
+      yield* Effect.promise(() => requestPending);
+      yield* session.interruptTurn({
+        providerThread,
+        providerTurnId: IdAllocator.derive.providerTurn({
+          driver: ProviderDriverKind.make("abacus"),
+          nativeTurnId: `${providerThread.id}:turn:1`,
+        }),
+      });
+
+      const collected = [...(yield* Fiber.join(turnEvents))];
+      expect(collected.at(-1)).toMatchObject({ type: "turn.terminal", status: "interrupted" });
+      expect(
+        collected.some(
+          (event) =>
+            event.type === "provider_turn.updated" &&
+            event.providerTurn.status === "interrupted" &&
+            event.providerTurn.completedAt !== null,
+        ),
+      ).toBe(true);
     }),
   );
 });
