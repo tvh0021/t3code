@@ -269,7 +269,7 @@ shows Zed's reason, and running out of credits shows as a usage limit.
 
 ## Delegated tasks
 
-**Now.** Agents delegate through upstream's `delegate_task`. The fork adds two
+**Now.** Agents delegate through upstream's `delegate_task`. The fork adds three
 things:
 
 - **Per-task attempt limits.** A parent may delegate the same task to one
@@ -302,6 +302,12 @@ for it; the limits are server-wide, so the web or desktop screen covers every
 client.
 
 **Decisions.**
+
+- 0.11.0: personal routing rules lived in each provider's own instruction
+  files, so ACP and Cursor agents never saw them and every file needed its own
+  copy. `readUserOrchestrationSections` in `userOrchestrationInstructions.ts`
+  appends one shared file after the built-in orchestration sections, and reads
+  it on each call so an edit reaches the next session without a rebuild.
 
 - 0.7.3: thread-wide budgets blocked unrelated tasks. `taskAttemptsExceeded` in
   `delegationGuards.ts` counts attempts at the same task; `coordinationModelKey`

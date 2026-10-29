@@ -6,6 +6,10 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.11.0 (2026-10-29)
+
+- New feature: agents with T3 tools get your orchestration rules from `~/.agents/ORCHESTRATION.md` in every new session, on every provider except Pi, and edits apply without a rebuild
+
 ### 0.10.0 (2026-10-26)
 
 - Issue: ChatLLM ignored Stop and kept finished turns marked as running → Fix: interrupts reach active turns and completion updates clear their running status (CHATLLM-CANCEL-001)
