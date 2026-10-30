@@ -3275,6 +3275,7 @@ export default function ChatView(props: ChatViewProps) {
                 detailLoading={threadDetailLoading}
                 readyMarkdownCwd={gitCwd}
                 readyWorkspaceRoot={activeWorkspaceRoot ?? null}
+                {...(paintOnlyDisplayedTimeline ? {} : { workspaceMutationId })}
                 citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
                 citationHistoryLoading={threadDetailLoading}
                 {...(!paintOnlyDisplayedTimeline

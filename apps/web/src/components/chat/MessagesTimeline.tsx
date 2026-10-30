@@ -1,6 +1,7 @@
 import { AudioPreviewUnmountContext } from "../files/AudioPreview";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { MarkdownFindContext } from "./markdownFindContext";
+import { WorkspaceMutationContext } from "./ChatMarkdownMedia";
 import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
@@ -247,6 +248,7 @@ interface MessagesTimelineProps {
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
+  workspaceMutationId?: string | null | undefined;
   skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   runs: ReadonlyArray<HandoffTimelineRun>;
   anchorMessageId: MessageId | null;
@@ -278,15 +280,19 @@ export function MessagesTimeline(props: MessagesTimelineProps) {
   const find = useContext(ThreadFindTimelineContext);
   const findOpen = find?.findOpen ?? props.findOpen;
   const { onManualNavigation } = props;
+  const { workspaceMutationId, ...timelineProps } = props;
   useEffect(() => {
     if (findOpen) onManualNavigation();
   }, [findOpen, onManualNavigation]);
+  // A context, so a mutation re-renders only local images, not every row's markdown.
   return (
-    <ConversationTimeline
-      {...props}
-      {...find}
-      liveFollowEnabled={!findOpen && props.liveFollowEnabled}
-    />
+    <WorkspaceMutationContext value={workspaceMutationId}>
+      <ConversationTimeline
+        {...timelineProps}
+        {...find}
+        liveFollowEnabled={!findOpen && props.liveFollowEnabled}
+      />
+    </WorkspaceMutationContext>
   );
 }
 
