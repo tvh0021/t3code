@@ -34,6 +34,8 @@ History: offline tests, typechecks and lint pass. The branch predates 0.7.4 and 
 
 ## Resolved
 
+- **CHAT-IMAGE-001** (0.11.1): Rewritten chat images stayed stale. Cause: mounted images retained cached URLs. Fix: workspace changes refresh local image URLs, including outside-workspace files.
+
 - **CHATLLM-CANCEL-001** (0.10.0): ChatLLM ignored Stop and stayed running after completion. Cause: inline execution blocked interrupts; completion updates were missing. Fix: fork execution and publish final status.
 
 - **CHATLLM-USAGE-002** (0.7.5): ChatLLM credits diverged from Abacus's dashboard. Cause: balance changes missed delayed charges and mixed concurrent turns. Fix: use daily ledger credits.

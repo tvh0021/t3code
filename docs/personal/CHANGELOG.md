@@ -6,6 +6,10 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.11.1 (2026-10-30)
+
+- Issue: chat kept showing an old image after an agent rewrote the file → Fix: local images reload when the thread's workspace changes (CHAT-IMAGE-001)
+
 ### 0.11.0 (2026-10-29)
 
 - New feature: agents with T3 tools get your orchestration rules from `~/.agents/ORCHESTRATION.md` in every new session, on every provider except Pi, and edits apply without a rebuild

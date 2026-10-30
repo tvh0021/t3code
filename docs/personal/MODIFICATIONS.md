@@ -13,10 +13,15 @@ default font sizes are interface 20px, prompt 18px, code 18px and terminal 17px
 (`packages/contracts/src/settings.ts`); saved preferences override them. Chat
 renders inline and block math with KaTeX, including inside tables and bold or
 italic text. HTML file links open in the system browser, with the integrated
-browser in the context menu.
+browser in the context menu. Local chat images reload after the agent changes
+the workspace, including images at absolute paths outside the project.
 
 **Decisions.**
 
+- 0.11.1 (CHAT-IMAGE-001): mounted images kept their cached URLs after file
+  rewrites. `MessagesTimeline` supplies `WorkspaceMutationContext` to
+  `ChatMarkdownAssetImage`, which reuses the revision-aware asset query without
+  reparsing every message.
 - Before 0.0.42: messages without math delimiters skip math preprocessing and
   plugins, so ordinary chat pays nothing for KaTeX.
 - 0.3.1: KaTeX markup and stylesheet are pinned to the same version (0.18.7).
