@@ -6,6 +6,10 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.12.0 (2026-11-01)
+
+- Upstream sync: merged upstream 88f611368e
+
 ### 0.11.1 (2026-10-30)
 
 - Issue: chat kept showing an old image after an agent rewrote the file → Fix: local images reload when the thread's workspace changes (CHAT-IMAGE-001)

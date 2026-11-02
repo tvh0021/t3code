@@ -109,7 +109,7 @@ steps inherit the nearest named model when available.
   contains ChatLLM. `ForwardCompatibleArray` doesn't drop unknown entries inside
   RPC replies, so the host removes ChatLLM for every mobile client
   (`usageClientCompatibility.ts`). app.t3.codes is not projected. Since the
-  2026-11-01 sync the host reads the client from the connection's
+  0.12.0 sync the host reads the client from the connection's
   `clientSurface` parameter, because upstream removed the stored client origin.
 - 0.3.2 (USAGE-001): price precedence is custom prices, then provider-reported
   cost, then verified official rates, then LiteLLM (`usagePricing.ts`).
@@ -124,7 +124,7 @@ steps inherit the nearest named model when available.
   some to `archived_sessions`. The scanner reads both and counts duplicate
   sessions once. Saved usage no longer expires after 92 days, so it outlives
   provider cleanup; usage deleted before its first scan is still lost. Since
-  the 2026-11-01 sync, upstream's transcript reader handles `.jsonl.zst`, and
+  the 0.12.0 sync, upstream's transcript reader handles `.jsonl.zst`, and
   the fork dropped its copy.
 - 0.6.1 (USAGE-004): speed comes from the provider's reported `usage.speed`,
   not the selected option. Claude Code silently drops Fast when the account
@@ -191,7 +191,7 @@ an ended billing period by calendar months and rereads spend once.
   upstream's merge of both quota endpoints, keeping the higher used percentage
   when both report a bucket, so a missing group on one endpoint stays visible.
   Unspent rolling windows omit their synthetic `now + 5h` reset timestamp.
-  Since the 2026-11-01 sync, upstream handles this in `summaryResetTime`, and
+  Since the 0.12.0 sync, upstream handles this in `summaryResetTime`, and
   the fork keeps only the shortest-window-first sort.
 - 0.5.0 (ZED-001): Zed's own credential can't read billing, so spend comes from
   `cloud.zed.dev` with a dashboard sign-in. Desktop signs in with **Connect** in
@@ -221,7 +221,7 @@ errors keep the native operation and error text.
 - 0.3.1: incomplete task notifications followed by whitespace caused quadratic
   regex backtracking; the parser no longer backtracks.
 - 0.5.0: new files in new directories failed when the workspace path ran
-  through a symlink, such as macOS `/var`. Retired in the 2026-11-01 sync:
+  through a symlink, such as macOS `/var`. Retired in the 0.12.0 sync:
   upstream resolves linked ancestors and no longer lets Antigravity write
   through the client file system.
 
