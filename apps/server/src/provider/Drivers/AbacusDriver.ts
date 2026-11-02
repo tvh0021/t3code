@@ -28,10 +28,7 @@ import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapsh
 import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
 import { applyUsageLimitsUpdate } from "@t3tools/provider-core/server/usageLimits";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
-import {
-  AbacusAdapterV2Driver,
-  type AbacusAdapterV2DriverEnv,
-} from "../../orchestration-v2/Adapters/AbacusAdapterV2.ts";
+import { AbacusAdapterV2Driver } from "../../orchestration-v2/Adapters/AbacusAdapterV2.ts";
 
 const decodeAbacusSettings = Schema.decodeSync(AbacusSettings);
 

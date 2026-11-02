@@ -89,7 +89,7 @@ export function applyUsageLimitsUpdate(input: {
       changed = true;
     }
   }
-    if (!changed && previous !== undefined) {
+  if (!changed && previous !== undefined) {
     return previous;
   }
   const unavailable =

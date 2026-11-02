@@ -12,6 +12,7 @@ it("registers Abacus without replacing the existing built-in drivers", () => {
     "claudeAgent",
     "cursor",
     "grok",
+    "fx",
     "opencode",
     "antigravity",
     "pi",

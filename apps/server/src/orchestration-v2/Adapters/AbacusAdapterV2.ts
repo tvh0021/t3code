@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off cryptoRandomUUID:off cryptoRandomUUIDInEffect:off globalDate:off globalTimersInEffect:off unknownInEffectCatch:off anyUnknownInErrorContext:off
+// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off cryptoRandomUUID:off cryptoRandomUUIDInEffect:off globalDate:off globalTimersInEffect:off unknownInEffectCatch:off anyUnknownInErrorContext:off abortControllerInEffect:off runEffectInsideEffect:off tryCatchInEffectGen:off
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -6,16 +6,12 @@ import {
   ABACUS_DEFAULT_API_BASE_URL,
   AbacusSettings,
   MessageId,
-  NodeId,
   ProviderDriverKind,
-  ProviderSessionId,
-  type ModelSelection,
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2ProviderSession,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ProviderTurn,
   type ProviderInstanceId,
-  type ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -31,7 +27,6 @@ import { AcpProviderCapabilitiesV2 } from "@t3tools/provider-acp/server/adapter"
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import {
-  ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
   type ProviderAdapterDriverCreateInput,
 } from "@t3tools/provider-core/server/adapterDriver";
@@ -533,8 +528,12 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: options.instanceId,
     driver: ABACUS_PROVIDER,
-    getCapabilities: () => Effect.succeed(AbacusProviderCapabilitiesV2),
-    planSelectionTransition: () => Effect.succeed(turnScopedSelectionTransition()),
+    getCapabilities: Effect.fn("AbacusAdapterV2.getCapabilities")(function () {
+      return Effect.succeed(AbacusProviderCapabilitiesV2);
+    }),
+    planSelectionTransition: Effect.fn("AbacusAdapterV2.planSelectionTransition")(function () {
+      return Effect.succeed(turnScopedSelectionTransition());
+    }),
     openSession: Effect.fn("AbacusAdapterV2.openSession")(function* (
       sessionInput: ProviderAdapter.ProviderAdapterV2OpenSessionInput,
     ) {
@@ -600,12 +599,10 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
         turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
       ) {
         if (turnInput.message.attachments.length > 0) {
-          return yield* Effect.fail(
-            new ProviderAdapter.ProviderAdapterProtocolError({
-              driver: ABACUS_PROVIDER,
-              detail: "ChatLLM does not support file or image attachments.",
-            }),
-          );
+          return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+            driver: ABACUS_PROVIDER,
+            detail: "ChatLLM does not support file or image attachments.",
+          });
         }
 
         yield* Queue.offer(events, {
@@ -760,7 +757,6 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
 
         while (!active.cancelled) {
           let assistantText = "";
-          let finishReason: string | undefined;
           let usage: unknown;
           let done = false;
           let failureHint: string | undefined;
@@ -845,10 +841,6 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
                 if (chunk.usage !== undefined) usage = chunk.usage;
 
                 for (const choice of chunk.choices ?? []) {
-                  if (typeof choice.finish_reason === "string") {
-                    finishReason = choice.finish_reason;
-                  }
-
                   const deltaText = choice.delta?.content;
                   if (typeof deltaText === "string" && deltaText) {
                     assistantText += deltaText;
@@ -1246,7 +1238,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
                   reasoningTokens,
                 },
               }),
-            ).pipe(Effect.catchCause(() => Effect.void));
+            ).pipe(Effect.ignoreCause);
           }
         }
 

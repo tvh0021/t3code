@@ -13,7 +13,6 @@ const codex = ProviderDriverKind.make("codex");
 const abacus = ProviderDriverKind.make("abacus");
 const acpRegistry = ProviderDriverKind.make("acpRegistry");
 
-
 describe("resolveProviderInstanceDisplayName", () => {
   it("migrates legacy Abacus snapshot displayName to ChatLLM", () => {
     expect(
@@ -75,6 +74,11 @@ describe("shouldShowInstanceBadge", () => {
   it("shows the badge when the entry has an accent color", () => {
     const entry = { driverKind: codex, accentColor: "#ff8800", enabled: true };
     expect(shouldShowInstanceBadge(entry, [entry])).toBe(true);
+  });
+
+  it("ignores a non-hex accent color", () => {
+    const entry = { driverKind: codex, accentColor: "blue", enabled: true };
+    expect(shouldShowInstanceBadge(entry, [entry])).toBe(false);
   });
 
   it("shows the badge when two entries share a driver, even without an accent", () => {

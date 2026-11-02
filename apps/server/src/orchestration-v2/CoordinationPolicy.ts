@@ -63,7 +63,7 @@ const make = Effect.gen(function* () {
       if (!cached)
         cached = yield* fs.readFileString(file).pipe(
           Effect.flatMap(decode),
-          Effect.catch(() => Effect.succeed(undefined)),
+          Effect.orElseSucceed(() => undefined),
         );
       if (force || !cached || cached.updatedAt.slice(0, 7) !== now.slice(0, 7)) {
         const catalog = yield* providers.getProviders;

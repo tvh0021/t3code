@@ -7,7 +7,7 @@ import { assert, describe, it } from "@effect/vitest";
 
 import {
   T3_CODE_ORCHESTRATION_SECTIONS,
-  t3OrchestrationPromptForFirstRun,
+  t3OrchestrationPrompt,
   t3OrchestrationSections,
   t3OrchestrationSystemPrompt,
 } from "./orchestrationInstructions.ts";
@@ -66,14 +66,16 @@ describe("user orchestration instructions", () => {
       assert.deepEqual(t3OrchestrationSections(), T3_CODE_ORCHESTRATION_SECTIONS);
 
       NodeFS.writeFileSync(path, "Delegate research to Opus.");
-      assert.include(t3OrchestrationSystemPrompt(true), "## User orchestration rules");
-      assert.include(t3OrchestrationSystemPrompt(true), "Delegate research to Opus.");
+      assert.include(t3OrchestrationSystemPrompt(true, false), "## User orchestration rules");
+      assert.include(t3OrchestrationSystemPrompt(true, false), "Delegate research to Opus.");
 
       NodeFS.writeFileSync(path, "Delegate research to Sonnet.");
-      const prompt = t3OrchestrationPromptForFirstRun({
+      const prompt = t3OrchestrationPrompt({
         prompt: "Go.",
-        runOrdinal: 1,
         hasT3Mcp: true,
+        hasDeviceTools: false,
+        orchestrationDelivered: false,
+        deviceInstructionsDelivered: false,
       });
       assert.include(prompt, "Delegate research to Sonnet.");
       assert.notInclude(prompt, "Delegate research to Opus.");

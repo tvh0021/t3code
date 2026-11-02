@@ -5,7 +5,7 @@ import {
   UsageAggregator,
   type CreditedUsageRecord,
 } from "./usageAggregation.ts";
-import { createOverrideRateTable, type RateTable } from "./usagePricing.ts";
+import type { RateTable } from "./usagePricing.ts";
 import type { UsageRecord } from "@t3tools/provider-core/server/usage";
 
 const rates: RateTable = new Map([

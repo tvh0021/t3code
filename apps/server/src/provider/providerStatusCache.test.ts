@@ -7,10 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
-import * as Effect from "effect/Effect";
 import { mergeProviderSnapshot } from "./ProviderRegistry.ts";
-import * as FileSystem from "effect/FileSystem";
-import * as Logger from "effect/Logger";
 
 import { hydrateCachedProvider, isCachedProviderCorrelated } from "./providerStatusCache.ts";
 

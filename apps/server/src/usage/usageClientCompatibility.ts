@@ -1,4 +1,4 @@
-import type { OrchestrationClientOrigin, UsageSummary } from "@t3tools/contracts";
+import type { UsageSummary } from "@t3tools/contracts";
 
 // Fork-only providers. Upstream mobile builds reject the whole RPC response on an
 // unknown provider literal: ForwardCompatibleArray does not drop elements inside
@@ -8,9 +8,9 @@ const FORK_ONLY_USAGE_PROVIDERS = new Set(["abacus"]);
 /** Drops fork-only providers from the Usage summary sent to mobile builds. */
 export function projectUsageSummaryForClient(
   summary: UsageSummary,
-  clientOrigin: OrchestrationClientOrigin,
+  client: Readonly<Record<string, unknown>>,
 ): UsageSummary {
-  if (clientOrigin.surface !== "mobile") {
+  if (client.surface !== "mobile") {
     return summary;
   }
 

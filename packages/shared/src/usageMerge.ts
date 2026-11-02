@@ -1,5 +1,4 @@
 import {
-  ABACUS_CREDIT_COST_USD,
   abacusCreditsToUsd,
   codexCreditsToUsd,
   normalizeUsageModel,

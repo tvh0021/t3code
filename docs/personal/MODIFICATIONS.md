@@ -108,7 +108,9 @@ steps inherit the nearest named model when available.
 - 0.6.3 (MOBILE-002): newer phone apps reject the whole Usage reply when it
   contains ChatLLM. `ForwardCompatibleArray` doesn't drop unknown entries inside
   RPC replies, so the host removes ChatLLM for every mobile client
-  (`usageClientCompatibility.ts`). app.t3.codes is not projected.
+  (`usageClientCompatibility.ts`). app.t3.codes is not projected. Since the
+  2026-11-01 sync the host reads the client from the connection's
+  `clientSurface` parameter, because upstream removed the stored client origin.
 - 0.3.2 (USAGE-001): price precedence is custom prices, then provider-reported
   cost, then verified official rates, then LiteLLM (`usagePricing.ts`).
   Estimates use base-context rates and leave out Gemini cache storage.
@@ -121,7 +123,9 @@ steps inherit the nearest named model when available.
 - 0.6.0 (USAGE-003): Codex compresses old rollouts to `.jsonl.zst` and moves
   some to `archived_sessions`. The scanner reads both and counts duplicate
   sessions once. Saved usage no longer expires after 92 days, so it outlives
-  provider cleanup; usage deleted before its first scan is still lost.
+  provider cleanup; usage deleted before its first scan is still lost. Since
+  the 2026-11-01 sync, upstream's transcript reader handles `.jsonl.zst`, and
+  the fork dropped its copy.
 - 0.6.1 (USAGE-004): speed comes from the provider's reported `usage.speed`,
   not the selected option. Claude Code silently drops Fast when the account
   can't serve it, so the Claude adapter adds one thread notice with the reason.
@@ -187,6 +191,8 @@ an ended billing period by calendar months and rereads spend once.
   upstream's merge of both quota endpoints, keeping the higher used percentage
   when both report a bucket, so a missing group on one endpoint stays visible.
   Unspent rolling windows omit their synthetic `now + 5h` reset timestamp.
+  Since the 2026-11-01 sync, upstream handles this in `summaryResetTime`, and
+  the fork keeps only the shortest-window-first sort.
 - 0.5.0 (ZED-001): Zed's own credential can't read billing, so spend comes from
   `cloud.zed.dev` with a dashboard sign-in. Desktop signs in with **Connect** in
   Zed provider settings; other clients paste the dashboard Cookie header. The
@@ -201,9 +207,9 @@ an ended billing period by calendar months and rereads spend once.
 
 ## Antigravity
 
-**Now.** Antigravity runs over ACP with the recognized Zed client identity, so
-the account can offer Claude Opus 5.5 and Sonnet 5.5 (low, medium, high) next
-to Gemini. Built-in seeds fill the picker until live discovery answers.
+**Now.** Antigravity runs over ACP with the Zed client identity, which upstream
+now sends itself, so the account can offer Claude Opus 5.5 and Sonnet 5.5 at
+low, medium, and high effort next to Gemini. Built-in seeds fill the picker until live discovery answers.
 Native task results appear in the work trace without ending the prompt. ACP
 errors keep the native operation and error text.
 
@@ -215,8 +221,9 @@ errors keep the native operation and error text.
 - 0.3.1: incomplete task notifications followed by whitespace caused quadratic
   regex backtracking; the parser no longer backtracks.
 - 0.5.0: new files in new directories failed when the workspace path ran
-  through a symlink, such as macOS `/var`. Paths now resolve to their real
-  location first (`AntigravityClientFiles.ts`).
+  through a symlink, such as macOS `/var`. Retired in the 2026-11-01 sync:
+  upstream resolves linked ancestors and no longer lets Antigravity write
+  through the client file system.
 
 **Removed.** In the 0.4.0 sync: the Full-access lock from 0.1.2 (Antigravity now
 follows the thread's permission mode), and the four-thread provider command
@@ -279,19 +286,24 @@ things:
 
 - **Per-task attempt limits.** A parent may delegate the same task to one
   model family a limited number of times. A family spans generations, aliases,
-  and instances (6.1 Sol, 6 Sol, and 5.6 Sol are all `gpt-sol`), so an agent
+  and instances, so 6.1 Sol, 6 Sol, and 5.6 Sol are all `gpt-sol` and an agent
   can't get around the limit by retrying on an older generation. The limit
   stops a parent from resubmitting a task that is going nowhere; it is not a
   cap on how many tasks a thread delegates. A task is its title, or its prompt
   when untitled, since review rounds resend the title with new findings.
   Finished attempts still count. Provider-native subagents don't count.
-  Named defaults and overrides beat price bands: above $10 per million output
-  tokens gets one attempt, $1 to $10 gets four, below $1 is unlimited. Unpriced
-  models need an override. Settings shows the live policy
-  (`apps/server/src/orchestration-v2/delegationGuards.ts`).
+  Tasks delegated to a linked environment count with local ones, and this
+  server checks them before it launches anything there. A retry with the same
+  `clientRequestId` is the same attempt. Named defaults and overrides beat
+  price bands: above $10 per million output tokens gets one attempt, $1 to $10
+  gets four, below $1 is unlimited. Unpriced models need an override. Settings
+  shows the live policy. The check lives in `delegationGuards.ts`, called from
+  `OrchestratorMcpService.ts` and `RemoteDelegation.ts`.
 - **Review worktrees.** A `reviewRef` is resolved to a commit and passed to
   upstream's `isolation: "worktree"` as its base, so the child reviews that
   commit instead of the parent's current one (`OrchestratorMcpService.ts`).
+  A task in a linked environment can't use a worktree, so the server rejects
+  `reviewRef` with a remote `target.environmentId`.
 - **User orchestration rules.** `~/.agents/ORCHESTRATION.md` (or the path in
   `T3_USER_ORCHESTRATION_INSTRUCTIONS`) is appended to the orchestration
   instructions every MCP-enabled provider receives: Claude, Codex, ACP
@@ -360,9 +372,10 @@ need a password are skipped (`apps/desktop/src/electron/MacKeychain.ts`).
 
 Run the `blast-radius` skill before merging (see `AGENTS.md`). Then:
 
-- Merge `upstream/main`; don't rebase. Merges keep the fork's history and
-  resolve conflicts once.
-- After resolving, diff each conflicted file against `upstream/main`. Syncs
+- Merge the latest upstream nightly release tag, `*-nightly.*`, not
+  `upstream/main`. Don't rebase. Merges keep the fork's history and resolve
+  conflicts once.
+- After resolving, diff each conflicted file against that tag. Syncs
   have silently undone upstream work before: the provider badge helpers
   (`providerInstanceDisplay.ts`) and the Runbooks section of `docs/README.md`.
 - Fork-only services (`DelegationGuards`, the recovery worker's

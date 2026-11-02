@@ -60,8 +60,9 @@ const readKeychainSecret = Effect.fn("ChromiumKeys.readKeychainSecret")(function
     try: () => import("@napi-rs/keyring"),
     catch: (cause) => new ChromiumKeyError({ reason: "keychainUnavailable", cause }),
   });
-  const secret = yield* Effect.try({
-    try: () => withKeychainUserInteraction(() => new Keyring.Entry(service, account).getPassword()),
+  const secret = yield* Effect.tryPromise({
+    try: () =>
+      withKeychainUserInteraction(() => new Keyring.AsyncEntry(service, account).getPassword()),
     catch: (cause) => {
       const message = String((cause as { message?: unknown } | undefined)?.message ?? "");
       const missing = /no (matching )?entry|not found/i.test(message);
@@ -71,7 +72,7 @@ const readKeychainSecret = Effect.fn("ChromiumKeys.readKeychainSecret")(function
       });
     },
   });
-  if (secret === null || secret === "") {
+  if (!secret) {
     return yield* new ChromiumKeyError({ reason: "keychainItemMissing" });
   }
   return secret;

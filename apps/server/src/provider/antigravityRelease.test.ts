@@ -9,8 +9,8 @@ describe("Antigravity release assets", () => {
     ["linux", "arm64"],
     ["win32", "x64"],
     ["win32", "arm64"],
-  ] as const)("resolves version 1.3.0 for %s-%s", (platform, arch) => {
-    expect(resolveAntigravityReleaseAsset(platform, arch)?.version).toBe("1.3.0");
+  ] as const)("resolves version 1.4.1 for %s-%s", (platform, arch) => {
+    expect(resolveAntigravityReleaseAsset(platform, arch)?.version).toBe("1.4.1");
   });
 
   it.each([

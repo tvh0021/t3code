@@ -4,6 +4,7 @@ import * as NodeModule from "node:module";
 const require = NodeModule.createRequire(import.meta.url);
 let binding: typeof import("ffi-rs") | undefined;
 let automaticPromptsDisabled = false;
+let interactiveReads = 0;
 
 function setUserInteractionAllowed(allowed: boolean) {
   if (binding === undefined) {
@@ -30,12 +31,15 @@ export function disableAutomaticKeychainPrompts() {
 }
 
 /** A browser-cookie import is an explicit request to access another app's key. */
-export function withKeychainUserInteraction<A>(read: () => A): A {
+export async function withKeychainUserInteraction<A>(read: () => Promise<A>): Promise<A> {
   if (!automaticPromptsDisabled) return read();
-  setUserInteractionAllowed(true);
+  // The setting is process-wide, so the last of overlapping reads turns it off.
+  if (interactiveReads === 0) setUserInteractionAllowed(true);
+  interactiveReads += 1;
   try {
-    return read();
+    return await read();
   } finally {
-    setUserInteractionAllowed(false);
+    interactiveReads -= 1;
+    if (interactiveReads === 0) setUserInteractionAllowed(false);
   }
 }

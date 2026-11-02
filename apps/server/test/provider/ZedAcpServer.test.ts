@@ -162,7 +162,7 @@ describe("ZedAcpServer Harness (Milestone 2)", () => {
     expect(sessionRes.error).toBeUndefined();
     expect(sessionRes.result).toBeDefined();
     expect(typeof sessionRes.result?.sessionId).toBe("string");
-    expect((sessionRes.result?.sessionId as string).length).toBeGreaterThan(0);
+    expect(String(sessionRes.result?.sessionId).length).toBeGreaterThan(0);
   });
 
   it("streams notifications and completes a prompt turn", async () => {

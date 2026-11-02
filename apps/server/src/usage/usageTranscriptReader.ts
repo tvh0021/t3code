@@ -44,7 +44,6 @@ const STREAMING_THRESHOLD_BYTES = 8 * 1024 * 1024;
 const NEWLINE = 0x0a;
 const STAT_CONCURRENCY = 32;
 const CARRIAGE_RETURN = 0x0d;
-const COMPRESSED_SUFFIX = ".jsonl.zst";
 
 function selectUsageFields(fields: SelectedFields) {
   return (path: ReadonlyArray<string | number | null>): boolean => {
@@ -67,10 +66,6 @@ function fnv1a(buffer: Buffer): number {
   return hash >>> 0;
 }
 
-function isTranscriptName(name: string): boolean {
-  return name.endsWith(".jsonl") || name.endsWith(COMPRESSED_SUFFIX);
-}
-
 /** Skips Grok logs without usage; preserves readdir order for first-seen deduplication. */
 export async function listTranscriptFiles(
   root: string,
@@ -91,7 +86,11 @@ export async function listTranscriptFiles(
     for (const entry of entries) {
       const child = NodePath.join(dir, entry.name);
       if (entry.isDirectory()) await walk(child);
-      else if (fileName !== undefined ? entry.name === fileName : isTranscriptName(entry.name)) {
+      else if (
+        fileName !== undefined
+          ? entry.name === fileName
+          : entry.name.endsWith(".jsonl") || entry.name.endsWith(".jsonl.zst")
+      ) {
         candidates.push(child);
       }
     }
@@ -168,6 +167,7 @@ export async function readTranscriptRecords<State>(
   options?: { readonly streamingThresholdBytes?: number },
 ): Promise<TranscriptParseResult | null> {
   const streamingThresholdBytes = options?.streamingThresholdBytes ?? STREAMING_THRESHOLD_BYTES;
+  const compressed = filePath.endsWith(".jsonl.zst");
   let handle: NodeFSP.FileHandle;
   try {
     handle = await NodeFSP.open(filePath, "r");
@@ -186,7 +186,6 @@ export async function readTranscriptRecords<State>(
       resumeFrom === undefined || decodeState === undefined || resumeFrom.state === null
         ? Option.none()
         : decodeState(resumeFrom.state);
-    const compressed = filePath.endsWith(COMPRESSED_SUFFIX);
     if (
       !compressed &&
       resumeFrom !== undefined &&
@@ -255,18 +254,14 @@ export async function readTranscriptRecords<State>(
       streaming = undefined;
       decoder = undefined;
     };
-    const fileStream = handle.createReadStream({
+    const input = handle.createReadStream({
       start,
-      autoClose: false,
+      autoClose: compressed,
       highWaterMark: 256 * 1024,
     });
-    let stream: AsyncIterable<Buffer> = fileStream;
-    if (compressed) {
-      const decompress = NodeZlib.createZstdDecompress();
-      // `pipe` does not forward read errors; the iterator must still throw.
-      fileStream.once("error", (error) => decompress.destroy(error));
-      stream = fileStream.pipe(decompress);
-    }
+    // Compressed snapshots cache a full parse; decoded byte offsets cannot
+    // resume the compressed input.
+    const stream = compressed ? input.compose(NodeZlib.createZstdDecompress()) : input;
     for await (const chunk of stream) {
       let lineStart = 0;
       while (lineStart < chunk.length) {
@@ -294,7 +289,6 @@ export async function readTranscriptRecords<State>(
       decodeState === undefined ? state : Option.getOrThrow(decodeState(encodedState));
     finish(tailState, tailRecords);
 
-    // Offsets into a compressed file count decompressed bytes, so no guard.
     const guardLength = compressed ? 0 : Math.min(GUARD_LENGTH, resumeOffset);
     let guardHash = 0;
     if (guardLength > 0) {
@@ -308,7 +302,7 @@ export async function readTranscriptRecords<State>(
       tailRecords,
       malformedRecords: format.readMalformedRecords?.(tailState) ?? 0,
       position: {
-        resumeOffset,
+        resumeOffset: compressed ? 0 : resumeOffset,
         guardLength,
         guardHash,
         state: encodedState,

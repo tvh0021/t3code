@@ -75,14 +75,11 @@ export class DelegationGuards extends Context.Service<
 const make = Effect.gen(function* () {
   const policy = yield* CoordinationPolicy;
   return DelegationGuards.of({
-    checkTaskAttempts: (subagents, task) =>
-      policy.read().pipe(
-        Effect.mapError((error) => error.message),
-        Effect.flatMap(({ budgets }) => {
-          const exceeded = taskAttemptsExceeded(budgets, subagents, task);
-          return exceeded === null ? Effect.void : Effect.fail(exceeded);
-        }),
-      ),
+    checkTaskAttempts: Effect.fn("DelegationGuards.checkTaskAttempts")(function* (subagents, task) {
+      const { budgets } = yield* policy.read().pipe(Effect.mapError((error) => error.message));
+      const exceeded = taskAttemptsExceeded(budgets, subagents, task);
+      if (exceeded !== null) return yield* Effect.fail(exceeded);
+    }),
   });
 });
 
