@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -13,7 +13,10 @@ vi.mock("./browserDefaults", () => ({
   browserDefaultOpenProfileId: vi.fn(),
   browserDefaultOpenViewport: vi.fn(),
 }));
-vi.mock("~/rightPanelStore", () => ({ useRightPanelStore: { getState: vi.fn() } }));
+vi.mock("~/rightPanelStore", () => ({
+  rightPanelHostRef: (threadRef: ScopedThreadRef) => threadRef,
+  useRightPanelStore: { getState: vi.fn() },
+}));
 
 import { openFileInPreview } from "./openFileInPreview";
 
