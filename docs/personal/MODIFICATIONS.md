@@ -400,3 +400,13 @@ through the SDK. Tool-only handbacks remain task results.
 - Unreleased: the SDK often streams native child tools without their preceding
   text. Reuse the workflow transcript reader with the configured Claude home;
   reserve item ordinals before tools for transcript writes that arrive late.
+- Unreleased: Claude writes a child's text to its transcript after the SDK
+  has delivered that message's tool, and `TurnItemPositionStore` used to
+  assign positions in commit order, so recovered text always sorted below its
+  tool. `EventSink.normalizeEvents` now keeps the adapter's ordinal when it is
+  free, but only for run-less `claudeAgent` items on subagent threads; Codex
+  child ordinals can collide across turns. A resumed child restores its
+  ordinal counter from the persisted maximum.
+- Unreleased: Claude Code prefixes native subagent summaries with a
+  `<tools-used-before-summary>` tag. `updateClaudeSubagentNode` strips it so
+  the child's final report doesn't start with a tool list.
