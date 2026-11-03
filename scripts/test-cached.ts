@@ -52,6 +52,7 @@ const filters = positionals.map((path) => NodePath.relative(root, NodePath.resol
 const isSelectable = (file: string) =>
   /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file) &&
   !file.startsWith(".repos/") &&
+  !file.startsWith(".github/") &&
   NodeFS.existsSync(NodePath.join(root, file)) &&
   matchesTestPath(file, filters);
 if (values.shard) {

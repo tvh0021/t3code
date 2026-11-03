@@ -835,12 +835,13 @@ const agentServer = () =>
       readonly exited: Promise<void>;
     }>((resume) => {
       const env = { ...process.env, [PortScanner.AGENT_THREAD_ENV]: "thread-live" };
-      // dash ignores `set -m` without a terminal; bash, like agent tool shells, honors it.
-      const child = NodeChildProcess.spawn(
-        "bash",
-        ["-c", 'set -m; "$0" -e "$1" & wait', process.execPath, AGENT_SERVER_SCRIPT],
-        { detached: true, env, stdio: ["ignore", "pipe", "ignore"] },
-      );
+      // Starts the server in a process group of its own, the way an agent tool shell starts a job.
+      const runnerScript = `const job = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(AGENT_SERVER_SCRIPT)}], { detached: true, stdio: "inherit" }); job.on("exit", () => process.exit());`;
+      const child = NodeChildProcess.spawn(process.execPath, ["-e", runnerScript], {
+        detached: true,
+        env,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
       const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
       child.once("error", (error) => resume(Effect.die(error)));
       child.stdout?.once("data", (chunk) => {

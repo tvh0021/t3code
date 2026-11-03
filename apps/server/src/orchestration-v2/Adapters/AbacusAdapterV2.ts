@@ -178,8 +178,8 @@ export const ABACUS_AGENT_TOOLS = [
 
 const DANGEROUS_PATTERNS: ReadonlyArray<RegExp> = [
   /\bsudo\b/i,
-  /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+[\/~]/i,
-  /\brm\s+-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\s+[\/~]/i,
+  /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+[/~]/i,
+  /\brm\s+-[a-zA-Z]*f[a-zA-Z]*r[a-zA-Z]*\s+[/~]/i,
   /\bcurl\b.*\|\s*(ba)?sh\b/i,
   /\bwget\b.*\|\s*(ba)?sh\b/i,
   /\bgit\s+push\s+.*(-f|--force)\b/i,
@@ -520,814 +520,64 @@ interface ActiveTurn {
   settled: boolean;
 }
 
-export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
+export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
   options: AbacusAdapterV2Options,
 ) {
   const fetchFn = options.fetch ?? globalThis.fetch;
 
-  return ProviderAdapter.ProviderAdapterV2.of({
-    instanceId: options.instanceId,
-    driver: ABACUS_PROVIDER,
-    getCapabilities: Effect.fn("AbacusAdapterV2.getCapabilities")(function () {
-      return Effect.succeed(AbacusProviderCapabilitiesV2);
-    }),
-    planSelectionTransition: Effect.fn("AbacusAdapterV2.planSelectionTransition")(function () {
-      return Effect.succeed(turnScopedSelectionTransition());
-    }),
-    openSession: Effect.fn("AbacusAdapterV2.openSession")(function* (
-      sessionInput: ProviderAdapter.ProviderAdapterV2OpenSessionInput,
-    ) {
-      const sessionScope = yield* Effect.scope;
-      const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
-      const messages: AbacusMessage[] = [];
-      const activeTurnRef = yield* Ref.make<ActiveTurn | null>(null);
-      const threads = new Map<string, OrchestrationV2ProviderThread>();
-      const recordedTurns: Array<{
-        turnId: OrchestrationV2ProviderTurn["id"];
-        items: Array<{ role: string; content?: string | null }>;
-      }> = [];
-
-      const now = yield* DateTime.now;
-      const providerSession: OrchestrationV2ProviderSession = {
-        id: sessionInput.providerSessionId,
-        driver: ABACUS_PROVIDER,
-        providerInstanceId: options.instanceId,
-        status: "ready",
-        model: sessionInput.modelSelection.model,
-        cwd: sessionInput.runtimePolicy.cwd ?? process.cwd(),
-        capabilities: AbacusProviderCapabilitiesV2,
-        createdAt: now,
-        updatedAt: now,
-        lastError: null,
-      };
-
-      const ensureThread = (threadInput: ProviderAdapter.ProviderAdapterV2EnsureThreadInput) =>
-        Effect.sync(() => {
-          const threadIdStr = String(threadInput.threadId);
-          const existing = threads.get(threadIdStr);
-          if (existing) return existing;
-          const thread: OrchestrationV2ProviderThread = {
-            id: IdAllocator.derive.providerThread({
-              driver: ABACUS_PROVIDER,
-              nativeThreadId: threadIdStr,
-              providerInstanceId: options.instanceId,
-            }),
-            driver: ABACUS_PROVIDER,
-            providerInstanceId: options.instanceId,
-            providerSessionId: sessionInput.providerSessionId,
-            appThreadId: threadInput.threadId,
-            ownerNodeId: null,
-            nativeThreadRef: {
-              driver: ABACUS_PROVIDER,
-              nativeId: threadIdStr,
-              strength: "weak",
-            },
-            nativeConversationHeadRef: null,
-            status: "idle",
-            firstRunOrdinal: null,
-            lastRunOrdinal: null,
-            handoffIds: [],
-            forkedFrom: null,
-            createdAt: now,
-            updatedAt: now,
-          };
-          threads.set(threadIdStr, thread);
-          return thread;
-        });
-
-      const startTurn = Effect.fn("AbacusAdapterV2.startTurn")(function* (
-        turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
+  return Effect.succeed(
+    ProviderAdapter.ProviderAdapterV2.of({
+      instanceId: options.instanceId,
+      driver: ABACUS_PROVIDER,
+      getCapabilities: Effect.fn("AbacusAdapterV2.getCapabilities")(function () {
+        return Effect.succeed(AbacusProviderCapabilitiesV2);
+      }),
+      planSelectionTransition: Effect.fn("AbacusAdapterV2.planSelectionTransition")(function () {
+        return Effect.succeed(turnScopedSelectionTransition());
+      }),
+      openSession: Effect.fn("AbacusAdapterV2.openSession")(function* (
+        sessionInput: ProviderAdapter.ProviderAdapterV2OpenSessionInput,
       ) {
-        if (turnInput.message.attachments.length > 0) {
-          return yield* new ProviderAdapter.ProviderAdapterProtocolError({
-            driver: ABACUS_PROVIDER,
-            detail: "ChatLLM does not support file or image attachments.",
-          });
-        }
+        const sessionScope = yield* Effect.scope;
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+        const messages: AbacusMessage[] = [];
+        const activeTurnRef = yield* Ref.make<ActiveTurn | null>(null);
+        const threads = new Map<string, OrchestrationV2ProviderThread>();
+        const recordedTurns: Array<{
+          turnId: OrchestrationV2ProviderTurn["id"];
+          items: Array<{ role: string; content?: string | null }>;
+        }> = [];
 
-        yield* Queue.offer(events, {
-          type: "provider_thread.updated",
+        const now = yield* DateTime.now;
+        const providerSession: OrchestrationV2ProviderSession = {
+          id: sessionInput.providerSessionId,
           driver: ABACUS_PROVIDER,
-          providerThread: turnInput.providerThread,
-        });
-
-        const syntheticNativeTurnId = `${turnInput.providerThread.id}:turn:${turnInput.runOrdinal}`;
-        const providerTurnId = IdAllocator.derive.providerTurn({
-          driver: ABACUS_PROVIDER,
-          nativeTurnId: syntheticNativeTurnId,
-        });
-        const startedAt = yield* DateTime.now;
-        const providerTurn: OrchestrationV2ProviderTurn = {
-          id: providerTurnId,
-          providerThreadId: turnInput.providerThread.id,
-          nodeId: turnInput.rootNodeId,
-          runAttemptId: turnInput.attemptId,
-          nativeTurnRef: {
-            driver: ABACUS_PROVIDER,
-            nativeId: syntheticNativeTurnId,
-            strength: "weak",
-          },
-          ordinal: turnInput.providerTurnOrdinal,
-          status: "running",
-          startedAt,
-          completedAt: null,
+          providerInstanceId: options.instanceId,
+          status: "ready",
+          model: sessionInput.modelSelection.model,
+          cwd: sessionInput.runtimePolicy.cwd ?? process.cwd(),
+          capabilities: AbacusProviderCapabilitiesV2,
+          createdAt: now,
+          updatedAt: now,
+          lastError: null,
         };
-        yield* Queue.offer(events, {
-          type: "provider_turn.updated",
-          driver: ABACUS_PROVIDER,
-          threadId: turnInput.threadId,
-          providerTurn,
-        });
 
-        const controller = new AbortController();
-        const active: ActiveTurn = {
-          turnId: providerTurnId,
-          controller,
-          cancelled: false,
-          settled: false,
-        };
-        yield* Ref.set(activeTurnRef, active);
-
-        const initialMessageCount = messages.length;
-        if (messages.length === 0) {
-          messages.push({
-            role: "system",
-            content: buildAbacusSystemPrompt(
-              turnInput.runtimePolicy.cwd ?? process.cwd(),
-              turnInput.modelSelection.model || options.defaultModel,
-            ),
-          });
-        }
-        messages.push({ role: "user", content: turnInput.message.text });
-
-        const currentTurnItems: Array<{ role: string; content?: string | null }> = [
-          { role: "user", content: turnInput.message.text },
-        ];
-
-        // The loop runs in the session scope so startTurn returns at once.
-        // Holding the thread's effect lane for the whole turn would starve the
-        // interrupt and steer effects queued behind it.
-        yield* runTurnLoop(
-          turnInput,
-          providerTurn,
-          syntheticNativeTurnId,
-          active,
-          currentTurnItems,
-          initialMessageCount,
-        ).pipe(
-          Effect.catchCause((cause) => {
-            messages.length = initialMessageCount;
-            return finishTurn({
-              turnInput,
-              providerTurn,
-              active,
-              status: "failed",
-              failure: Cause.pretty(cause),
-            });
-          }),
-          Effect.forkIn(sessionScope),
-        );
-      });
-
-      const finishTurn = Effect.fnUntraced(function* (input: {
-        readonly turnInput: ProviderAdapter.ProviderAdapterV2TurnInput;
-        readonly providerTurn: OrchestrationV2ProviderTurn;
-        readonly active: ActiveTurn;
-        readonly status: "completed" | "interrupted" | "failed";
-        readonly failure?: string;
-      }) {
-        if (input.active.settled) return;
-        input.active.settled = true;
-        const completedAt = yield* DateTime.now;
-        yield* Queue.offer(events, {
-          type: "provider_turn.updated",
-          driver: ABACUS_PROVIDER,
-          threadId: input.turnInput.threadId,
-          providerTurn: { ...input.providerTurn, status: input.status, completedAt },
-        });
-        const terminalBase = {
-          type: "turn.terminal" as const,
-          driver: ABACUS_PROVIDER,
-          providerThreadId: input.turnInput.providerThread.id,
-          providerTurnId: input.providerTurn.id,
-          runOrdinal: input.turnInput.runOrdinal,
-          threadDisposition: "reusable" as const,
-        };
-        yield* Queue.offer(
-          events,
-          input.status === "failed"
-            ? {
-                ...terminalBase,
-                status: "failed",
-                failureItemOrdinal: 1,
-                failure: {
-                  class: "provider_error",
-                  message: (input.failure ?? "ChatLLM turn failed").slice(0, 4096),
-                  code: null,
-                  retryable: false,
-                },
-              }
-            : { ...terminalBase, status: input.status, failure: null },
-        );
-        yield* Ref.update(activeTurnRef, (current) => (current === input.active ? null : current));
-      });
-
-      const runTurnLoop = Effect.fnUntraced(function* (
-        turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
-        providerTurn: OrchestrationV2ProviderTurn,
-        syntheticNativeTurnId: string,
-        active: ActiveTurn,
-        currentTurnItems: Array<{ role: string; content?: string | null }>,
-        initialMessageCount: number,
-      ) {
-        const { controller } = active;
-        const providerTurnId = providerTurn.id;
-        const startedAt = providerTurn.startedAt ?? DateTime.nowUnsafe();
-        const cwd = turnInput.runtimePolicy.cwd ?? process.cwd();
-        const turnModel = turnInput.modelSelection.model || options.defaultModel;
-        const maxTurnSteps = abacusMaxTurnSteps(turnModel);
-        let stepCount = 0;
-        const turnUsage = {
-          inputTokens: 0,
-          cachedInputTokens: 0,
-          outputTokens: 0,
-          reasoningTokens: 0,
-        };
-        let failure: string | undefined;
-
-        while (!active.cancelled) {
-          let assistantText = "";
-          let usage: unknown;
-          let done = false;
-          let failureHint: string | undefined;
-          let hasStartedAssistantItem = false;
-
-          const toolCallAccumulators = new Map<
-            number,
-            {
-              id: string;
-              type: "function";
-              function: { name: string; arguments: string };
-            }
-          >();
-
-          const assistantMessageId = MessageId.make(
-            `msg-abacus-assistant-${syntheticNativeTurnId}-${stepCount}`,
-          );
-          const assistantTurnItemId = TurnItemId.make(
-            `item-abacus-assistant-${syntheticNativeTurnId}-${stepCount}`,
-          );
-
-          // Per request: a long tool loop may run well past one request's budget.
-          const timeout = setTimeout(
-            () => controller.abort("timeout"),
-            options.requestTimeoutMs ?? 600_000,
-          );
-          const requestExit = yield* Effect.tryPromise({
-            try: async () => {
-              const response = await fetchFn(abacusChatCompletionsUrl(options.apiBaseUrl), {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${options.apiKey}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  model: turnModel,
-                  messages,
-                  stream: true,
-                  stream_options: { include_usage: true },
-                  tools: ABACUS_AGENT_TOOLS,
-                  tool_choice: "auto",
-                }),
-                signal: controller.signal,
-              });
-
-              if (!response.ok) {
-                failureHint = `HTTP ${response.status}`;
-                throw new Error(failureHint);
-              }
-              if (!response.body) {
-                failureHint = "RouteLLM returned an empty streaming response.";
-                throw new Error(failureHint);
-              }
-
-              for await (const payload of parseAbacusSse(response.body)) {
-                if (payload === "[DONE]") {
-                  done = true;
-                  break;
-                }
-                if (active.cancelled) break;
-                let chunk: {
-                  choices?: Array<{
-                    delta?: {
-                      content?: unknown;
-                      tool_calls?: Array<{
-                        index: number;
-                        id?: string;
-                        type?: string;
-                        function?: { name?: string; arguments?: string };
-                      }>;
-                    };
-                    finish_reason?: unknown;
-                  }>;
-                  usage?: unknown;
-                };
-                try {
-                  chunk = JSON.parse(payload) as typeof chunk;
-                } catch {
-                  failureHint = "RouteLLM returned malformed streaming data.";
-                  throw new Error(failureHint);
-                }
-                if (chunk.usage !== undefined) usage = chunk.usage;
-
-                for (const choice of chunk.choices ?? []) {
-                  const deltaText = choice.delta?.content;
-                  if (typeof deltaText === "string" && deltaText) {
-                    assistantText += deltaText;
-                    if (!hasStartedAssistantItem) {
-                      hasStartedAssistantItem = true;
-                    }
-                    await Effect.runPromise(
-                      Queue.offer(events, {
-                        type: "turn_item.updated",
-                        driver: ABACUS_PROVIDER,
-                        turnItem: {
-                          id: assistantTurnItemId,
-                          threadId: turnInput.threadId,
-                          runId: turnInput.runId,
-                          nodeId: turnInput.rootNodeId,
-                          providerThreadId: turnInput.providerThread.id,
-                          providerTurnId,
-                          nativeItemRef: null,
-                          parentItemId: null,
-                          ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 1,
-                          status: "running",
-                          title: null,
-                          startedAt,
-                          completedAt: null,
-                          updatedAt: DateTime.nowUnsafe(),
-                          type: "assistant_message",
-                          messageId: assistantMessageId,
-                          text: assistantText,
-                          streaming: true,
-                        },
-                      }),
-                    );
-                  }
-
-                  if (choice.delta?.tool_calls) {
-                    for (const tc of choice.delta.tool_calls) {
-                      const idx = tc.index ?? 0;
-                      let acc = toolCallAccumulators.get(idx);
-                      if (!acc) {
-                        acc = {
-                          id: tc.id ?? makeToolCallId(),
-                          type: "function",
-                          function: {
-                            name: tc.function?.name ?? "",
-                            arguments: tc.function?.arguments ?? "",
-                          },
-                        };
-                        toolCallAccumulators.set(idx, acc);
-                      } else {
-                        if (tc.id) acc.id = tc.id;
-                        if (tc.function?.name) acc.function.name += tc.function.name;
-                        if (tc.function?.arguments) acc.function.arguments += tc.function.arguments;
-                      }
-                    }
-                  }
-                }
-              }
-
-              if (!active.cancelled && !done) {
-                failureHint = "RouteLLM stream ended before its completion marker.";
-                throw new Error(failureHint);
-              }
-            },
-            catch: (cause) => cause,
-          }).pipe(Effect.exit);
-          clearTimeout(timeout);
-
-          if (!active.cancelled && requestExit._tag === "Failure") {
-            failure =
-              controller.signal.reason === "timeout"
-                ? "RouteLLM request timed out."
-                : (failureHint ?? "RouteLLM request failed.");
-            break;
-          }
-
-          if (hasStartedAssistantItem) {
-            const messageNow = yield* DateTime.now;
-            yield* Queue.offer(events, {
-              type: "message.updated",
-              driver: ABACUS_PROVIDER,
-              message: {
-                id: assistantMessageId,
-                threadId: turnInput.threadId,
-                runId: turnInput.runId,
-                nodeId: turnInput.rootNodeId,
-                role: "assistant",
-                text: assistantText,
-                attachments: [],
-                streaming: false,
-                createdBy: "agent",
-                creationSource: "provider",
-                createdAt: startedAt,
-                updatedAt: messageNow,
-              },
-            });
-            yield* Queue.offer(events, {
-              type: "turn_item.updated",
-              driver: ABACUS_PROVIDER,
-              turnItem: {
-                id: assistantTurnItemId,
-                threadId: turnInput.threadId,
-                runId: turnInput.runId,
-                nodeId: turnInput.rootNodeId,
-                providerThreadId: turnInput.providerThread.id,
-                providerTurnId,
-                nativeItemRef: null,
-                parentItemId: null,
-                ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 1,
-                status: "completed",
-                title: null,
-                startedAt,
-                completedAt: yield* DateTime.now,
-                updatedAt: yield* DateTime.now,
-                type: "assistant_message",
-                messageId: assistantMessageId,
-                text: assistantText,
-                streaming: false,
-              },
-            });
-          }
-
-          if (usage !== undefined) {
-            const stepUsage = usage as {
-              prompt_tokens?: number;
-              input_tokens?: number;
-              completion_tokens?: number;
-              output_tokens?: number;
-              prompt_tokens_details?: { cached_tokens?: number };
-              completion_tokens_details?: { reasoning_tokens?: number };
-              cached_tokens?: number;
-              reasoning_tokens?: number;
-            };
-            turnUsage.inputTokens += stepUsage.prompt_tokens ?? stepUsage.input_tokens ?? 0;
-            turnUsage.cachedInputTokens +=
-              stepUsage.prompt_tokens_details?.cached_tokens ?? stepUsage.cached_tokens ?? 0;
-            turnUsage.outputTokens += stepUsage.completion_tokens ?? stepUsage.output_tokens ?? 0;
-            turnUsage.reasoningTokens +=
-              stepUsage.completion_tokens_details?.reasoning_tokens ??
-              stepUsage.reasoning_tokens ??
-              0;
-          }
-
-          const toolCalls: ToolCall[] = Array.from(toolCallAccumulators.entries())
-            .sort(([a], [b]) => a - b)
-            .map(([_, acc]) => ({
-              id: acc.id || makeToolCallId(),
-              type: "function" as const,
-              function: {
-                name: acc.function.name,
-                arguments: acc.function.arguments,
-              },
-            }));
-
-          if (toolCalls.length === 0) {
-            if (assistantText) {
-              messages.push({ role: "assistant", content: assistantText });
-              currentTurnItems.push({ role: "assistant", content: assistantText });
-            }
-            break;
-          }
-
-          if (stepCount + toolCalls.length > maxTurnSteps) {
-            // Ends the turn without running this batch, so the history
-            // holds no unanswered tool calls for the next turn. The notice
-            // is the turn's last assistant text, which delegated tasks
-            // report as their summary.
-            const ceilingText = `Stopped after ${stepCount} tool calls: ${turnModel} is limited to ${maxTurnSteps} per turn. Send a follow-up to continue.`;
-            const content = assistantText ? `${assistantText}\n\n${ceilingText}` : ceilingText;
-            messages.push({ role: "assistant", content });
-            currentTurnItems.push({ role: "assistant", content });
-            const ceilingNow = yield* DateTime.now;
-            const ceilingMessageId = MessageId.make(
-              `msg-abacus-assistant-${syntheticNativeTurnId}-step-limit`,
-            );
-            yield* Queue.offer(events, {
-              type: "message.updated",
-              driver: ABACUS_PROVIDER,
-              message: {
-                id: ceilingMessageId,
-                threadId: turnInput.threadId,
-                runId: turnInput.runId,
-                nodeId: turnInput.rootNodeId,
-                role: "assistant",
-                text: ceilingText,
-                attachments: [],
-                streaming: false,
-                createdBy: "agent",
-                creationSource: "provider",
-                createdAt: ceilingNow,
-                updatedAt: ceilingNow,
-              },
-            });
-            yield* Queue.offer(events, {
-              type: "turn_item.updated",
-              driver: ABACUS_PROVIDER,
-              turnItem: {
-                id: TurnItemId.make(`item-abacus-assistant-${syntheticNativeTurnId}-step-limit`),
-                threadId: turnInput.threadId,
-                runId: turnInput.runId,
-                nodeId: turnInput.rootNodeId,
-                providerThreadId: turnInput.providerThread.id,
-                providerTurnId,
-                nativeItemRef: null,
-                parentItemId: null,
-                ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 3,
-                status: "completed",
-                title: null,
-                startedAt: ceilingNow,
-                completedAt: ceilingNow,
-                updatedAt: ceilingNow,
-                type: "assistant_message",
-                messageId: ceilingMessageId,
-                text: ceilingText,
-                streaming: false,
-              },
-            });
-            break;
-          }
-
-          messages.push({
-            role: "assistant",
-            content: assistantText || null,
-            tool_calls: toolCalls,
-          });
-          if (assistantText) {
-            currentTurnItems.push({ role: "assistant", content: assistantText });
-          }
-
-          stepCount += toolCalls.length;
-
-          for (const tc of toolCalls) {
-            if (active.cancelled) break;
-
-            let toolArgs: Record<string, unknown> = {};
-            try {
-              toolArgs = JSON.parse(tc.function.arguments || "{}") as Record<string, unknown>;
-            } catch {
-              toolArgs = {};
-            }
-
-            let rawOutput = "";
-            try {
-              switch (tc.function.name) {
-                case "read_file":
-                  rawOutput = handleReadFile(
-                    toolArgs as { path: string; start_line?: number; end_line?: number },
-                    cwd,
-                  );
-                  break;
-                case "write_file":
-                  rawOutput = handleWriteFile(toolArgs as { path: string; content: string }, cwd);
-                  break;
-                case "edit_file":
-                  rawOutput = handleEditFile(
-                    toolArgs as { path: string; old_string: string; new_string: string },
-                    cwd,
-                  );
-                  break;
-                case "list_directory":
-                  rawOutput = handleListDirectory(toolArgs as { path?: string }, cwd);
-                  break;
-                case "execute_command":
-                  const platform = yield* HostProcess.Platform;
-                  rawOutput = yield* Effect.promise(() =>
-                    handleExecuteCommand(
-                      String(toolArgs.command ?? ""),
-                      cwd,
-                      controller.signal,
-                      platform,
-                      (proc) => {
-                        active.currentProcess = proc;
-                      },
-                    ),
-                  );
-                  active.currentProcess = undefined;
-                  break;
-                default:
-                  rawOutput = `Error: Unknown tool '${tc.function.name}'`;
-              }
-            } catch (err: unknown) {
-              rawOutput = `Error executing tool '${tc.function.name}': ${
-                err instanceof Error ? err.message : String(err)
-              }`;
-            }
-
-            const truncated = truncateToolOutput(rawOutput);
-            const toolTurnItemId = TurnItemId.make(
-              `item-abacus-tool-${syntheticNativeTurnId}-${tc.id}`,
-            );
-            const toolNow = yield* DateTime.now;
-
-            if (tc.function.name === "execute_command") {
-              yield* Queue.offer(events, {
-                type: "turn_item.updated",
-                driver: ABACUS_PROVIDER,
-                turnItem: {
-                  id: toolTurnItemId,
-                  threadId: turnInput.threadId,
-                  runId: turnInput.runId,
-                  nodeId: turnInput.rootNodeId,
-                  providerThreadId: turnInput.providerThread.id,
-                  providerTurnId,
-                  nativeItemRef: null,
-                  parentItemId: null,
-                  ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 2,
-                  status: "completed",
-                  title: "Run command",
-                  startedAt: toolNow,
-                  completedAt: toolNow,
-                  updatedAt: toolNow,
-                  type: "command_execution",
-                  input: String(toolArgs.command ?? ""),
-                  output: truncated,
-                },
-              });
-            } else {
-              yield* Queue.offer(events, {
-                type: "turn_item.updated",
-                driver: ABACUS_PROVIDER,
-                turnItem: {
-                  id: toolTurnItemId,
-                  threadId: turnInput.threadId,
-                  runId: turnInput.runId,
-                  nodeId: turnInput.rootNodeId,
-                  providerThreadId: turnInput.providerThread.id,
-                  providerTurnId,
-                  nativeItemRef: null,
-                  parentItemId: null,
-                  ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 2,
-                  status: "completed",
-                  title: tc.function.name,
-                  startedAt: toolNow,
-                  completedAt: toolNow,
-                  updatedAt: toolNow,
-                  type: "dynamic_tool",
-                  toolName: tc.function.name,
-                  input: toolArgs,
-                  output: truncated,
-                },
-              });
-            }
-
-            messages.push({
-              role: "tool",
-              tool_call_id: tc.id,
-              content: truncated,
-            });
-          }
-        }
-
-        controller.abort();
-        if (active.currentProcess) {
-          active.currentProcess.kill("SIGTERM");
-        }
-
-        if (active.cancelled || failure) {
-          messages.length = initialMessageCount;
-        } else {
-          recordedTurns.push({
-            turnId: providerTurnId,
-            items: currentTurnItems,
-          });
-        }
-
-        if (options.stateDir) {
-          // Credits come from Abacus's billing ledger, or from these tokens at
-          // published rates. Balance changes can't be attributed to one turn:
-          // concurrent turns share the account, and charges post late.
-          const promptTokens = turnUsage.inputTokens;
-          const cachedTokens = turnUsage.cachedInputTokens;
-          let outputTokens = turnUsage.outputTokens;
-          const reasoningTokens = turnUsage.reasoningTokens;
-          let uncachedInput = Math.max(0, promptTokens - cachedTokens);
-          if (uncachedInput === 0 && outputTokens === 0) {
-            let promptChars = 0;
-            for (const msg of messages) {
-              if (typeof msg.content === "string") promptChars += msg.content.length;
-            }
-            uncachedInput = Math.max(1, Math.ceil(promptChars / 4));
-            outputTokens = 1;
-          }
-
-          if (uncachedInput > 0 || outputTokens > 0) {
-            yield* Effect.promise(() =>
-              appendProviderTurnUsage({
-                stateDir: options.stateDir!,
-                provider: "abacus",
-                sessionId: String(turnInput.threadId),
-                turnId: String(providerTurnId),
-                model: turnModel,
-                tokens: {
-                  inputTokens: uncachedInput,
-                  cachedInputTokens: cachedTokens,
-                  outputTokens,
-                  reasoningTokens,
-                },
-              }),
-            ).pipe(Effect.ignoreCause);
-          }
-        }
-
-        yield* finishTurn({
-          turnInput,
-          providerTurn,
-          active,
-          ...(active.cancelled
-            ? { status: "interrupted" as const }
-            : failure
-              ? { status: "failed" as const, failure }
-              : { status: "completed" as const }),
-        });
-      });
-
-      const interruptTurn = Effect.fn("AbacusAdapterV2.interruptTurn")(function* (
-        _interruptInput: ProviderAdapter.ProviderAdapterV2InterruptInput,
-      ) {
-        const active = yield* Ref.get(activeTurnRef);
-        if (active && !active.settled) {
-          active.cancelled = true;
-          if (active.currentProcess) {
-            active.currentProcess.kill("SIGTERM");
-          }
-          active.controller.abort("cancelled");
-        }
-      });
-
-      const readThreadSnapshot = (
-        readInput: ProviderAdapter.ProviderAdapterV2ReadThreadSnapshotInput,
-      ): Effect.Effect<ProviderAdapter.ProviderAdapterV2ThreadSnapshot, never, never> =>
-        Effect.sync(() => ({
-          providerThread: readInput.providerThread,
-          providerTurns: [],
-          messages: recordedTurns.flatMap((turn) =>
-            turn.items.map((item, itemIdx) => ({
-              id: MessageId.make(`msg-hist-${turn.turnId}-${itemIdx}`),
-              threadId: sessionInput.threadId,
-              runId: null,
-              nodeId: null,
-              role: (item.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
-              text: item.content ?? "",
-              attachments: [],
-              streaming: false,
-              createdBy: item.role === "assistant" ? ("agent" as const) : ("user" as const),
-              creationSource: "provider" as const,
-              createdAt: now,
-              updatedAt: now,
-            })),
-          ),
-          runtimeRequests: [],
-        }));
-
-      return {
-        instanceId: options.instanceId,
-        driver: ABACUS_PROVIDER,
-        providerSessionId: sessionInput.providerSessionId,
-        providerSession,
-        events: Stream.fromQueue(events),
-        ensureThread,
-        resumeThread: (resumeInput) => Effect.succeed(resumeInput.providerThread),
-        startTurn,
-        interruptTurn,
-        steerTurn: () => Effect.void,
-        respondToRuntimeRequest: () => Effect.void,
-        readThreadSnapshot,
-        rollbackThread: (rollbackInput) =>
-          Effect.sync(() => ({
-            providerThread: rollbackInput.providerThread,
-            providerTurns: [],
-            messages: [],
-            runtimeRequests: [],
-          })),
-        forkThread: (forkInput) =>
+        const ensureThread = (threadInput: ProviderAdapter.ProviderAdapterV2EnsureThreadInput) =>
           Effect.sync(() => {
-            const threadIdStr = String(forkInput.targetThreadId);
-            const providerThreadId = IdAllocator.derive.providerThread({
-              driver: ABACUS_PROVIDER,
-              nativeThreadId: threadIdStr,
-              providerInstanceId: options.instanceId,
-            });
-            const threadNow = DateTime.nowUnsafe();
+            const threadIdStr = String(threadInput.threadId);
+            const existing = threads.get(threadIdStr);
+            if (existing) return existing;
             const thread: OrchestrationV2ProviderThread = {
-              id: providerThreadId,
+              id: IdAllocator.derive.providerThread({
+                driver: ABACUS_PROVIDER,
+                nativeThreadId: threadIdStr,
+                providerInstanceId: options.instanceId,
+              }),
               driver: ABACUS_PROVIDER,
               providerInstanceId: options.instanceId,
               providerSessionId: sessionInput.providerSessionId,
-              appThreadId: forkInput.targetThreadId,
-              ownerNodeId: forkInput.ownerNodeId ?? null,
+              appThreadId: threadInput.threadId,
+              ownerNodeId: null,
               nativeThreadRef: {
                 driver: ABACUS_PROVIDER,
                 nativeId: threadIdStr,
@@ -1338,21 +588,776 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function* (
               firstRunOrdinal: null,
               lastRunOrdinal: null,
               handoffIds: [],
-              forkedFrom: {
-                providerThreadId: forkInput.sourceProviderThread.id,
-                ...(forkInput.providerTurnId === undefined
-                  ? {}
-                  : { providerTurnId: forkInput.providerTurnId }),
-              },
-              createdAt: threadNow,
-              updatedAt: threadNow,
+              forkedFrom: null,
+              createdAt: now,
+              updatedAt: now,
             };
             threads.set(threadIdStr, thread);
             return thread;
-          }),
-      } satisfies ProviderAdapter.ProviderAdapterV2SessionRuntime;
+          });
+
+        const startTurn = Effect.fn("AbacusAdapterV2.startTurn")(function* (
+          turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
+        ) {
+          if (turnInput.message.attachments.length > 0) {
+            return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+              driver: ABACUS_PROVIDER,
+              detail: "ChatLLM does not support file or image attachments.",
+            });
+          }
+
+          yield* Queue.offer(events, {
+            type: "provider_thread.updated",
+            driver: ABACUS_PROVIDER,
+            providerThread: turnInput.providerThread,
+          });
+
+          const syntheticNativeTurnId = `${turnInput.providerThread.id}:turn:${turnInput.runOrdinal}`;
+          const providerTurnId = IdAllocator.derive.providerTurn({
+            driver: ABACUS_PROVIDER,
+            nativeTurnId: syntheticNativeTurnId,
+          });
+          const startedAt = yield* DateTime.now;
+          const providerTurn: OrchestrationV2ProviderTurn = {
+            id: providerTurnId,
+            providerThreadId: turnInput.providerThread.id,
+            nodeId: turnInput.rootNodeId,
+            runAttemptId: turnInput.attemptId,
+            nativeTurnRef: {
+              driver: ABACUS_PROVIDER,
+              nativeId: syntheticNativeTurnId,
+              strength: "weak",
+            },
+            ordinal: turnInput.providerTurnOrdinal,
+            status: "running",
+            startedAt,
+            completedAt: null,
+          };
+          yield* Queue.offer(events, {
+            type: "provider_turn.updated",
+            driver: ABACUS_PROVIDER,
+            threadId: turnInput.threadId,
+            providerTurn,
+          });
+
+          const controller = new AbortController();
+          const active: ActiveTurn = {
+            turnId: providerTurnId,
+            controller,
+            cancelled: false,
+            settled: false,
+          };
+          yield* Ref.set(activeTurnRef, active);
+
+          const initialMessageCount = messages.length;
+          if (messages.length === 0) {
+            messages.push({
+              role: "system",
+              content: buildAbacusSystemPrompt(
+                turnInput.runtimePolicy.cwd ?? process.cwd(),
+                turnInput.modelSelection.model || options.defaultModel,
+              ),
+            });
+          }
+          messages.push({ role: "user", content: turnInput.message.text });
+
+          const currentTurnItems: Array<{ role: string; content?: string | null }> = [
+            { role: "user", content: turnInput.message.text },
+          ];
+
+          // The loop runs in the session scope so startTurn returns at once.
+          // Holding the thread's effect lane for the whole turn would starve the
+          // interrupt and steer effects queued behind it.
+          yield* runTurnLoop(
+            turnInput,
+            providerTurn,
+            syntheticNativeTurnId,
+            active,
+            currentTurnItems,
+            initialMessageCount,
+          ).pipe(
+            Effect.catchCause((cause) => {
+              messages.length = initialMessageCount;
+              return finishTurn({
+                turnInput,
+                providerTurn,
+                active,
+                status: "failed",
+                failure: Cause.pretty(cause),
+              });
+            }),
+            Effect.forkIn(sessionScope),
+          );
+        });
+
+        const finishTurn = Effect.fnUntraced(function* (input: {
+          readonly turnInput: ProviderAdapter.ProviderAdapterV2TurnInput;
+          readonly providerTurn: OrchestrationV2ProviderTurn;
+          readonly active: ActiveTurn;
+          readonly status: "completed" | "interrupted" | "failed";
+          readonly failure?: string;
+        }) {
+          if (input.active.settled) return;
+          input.active.settled = true;
+          const completedAt = yield* DateTime.now;
+          yield* Queue.offer(events, {
+            type: "provider_turn.updated",
+            driver: ABACUS_PROVIDER,
+            threadId: input.turnInput.threadId,
+            providerTurn: { ...input.providerTurn, status: input.status, completedAt },
+          });
+          const terminalBase = {
+            type: "turn.terminal" as const,
+            driver: ABACUS_PROVIDER,
+            providerThreadId: input.turnInput.providerThread.id,
+            providerTurnId: input.providerTurn.id,
+            runOrdinal: input.turnInput.runOrdinal,
+            threadDisposition: "reusable" as const,
+          };
+          yield* Queue.offer(
+            events,
+            input.status === "failed"
+              ? {
+                  ...terminalBase,
+                  status: "failed",
+                  failureItemOrdinal: 1,
+                  failure: {
+                    class: "provider_error",
+                    message: (input.failure ?? "ChatLLM turn failed").slice(0, 4096),
+                    code: null,
+                    retryable: false,
+                  },
+                }
+              : { ...terminalBase, status: input.status, failure: null },
+          );
+          yield* Ref.update(activeTurnRef, (current) =>
+            current === input.active ? null : current,
+          );
+        });
+
+        const runTurnLoop = Effect.fnUntraced(function* (
+          turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
+          providerTurn: OrchestrationV2ProviderTurn,
+          syntheticNativeTurnId: string,
+          active: ActiveTurn,
+          currentTurnItems: Array<{ role: string; content?: string | null }>,
+          initialMessageCount: number,
+        ) {
+          const { controller } = active;
+          const providerTurnId = providerTurn.id;
+          const startedAt = providerTurn.startedAt ?? DateTime.nowUnsafe();
+          const cwd = turnInput.runtimePolicy.cwd ?? process.cwd();
+          const turnModel = turnInput.modelSelection.model || options.defaultModel;
+          const maxTurnSteps = abacusMaxTurnSteps(turnModel);
+          let stepCount = 0;
+          const turnUsage = {
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            outputTokens: 0,
+            reasoningTokens: 0,
+          };
+          let failure: string | undefined;
+
+          while (!active.cancelled) {
+            let assistantText = "";
+            let usage: unknown;
+            let done = false;
+            let failureHint: string | undefined;
+            let hasStartedAssistantItem = false;
+
+            const toolCallAccumulators = new Map<
+              number,
+              {
+                id: string;
+                type: "function";
+                function: { name: string; arguments: string };
+              }
+            >();
+
+            const assistantMessageId = MessageId.make(
+              `msg-abacus-assistant-${syntheticNativeTurnId}-${stepCount}`,
+            );
+            const assistantTurnItemId = TurnItemId.make(
+              `item-abacus-assistant-${syntheticNativeTurnId}-${stepCount}`,
+            );
+
+            // Per request: a long tool loop may run well past one request's budget.
+            const timeout = setTimeout(
+              () => controller.abort("timeout"),
+              options.requestTimeoutMs ?? 600_000,
+            );
+            const requestExit = yield* Effect.tryPromise({
+              try: async () => {
+                const response = await fetchFn(abacusChatCompletionsUrl(options.apiBaseUrl), {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${options.apiKey}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    model: turnModel,
+                    messages,
+                    stream: true,
+                    stream_options: { include_usage: true },
+                    tools: ABACUS_AGENT_TOOLS,
+                    tool_choice: "auto",
+                  }),
+                  signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                  failureHint = `HTTP ${response.status}`;
+                  throw new Error(failureHint);
+                }
+                if (!response.body) {
+                  failureHint = "RouteLLM returned an empty streaming response.";
+                  throw new Error(failureHint);
+                }
+
+                for await (const payload of parseAbacusSse(response.body)) {
+                  if (payload === "[DONE]") {
+                    done = true;
+                    break;
+                  }
+                  if (active.cancelled) break;
+                  let chunk: {
+                    choices?: Array<{
+                      delta?: {
+                        content?: unknown;
+                        tool_calls?: Array<{
+                          index: number;
+                          id?: string;
+                          type?: string;
+                          function?: { name?: string; arguments?: string };
+                        }>;
+                      };
+                      finish_reason?: unknown;
+                    }>;
+                    usage?: unknown;
+                  };
+                  try {
+                    chunk = JSON.parse(payload) as typeof chunk;
+                  } catch {
+                    failureHint = "RouteLLM returned malformed streaming data.";
+                    throw new Error(failureHint);
+                  }
+                  if (chunk.usage !== undefined) usage = chunk.usage;
+
+                  for (const choice of chunk.choices ?? []) {
+                    const deltaText = choice.delta?.content;
+                    if (typeof deltaText === "string" && deltaText) {
+                      assistantText += deltaText;
+                      if (!hasStartedAssistantItem) {
+                        hasStartedAssistantItem = true;
+                      }
+                      await Effect.runPromise(
+                        Queue.offer(events, {
+                          type: "turn_item.updated",
+                          driver: ABACUS_PROVIDER,
+                          turnItem: {
+                            id: assistantTurnItemId,
+                            threadId: turnInput.threadId,
+                            runId: turnInput.runId,
+                            nodeId: turnInput.rootNodeId,
+                            providerThreadId: turnInput.providerThread.id,
+                            providerTurnId,
+                            nativeItemRef: null,
+                            parentItemId: null,
+                            ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 1,
+                            status: "running",
+                            title: null,
+                            startedAt,
+                            completedAt: null,
+                            updatedAt: DateTime.nowUnsafe(),
+                            type: "assistant_message",
+                            messageId: assistantMessageId,
+                            text: assistantText,
+                            streaming: true,
+                          },
+                        }),
+                      );
+                    }
+
+                    if (choice.delta?.tool_calls) {
+                      for (const tc of choice.delta.tool_calls) {
+                        const idx = tc.index ?? 0;
+                        let acc = toolCallAccumulators.get(idx);
+                        if (!acc) {
+                          acc = {
+                            id: tc.id ?? makeToolCallId(),
+                            type: "function",
+                            function: {
+                              name: tc.function?.name ?? "",
+                              arguments: tc.function?.arguments ?? "",
+                            },
+                          };
+                          toolCallAccumulators.set(idx, acc);
+                        } else {
+                          if (tc.id) acc.id = tc.id;
+                          if (tc.function?.name) acc.function.name += tc.function.name;
+                          if (tc.function?.arguments)
+                            acc.function.arguments += tc.function.arguments;
+                        }
+                      }
+                    }
+                  }
+                }
+
+                if (!active.cancelled && !done) {
+                  failureHint = "RouteLLM stream ended before its completion marker.";
+                  throw new Error(failureHint);
+                }
+              },
+              catch: (cause) => cause,
+            }).pipe(Effect.exit);
+            clearTimeout(timeout);
+
+            if (!active.cancelled && requestExit._tag === "Failure") {
+              failure =
+                controller.signal.reason === "timeout"
+                  ? "RouteLLM request timed out."
+                  : (failureHint ?? "RouteLLM request failed.");
+              break;
+            }
+
+            if (hasStartedAssistantItem) {
+              const messageNow = yield* DateTime.now;
+              yield* Queue.offer(events, {
+                type: "message.updated",
+                driver: ABACUS_PROVIDER,
+                message: {
+                  id: assistantMessageId,
+                  threadId: turnInput.threadId,
+                  runId: turnInput.runId,
+                  nodeId: turnInput.rootNodeId,
+                  role: "assistant",
+                  text: assistantText,
+                  attachments: [],
+                  streaming: false,
+                  createdBy: "agent",
+                  creationSource: "provider",
+                  createdAt: startedAt,
+                  updatedAt: messageNow,
+                },
+              });
+              yield* Queue.offer(events, {
+                type: "turn_item.updated",
+                driver: ABACUS_PROVIDER,
+                turnItem: {
+                  id: assistantTurnItemId,
+                  threadId: turnInput.threadId,
+                  runId: turnInput.runId,
+                  nodeId: turnInput.rootNodeId,
+                  providerThreadId: turnInput.providerThread.id,
+                  providerTurnId,
+                  nativeItemRef: null,
+                  parentItemId: null,
+                  ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 1,
+                  status: "completed",
+                  title: null,
+                  startedAt,
+                  completedAt: yield* DateTime.now,
+                  updatedAt: yield* DateTime.now,
+                  type: "assistant_message",
+                  messageId: assistantMessageId,
+                  text: assistantText,
+                  streaming: false,
+                },
+              });
+            }
+
+            if (usage !== undefined) {
+              const stepUsage = usage as {
+                prompt_tokens?: number;
+                input_tokens?: number;
+                completion_tokens?: number;
+                output_tokens?: number;
+                prompt_tokens_details?: { cached_tokens?: number };
+                completion_tokens_details?: { reasoning_tokens?: number };
+                cached_tokens?: number;
+                reasoning_tokens?: number;
+              };
+              turnUsage.inputTokens += stepUsage.prompt_tokens ?? stepUsage.input_tokens ?? 0;
+              turnUsage.cachedInputTokens +=
+                stepUsage.prompt_tokens_details?.cached_tokens ?? stepUsage.cached_tokens ?? 0;
+              turnUsage.outputTokens += stepUsage.completion_tokens ?? stepUsage.output_tokens ?? 0;
+              turnUsage.reasoningTokens +=
+                stepUsage.completion_tokens_details?.reasoning_tokens ??
+                stepUsage.reasoning_tokens ??
+                0;
+            }
+
+            const toolCalls: ToolCall[] = Array.from(toolCallAccumulators.entries())
+              .sort(([a], [b]) => a - b)
+              .map(([_, acc]) => ({
+                id: acc.id || makeToolCallId(),
+                type: "function" as const,
+                function: {
+                  name: acc.function.name,
+                  arguments: acc.function.arguments,
+                },
+              }));
+
+            if (toolCalls.length === 0) {
+              if (assistantText) {
+                messages.push({ role: "assistant", content: assistantText });
+                currentTurnItems.push({ role: "assistant", content: assistantText });
+              }
+              break;
+            }
+
+            if (stepCount + toolCalls.length > maxTurnSteps) {
+              // Ends the turn without running this batch, so the history
+              // holds no unanswered tool calls for the next turn. The notice
+              // is the turn's last assistant text, which delegated tasks
+              // report as their summary.
+              const ceilingText = `Stopped after ${stepCount} tool calls: ${turnModel} is limited to ${maxTurnSteps} per turn. Send a follow-up to continue.`;
+              const content = assistantText ? `${assistantText}\n\n${ceilingText}` : ceilingText;
+              messages.push({ role: "assistant", content });
+              currentTurnItems.push({ role: "assistant", content });
+              const ceilingNow = yield* DateTime.now;
+              const ceilingMessageId = MessageId.make(
+                `msg-abacus-assistant-${syntheticNativeTurnId}-step-limit`,
+              );
+              yield* Queue.offer(events, {
+                type: "message.updated",
+                driver: ABACUS_PROVIDER,
+                message: {
+                  id: ceilingMessageId,
+                  threadId: turnInput.threadId,
+                  runId: turnInput.runId,
+                  nodeId: turnInput.rootNodeId,
+                  role: "assistant",
+                  text: ceilingText,
+                  attachments: [],
+                  streaming: false,
+                  createdBy: "agent",
+                  creationSource: "provider",
+                  createdAt: ceilingNow,
+                  updatedAt: ceilingNow,
+                },
+              });
+              yield* Queue.offer(events, {
+                type: "turn_item.updated",
+                driver: ABACUS_PROVIDER,
+                turnItem: {
+                  id: TurnItemId.make(`item-abacus-assistant-${syntheticNativeTurnId}-step-limit`),
+                  threadId: turnInput.threadId,
+                  runId: turnInput.runId,
+                  nodeId: turnInput.rootNodeId,
+                  providerThreadId: turnInput.providerThread.id,
+                  providerTurnId,
+                  nativeItemRef: null,
+                  parentItemId: null,
+                  ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 3,
+                  status: "completed",
+                  title: null,
+                  startedAt: ceilingNow,
+                  completedAt: ceilingNow,
+                  updatedAt: ceilingNow,
+                  type: "assistant_message",
+                  messageId: ceilingMessageId,
+                  text: ceilingText,
+                  streaming: false,
+                },
+              });
+              break;
+            }
+
+            messages.push({
+              role: "assistant",
+              content: assistantText || null,
+              tool_calls: toolCalls,
+            });
+            if (assistantText) {
+              currentTurnItems.push({ role: "assistant", content: assistantText });
+            }
+
+            stepCount += toolCalls.length;
+
+            for (const tc of toolCalls) {
+              if (active.cancelled) break;
+
+              let toolArgs: Record<string, unknown> = {};
+              try {
+                toolArgs = JSON.parse(tc.function.arguments || "{}") as Record<string, unknown>;
+              } catch {
+                toolArgs = {};
+              }
+
+              let rawOutput = "";
+              try {
+                switch (tc.function.name) {
+                  case "read_file":
+                    rawOutput = handleReadFile(
+                      toolArgs as { path: string; start_line?: number; end_line?: number },
+                      cwd,
+                    );
+                    break;
+                  case "write_file":
+                    rawOutput = handleWriteFile(toolArgs as { path: string; content: string }, cwd);
+                    break;
+                  case "edit_file":
+                    rawOutput = handleEditFile(
+                      toolArgs as { path: string; old_string: string; new_string: string },
+                      cwd,
+                    );
+                    break;
+                  case "list_directory":
+                    rawOutput = handleListDirectory(toolArgs as { path?: string }, cwd);
+                    break;
+                  case "execute_command":
+                    const platform = yield* HostProcess.Platform;
+                    rawOutput = yield* Effect.promise(() =>
+                      handleExecuteCommand(
+                        String(toolArgs.command ?? ""),
+                        cwd,
+                        controller.signal,
+                        platform,
+                        (proc) => {
+                          active.currentProcess = proc;
+                        },
+                      ),
+                    );
+                    active.currentProcess = undefined;
+                    break;
+                  default:
+                    rawOutput = `Error: Unknown tool '${tc.function.name}'`;
+                }
+              } catch (err: unknown) {
+                rawOutput = `Error executing tool '${tc.function.name}': ${
+                  err instanceof Error ? err.message : String(err)
+                }`;
+              }
+
+              const truncated = truncateToolOutput(rawOutput);
+              const toolTurnItemId = TurnItemId.make(
+                `item-abacus-tool-${syntheticNativeTurnId}-${tc.id}`,
+              );
+              const toolNow = yield* DateTime.now;
+
+              if (tc.function.name === "execute_command") {
+                yield* Queue.offer(events, {
+                  type: "turn_item.updated",
+                  driver: ABACUS_PROVIDER,
+                  turnItem: {
+                    id: toolTurnItemId,
+                    threadId: turnInput.threadId,
+                    runId: turnInput.runId,
+                    nodeId: turnInput.rootNodeId,
+                    providerThreadId: turnInput.providerThread.id,
+                    providerTurnId,
+                    nativeItemRef: null,
+                    parentItemId: null,
+                    ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 2,
+                    status: "completed",
+                    title: "Run command",
+                    startedAt: toolNow,
+                    completedAt: toolNow,
+                    updatedAt: toolNow,
+                    type: "command_execution",
+                    input: String(toolArgs.command ?? ""),
+                    output: truncated,
+                  },
+                });
+              } else {
+                yield* Queue.offer(events, {
+                  type: "turn_item.updated",
+                  driver: ABACUS_PROVIDER,
+                  turnItem: {
+                    id: toolTurnItemId,
+                    threadId: turnInput.threadId,
+                    runId: turnInput.runId,
+                    nodeId: turnInput.rootNodeId,
+                    providerThreadId: turnInput.providerThread.id,
+                    providerTurnId,
+                    nativeItemRef: null,
+                    parentItemId: null,
+                    ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 2,
+                    status: "completed",
+                    title: tc.function.name,
+                    startedAt: toolNow,
+                    completedAt: toolNow,
+                    updatedAt: toolNow,
+                    type: "dynamic_tool",
+                    toolName: tc.function.name,
+                    input: toolArgs,
+                    output: truncated,
+                  },
+                });
+              }
+
+              messages.push({
+                role: "tool",
+                tool_call_id: tc.id,
+                content: truncated,
+              });
+            }
+          }
+
+          controller.abort();
+          if (active.currentProcess) {
+            active.currentProcess.kill("SIGTERM");
+          }
+
+          if (active.cancelled || failure) {
+            messages.length = initialMessageCount;
+          } else {
+            recordedTurns.push({
+              turnId: providerTurnId,
+              items: currentTurnItems,
+            });
+          }
+
+          if (options.stateDir) {
+            // Credits come from Abacus's billing ledger, or from these tokens at
+            // published rates. Balance changes can't be attributed to one turn:
+            // concurrent turns share the account, and charges post late.
+            const promptTokens = turnUsage.inputTokens;
+            const cachedTokens = turnUsage.cachedInputTokens;
+            let outputTokens = turnUsage.outputTokens;
+            const reasoningTokens = turnUsage.reasoningTokens;
+            let uncachedInput = Math.max(0, promptTokens - cachedTokens);
+            if (uncachedInput === 0 && outputTokens === 0) {
+              let promptChars = 0;
+              for (const msg of messages) {
+                if (typeof msg.content === "string") promptChars += msg.content.length;
+              }
+              uncachedInput = Math.max(1, Math.ceil(promptChars / 4));
+              outputTokens = 1;
+            }
+
+            if (uncachedInput > 0 || outputTokens > 0) {
+              yield* Effect.promise(() =>
+                appendProviderTurnUsage({
+                  stateDir: options.stateDir!,
+                  provider: "abacus",
+                  sessionId: String(turnInput.threadId),
+                  turnId: String(providerTurnId),
+                  model: turnModel,
+                  tokens: {
+                    inputTokens: uncachedInput,
+                    cachedInputTokens: cachedTokens,
+                    outputTokens,
+                    reasoningTokens,
+                  },
+                }),
+              ).pipe(Effect.ignoreCause);
+            }
+          }
+
+          yield* finishTurn({
+            turnInput,
+            providerTurn,
+            active,
+            ...(active.cancelled
+              ? { status: "interrupted" as const }
+              : failure
+                ? { status: "failed" as const, failure }
+                : { status: "completed" as const }),
+          });
+        });
+
+        const interruptTurn = Effect.fn("AbacusAdapterV2.interruptTurn")(function* (
+          _interruptInput: ProviderAdapter.ProviderAdapterV2InterruptInput,
+        ) {
+          const active = yield* Ref.get(activeTurnRef);
+          if (active && !active.settled) {
+            active.cancelled = true;
+            if (active.currentProcess) {
+              active.currentProcess.kill("SIGTERM");
+            }
+            active.controller.abort("cancelled");
+          }
+        });
+
+        const readThreadSnapshot = (
+          readInput: ProviderAdapter.ProviderAdapterV2ReadThreadSnapshotInput,
+        ): Effect.Effect<ProviderAdapter.ProviderAdapterV2ThreadSnapshot, never, never> =>
+          Effect.sync(() => ({
+            providerThread: readInput.providerThread,
+            providerTurns: [],
+            messages: recordedTurns.flatMap((turn) =>
+              turn.items.map((item, itemIdx) => ({
+                id: MessageId.make(`msg-hist-${turn.turnId}-${itemIdx}`),
+                threadId: sessionInput.threadId,
+                runId: null,
+                nodeId: null,
+                role: (item.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+                text: item.content ?? "",
+                attachments: [],
+                streaming: false,
+                createdBy: item.role === "assistant" ? ("agent" as const) : ("user" as const),
+                creationSource: "provider" as const,
+                createdAt: now,
+                updatedAt: now,
+              })),
+            ),
+            runtimeRequests: [],
+          }));
+
+        return {
+          instanceId: options.instanceId,
+          driver: ABACUS_PROVIDER,
+          providerSessionId: sessionInput.providerSessionId,
+          providerSession,
+          events: Stream.fromQueue(events),
+          ensureThread,
+          resumeThread: (resumeInput) => Effect.succeed(resumeInput.providerThread),
+          startTurn,
+          interruptTurn,
+          steerTurn: () => Effect.void,
+          respondToRuntimeRequest: () => Effect.void,
+          readThreadSnapshot,
+          rollbackThread: (rollbackInput) =>
+            Effect.sync(() => ({
+              providerThread: rollbackInput.providerThread,
+              providerTurns: [],
+              messages: [],
+              runtimeRequests: [],
+            })),
+          forkThread: (forkInput) =>
+            Effect.sync(() => {
+              const threadIdStr = String(forkInput.targetThreadId);
+              const providerThreadId = IdAllocator.derive.providerThread({
+                driver: ABACUS_PROVIDER,
+                nativeThreadId: threadIdStr,
+                providerInstanceId: options.instanceId,
+              });
+              const threadNow = DateTime.nowUnsafe();
+              const thread: OrchestrationV2ProviderThread = {
+                id: providerThreadId,
+                driver: ABACUS_PROVIDER,
+                providerInstanceId: options.instanceId,
+                providerSessionId: sessionInput.providerSessionId,
+                appThreadId: forkInput.targetThreadId,
+                ownerNodeId: forkInput.ownerNodeId ?? null,
+                nativeThreadRef: {
+                  driver: ABACUS_PROVIDER,
+                  nativeId: threadIdStr,
+                  strength: "weak",
+                },
+                nativeConversationHeadRef: null,
+                status: "idle",
+                firstRunOrdinal: null,
+                lastRunOrdinal: null,
+                handoffIds: [],
+                forkedFrom: {
+                  providerThreadId: forkInput.sourceProviderThread.id,
+                  ...(forkInput.providerTurnId === undefined
+                    ? {}
+                    : { providerTurnId: forkInput.providerTurnId }),
+                },
+                createdAt: threadNow,
+                updatedAt: threadNow,
+              };
+              threads.set(threadIdStr, thread);
+              return thread;
+            }),
+        } satisfies ProviderAdapter.ProviderAdapterV2SessionRuntime;
+      }),
     }),
-  });
+  );
 });
 
 export type AbacusAdapterV2DriverEnv = never;

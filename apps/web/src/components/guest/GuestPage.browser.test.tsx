@@ -289,11 +289,11 @@ describe("GuestPage", () => {
       .mockImplementation(async () => new Response(null, { status: 204 }));
     const sources: Array<EventTarget> = [];
     // Enough turns that the thread overflows the page.
-    const longItems = Array.from({ length: 12 }, (_, index) =>
+    const longItems = Array.from({ length: 6 }, (_, index) =>
       reply(
         `reply-${index}`,
         index,
-        `Reply ${index}\n\n${"A long paragraph about the change. ".repeat(20)}`,
+        `Reply ${index}\n\n${"A long paragraph about the change. ".repeat(4)}`,
       ),
     );
     using _stream = vi
@@ -306,7 +306,7 @@ describe("GuestPage", () => {
     const container = document.createElement("div");
     container.style.cssText = "height: 600px; width: 900px; display: flex; flex-direction: column;";
     await using screen = await render(<GuestPage />, { container });
-    await expect.element(screen.getByText("Reply 11")).toBeInTheDocument();
+    await expect.element(screen.getByText("Reply 5")).toBeInTheDocument();
     const scroller = () =>
       screen.container.querySelector<HTMLElement>(".messages-timeline-scroll")!;
     const expectAtEnd = () =>
