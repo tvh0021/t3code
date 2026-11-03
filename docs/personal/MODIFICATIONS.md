@@ -387,3 +387,16 @@ Run the `blast-radius` skill before merging (see `AGENTS.md`). Then:
 - Official rates outrank LiteLLM, so an upstream Usage test that sets a custom
   rate on an officially priced model fails. Change the test's model; don't
   weaken the rule.
+
+## Native Claude subagent text
+
+**Now.** Native Claude Code `Agent` child threads recover assistant text from
+Claude's local transcripts on task progress and completion, and before child
+tool frames. Reads resume at a byte offset and skip text already received
+through the SDK. Tool-only handbacks remain task results.
+
+**Decisions.**
+
+- Unreleased: the SDK often streams native child tools without their preceding
+  text. Reuse the workflow transcript reader with the configured Claude home;
+  reserve item ordinals before tools for transcript writes that arrive late.

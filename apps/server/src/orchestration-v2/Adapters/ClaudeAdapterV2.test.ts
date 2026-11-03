@@ -12289,6 +12289,176 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  it.effect.each(["transcript-first", "sdk-first"] as const)(
+    "recovers native subagent transcript text incrementally without repeating SDK text (%s)",
+    (delivery) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const configDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-native-text-" });
+          const taskId = "native-text-agent";
+          const toolUseId = "native-text-launch";
+          const dir = NodePath.join(
+            configDir,
+            "projects",
+            (CLAUDE_TEST_RUNTIME_POLICY.cwd ?? "").replace(/[^a-zA-Z0-9]/g, "-"),
+            WAKE_NATIVE_SESSION,
+            "subagents",
+          );
+          yield* fs.makeDirectory(dir, { recursive: true });
+          const file = NodePath.join(dir, `agent-${taskId}.jsonl`);
+          const harness = yield* makeWakeHarnessWithOptions({
+            environment: { CLAUDE_CONFIG_DIR: configDir },
+          });
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make("attempt-native-text"),
+              text: "Audit.",
+              attachments: [],
+            }),
+          );
+          yield* harness.offerAndWait(
+            makeSubagentTaskStartedFrame({ taskId, toolUseId, uuid: "start-native-text" }),
+          );
+          const first = makeSubagentAssistantFrames({
+            parentToolUseId: toolUseId,
+            uuid: "text-native-first",
+            messageId: "msg-native-first",
+            text: "Searching definitions.",
+          })[0]!;
+          const last = makeSubagentAssistantFrames({
+            parentToolUseId: toolUseId,
+            uuid: "text-native-last",
+            messageId: "msg-native-last",
+            text: "Finished checking.",
+          })[0]!;
+          let progressIndex = 0;
+          const progress = () =>
+            claudeSdkFrame({
+              type: "system",
+              subtype: "task_progress",
+              task_id: taskId,
+              tool_use_id: toolUseId,
+              description: `Checking ${++progressIndex}`,
+              usage: { total_tokens: 1, tool_uses: 1, duration_ms: 1 },
+              uuid: `progress-native-text-${progressIndex}`,
+              session_id: WAKE_NATIVE_SESSION,
+            });
+          const offerProgress = Effect.fnUntraced(function* () {
+            yield* harness.offerAndWait(progress());
+            yield* harness.until(() =>
+              harness.events.some(
+                (event) =>
+                  event.type === "subagent.updated" &&
+                  event.subagent.progress === `Checking ${progressIndex}`,
+              ),
+            );
+          });
+          // A missing transcript leaves the task running until a later progress frame.
+          yield* offerProgress();
+          const sdkFirst = claudeSdkFrame({ ...first, uuid: "sdk-native-first" });
+          if (delivery === "sdk-first") {
+            yield* harness.offerAndWait(sdkFirst);
+            yield* harness.until(() =>
+              harness.events.some(
+                (event) =>
+                  event.type === "turn_item.updated" &&
+                  event.turnItem.type === "assistant_message" &&
+                  event.turnItem.text === "Searching definitions.",
+              ),
+            );
+          }
+          const firstLine = JSON.stringify(first) + "\n";
+          const lastLine = JSON.stringify(last);
+          yield* fs.writeFileString(file, firstLine + lastLine.slice(0, 40));
+          yield* offerProgress();
+          const liveChild = subagentRouting(harness.events, []).childThreadId;
+          assert.deepEqual(subagentRouting(harness.events, []).assistantTexts(liveChild), [
+            "Searching definitions.",
+          ]);
+          yield* harness.offerAndWait(sdkFirst);
+          for (const frame of makeSubagentAssistantFrames({
+            parentToolUseId: toolUseId,
+            uuid: "native-tool",
+            bashToolUseId: "native-bash",
+          }))
+            yield* harness.offerAndWait(frame);
+          yield* offerProgress();
+          yield* fs.writeFileString(
+            file,
+            firstLine +
+              lastLine +
+              "\n" +
+              JSON.stringify(
+                makeSubagentAssistantFrames({
+                  parentToolUseId: toolUseId,
+                  uuid: "native-tool",
+                  bashToolUseId: "native-bash",
+                })[0],
+              ) +
+              "\n" +
+              JSON.stringify({
+                type: "assistant",
+                uuid: "handback",
+                message: {
+                  id: "msg-handback",
+                  content: [
+                    {
+                      type: "tool_use",
+                      name: "SubagentHandback",
+                      id: "handback-tool",
+                      input: { report: "Report." },
+                    },
+                  ],
+                },
+              }) +
+              "\n",
+          );
+          yield* harness.offerAndWait(
+            makeSubagentNotificationFrame({
+              taskId,
+              toolUseId,
+              uuid: "done-native-text",
+              summary: "Report.",
+            }),
+          );
+          yield* harness.offerAndWait(
+            makeResultFrame({ uuid: "root-native-text", result: "Done." }),
+          );
+          yield* harness.awaitTerminal(1);
+          const routing = subagentRouting(harness.events, ["native-bash"]);
+          assert.deepEqual(routing.assistantTexts(routing.childThreadId), [
+            "Searching definitions.",
+            "Finished checking.",
+            "Report.",
+          ]);
+          const items = new Map(
+            harness.events.flatMap((event) =>
+              event.type === "turn_item.updated" &&
+              event.turnItem.threadId === routing.childThreadId &&
+              (event.turnItem.type === "assistant_message" ||
+                event.turnItem.nativeItemRef?.nativeId === "native-bash")
+                ? [[event.turnItem.id, event.turnItem] as const]
+                : [],
+            ),
+          );
+          assert.deepEqual(
+            [...items.values()]
+              .sort((a, b) => a.ordinal - b.ordinal)
+              .map((item) => (item.type === "assistant_message" ? item.text : "Bash")),
+            ["Searching definitions.", "Finished checking.", "Bash", "Report."],
+          );
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+          ),
+        ),
+      ),
+  );
+
   it.effect("holds subagent frames that precede task_started and shows its result once", () =>
     Effect.scoped(
       Effect.gen(function* () {

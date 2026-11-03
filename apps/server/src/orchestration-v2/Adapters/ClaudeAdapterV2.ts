@@ -6339,6 +6339,120 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : new Map(current).set(nativeThreadId, { ...entry, messages });
           });
 
+        const NATIVE_SUBAGENT_ITEM_ORDINAL_GAP = 1_000_000;
+        const nativeSubagentTranscripts = new Map<
+          string,
+          {
+            cursor: WorkflowAgentTranscriptCursor;
+            readonly texts: Set<string>;
+            readonly tools: Map<string, number>;
+            readonly insertions: Map<number, number>;
+          }
+        >();
+        const nativeSubagentTranscriptState = (subagent: ActiveClaudeSubagent) => {
+          const key = String(subagent.childThreadId);
+          let state = nativeSubagentTranscripts.get(key);
+          if (state === undefined) {
+            state = {
+              cursor: initialWorkflowAgentTranscriptCursor,
+              texts: new Set(),
+              tools: new Map(),
+              insertions: new Map(),
+            };
+            nativeSubagentTranscripts.set(key, state);
+          }
+          return state;
+        };
+        const emitNativeSubagentText = Effect.fnUntraced(function* (
+          subagent: ActiveClaudeSubagent,
+          message: SDKAssistantMessage,
+          ordinal?: number,
+        ) {
+          const value = textFromClaudeContent(message.message.content);
+          if (value.length === 0) return;
+          const state = nativeSubagentTranscriptState(subagent);
+          const key = encodeClaudeJson([message.message.id ?? message.uuid, value]);
+          if (state.texts.has(key)) return;
+          state.texts.add(key);
+          const nativeMessageId = message.message.id ?? null;
+          subagent.lastAssistantText =
+            nativeMessageId !== null && nativeMessageId === subagent.lastAssistantMessageId
+              ? `${subagent.lastAssistantText ?? ""}\n${value}`
+              : value;
+          subagent.lastAssistantMessageId = nativeMessageId;
+          yield* emitSubagentConversationMessage({
+            nativeItemId: message.uuid,
+            threadId: subagent.childThreadId,
+            rootNodeId: subagent.childRootNodeId,
+            role: "assistant",
+            text: value,
+            ordinal: ordinal ?? (subagent.nextChildItemOrdinal += NATIVE_SUBAGENT_ITEM_ORDINAL_GAP),
+            now: yield* DateTime.now,
+          });
+        });
+        const readNativeSubagentText = Effect.fn("ClaudeAdapterV2.readNativeSubagentText")(
+          function* (subagent: ActiveClaudeSubagent, nativeThreadId: string) {
+            if (subagent.task.workflow !== undefined) return;
+            const agentId = subagent.task.nativeTaskRef?.nativeId;
+            if (
+              agentId === undefined ||
+              agentId === null ||
+              !/^[A-Za-z0-9_-]+$/.test(nativeThreadId)
+            )
+              return;
+            const configuredDir = adapterOptions.environment.CLAUDE_CONFIG_DIR?.trim();
+            const configDir = configuredDir
+              ? path.resolve(session.cwd, configuredDir)
+              : path.join(yield* HostProcess.HomeDirectory, ".claude");
+            const transcriptDir = path.join(
+              configDir,
+              "projects",
+              session.cwd.replace(/[^a-zA-Z0-9]/g, "-"),
+              nativeThreadId,
+              "subagents",
+            );
+            const state = nativeSubagentTranscriptState(subagent);
+            let drained = false;
+            while (!drained) {
+              const read = yield* readWorkflowAgentTranscript({
+                transcriptDir,
+                agentId,
+                cursor: state.cursor,
+                configDir,
+              }).pipe(Effect.option);
+              if (Option.isNone(read)) return;
+              const advanced = read.value.cursor.offset !== state.cursor.offset;
+              state.cursor = read.value.cursor;
+              const lines = read.value.lines;
+              const followingTools: Array<number | undefined> = new Array(lines.length);
+              let followingTool: number | undefined;
+              for (let index = lines.length - 1; index >= 0; index--) {
+                const line = lines[index];
+                if (isClaudeTranscriptConversationLine(line)) {
+                  const toolOrdinal = claudeToolUseBlocksFromAssistantMessage(line)
+                    .map((tool) => state.tools.get(tool.id))
+                    .find((ordinal) => ordinal !== undefined);
+                  followingTool = toolOrdinal ?? followingTool;
+                }
+                followingTools[index] = followingTool;
+              }
+              for (const [index, line] of lines.entries()) {
+                if (isClaudeTranscriptConversationLine(line) && line.type === "assistant") {
+                  const anchor = followingTools[index];
+                  let ordinal: number | undefined;
+                  if (anchor !== undefined) {
+                    const inserted = (state.insertions.get(anchor) ?? 0) + 1;
+                    state.insertions.set(anchor, inserted);
+                    ordinal = anchor - NATIVE_SUBAGENT_ITEM_ORDINAL_GAP + inserted;
+                  }
+                  yield* emitNativeSubagentText(subagent, line, ordinal);
+                }
+              }
+              drained = !read.value.truncated || !advanced;
+            }
+          },
+        );
+
         const updateClaudeSubagentNode = Effect.fnUntraced(function* (input: {
           readonly context: ActiveClaudeTurnContext;
           readonly taskId: string;
@@ -6717,6 +6831,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (outcome !== undefined) yield* Deferred.succeed(outcome, subagent.confirmedOutcome);
           }
 
+          if (input.status !== "running") {
+            yield* readNativeSubagentText(subagent, input.context.nativeThreadId);
+          }
+
           const resultAlreadyShown =
             input.status === "completed" &&
             input.result !== undefined &&
@@ -7010,7 +7128,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         ): ClaudeSubagentProjectionTarget => ({
           childThreadId: subagent.childThreadId,
           childRootNodeId: subagent.childRootNodeId,
-          nextOrdinal: () => ++subagent.nextChildItemOrdinal,
+          // Reserve integer ordinals for text flushed after its following tool frame.
+          nextOrdinal: () => (subagent.nextChildItemOrdinal += NATIVE_SUBAGENT_ITEM_ORDINAL_GAP),
           toolCalls: subagentToolCalls,
         });
 
@@ -7023,16 +7142,21 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             readonly presentation: ClaudeToolPresentation | undefined;
             readonly startedAt: DateTime.Utc;
           },
-        ) =>
-          startToolCall({
+        ) => {
+          const ordinal = target.nextOrdinal();
+          nativeSubagentTranscripts
+            .get(String(target.childThreadId))
+            ?.tools.set(call.nativeItemId, ordinal);
+          return startToolCall({
             ...call,
             context: null,
             threadId: target.childThreadId,
             runId: null,
             rootNodeId: target.childRootNodeId,
-            ordinal: target.nextOrdinal(),
+            ordinal,
             registry: target.toolCalls,
           });
+        };
 
         const settleToolCall = Effect.fnUntraced(function* (input: {
           readonly context: ActiveClaudeTurnContext | null;
@@ -9038,6 +9162,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
 
           if (message.type === "system" && message.subtype === "task_progress") {
+            const registered = (yield* Ref.get(sessionSubagentsByTaskId)).get(message.task_id);
+            if (registered !== undefined)
+              yield* readNativeSubagentText(registered, liveQuery.nativeThreadId);
             const progress = message.description.trim();
             const isBackgroundTask = yield* hasPendingBackgroundTaskOnNativeThread(
               liveQuery.nativeThreadId,
@@ -9135,6 +9262,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 message.task_id,
               );
             }
+          }
+
+          if (frameParentToolUseId !== null && message.type === "assistant") {
+            const owner = yield* resolveSubagentByToolUseId(context, frameParentToolUseId);
+            if (owner !== undefined) yield* readNativeSubagentText(owner, liveQuery.nativeThreadId);
           }
 
           const toolPresentations = claudeToolPresentationsFromAssistantMessage(message);
@@ -9317,25 +9449,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (subagent === undefined) {
               return;
             }
-            const now = yield* DateTime.now;
-            const nativeMessageId =
-              message.type === "assistant" && typeof message.message.id === "string"
-                ? message.message.id
-                : null;
-            subagent.lastAssistantText =
-              nativeMessageId !== null && nativeMessageId === subagent.lastAssistantMessageId
-                ? `${subagent.lastAssistantText ?? ""}\n${assistantText.text}`
-                : assistantText.text;
-            subagent.lastAssistantMessageId = nativeMessageId;
-            yield* emitSubagentConversationMessage({
-              nativeItemId: assistantText.nativeItemId,
-              threadId: subagent.childThreadId,
-              rootNodeId: subagent.childRootNodeId,
-              role: "assistant",
-              text: assistantText.text,
-              ordinal: ++subagent.nextChildItemOrdinal,
-              now,
-            });
+            if (message.type === "assistant") yield* emitNativeSubagentText(subagent, message);
             return;
           }
           if (isClaudeGoalAcknowledgement(message)) {
