@@ -6344,7 +6344,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           string,
           {
             cursor: WorkflowAgentTranscriptCursor;
-            readonly texts: Set<string>;
+            readonly texts: Map<string, { sdk: number; transcript: number }>;
+            readonly textEntries: Set<string>;
+            readonly messageTools: Map<string, number>;
             readonly tools: Map<string, number>;
             readonly insertions: Map<number, number>;
           }
@@ -6355,7 +6357,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (state === undefined) {
             state = {
               cursor: initialWorkflowAgentTranscriptCursor,
-              texts: new Set(),
+              texts: new Map(),
+              textEntries: new Set(),
+              messageTools: new Map(),
               tools: new Map(),
               insertions: new Map(),
             };
@@ -6366,29 +6370,49 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const emitNativeSubagentText = Effect.fnUntraced(function* (
           subagent: ActiveClaudeSubagent,
           message: SDKAssistantMessage,
-          ordinal?: number,
+          anchor?: number,
+          source: "sdk" | "transcript" = "sdk",
         ) {
-          const value = textFromClaudeContent(message.message.content);
-          if (value.length === 0) return;
+          const blocks = message.message.content.flatMap((block) =>
+            block.type === "text" && block.text.length > 0 ? [block.text] : [],
+          );
+          if (blocks.length === 0) return;
           const state = nativeSubagentTranscriptState(subagent);
-          const key = encodeClaudeJson([message.message.id ?? message.uuid, value]);
-          if (state.texts.has(key)) return;
-          state.texts.add(key);
+          const entryKey = encodeClaudeJson([source, message.uuid]);
+          if (state.textEntries.has(entryKey)) return;
+          state.textEntries.add(entryKey);
           const nativeMessageId = message.message.id ?? null;
-          subagent.lastAssistantText =
-            nativeMessageId !== null && nativeMessageId === subagent.lastAssistantMessageId
-              ? `${subagent.lastAssistantText ?? ""}\n${value}`
-              : value;
-          subagent.lastAssistantMessageId = nativeMessageId;
-          yield* emitSubagentConversationMessage({
-            nativeItemId: message.uuid,
-            threadId: subagent.childThreadId,
-            rootNodeId: subagent.childRootNodeId,
-            role: "assistant",
-            text: value,
-            ordinal: ordinal ?? (subagent.nextChildItemOrdinal += NATIVE_SUBAGENT_ITEM_ORDINAL_GAP),
-            now: yield* DateTime.now,
-          });
+          anchor = state.messageTools.get(nativeMessageId ?? message.uuid) ?? anchor;
+          for (const [index, value] of blocks.entries()) {
+            const key = encodeClaudeJson([nativeMessageId ?? message.uuid, value]);
+            const counts = state.texts.get(key) ?? { sdk: 0, transcript: 0 };
+            const emitted = Math.max(counts.sdk, counts.transcript);
+            counts[source]++;
+            state.texts.set(key, counts);
+            if (counts[source] <= emitted) continue;
+            subagent.lastAssistantText =
+              nativeMessageId !== null && nativeMessageId === subagent.lastAssistantMessageId
+                ? `${subagent.lastAssistantText ?? ""}\n${value}`
+                : value;
+            subagent.lastAssistantMessageId = nativeMessageId;
+            let ordinal: number;
+            if (anchor === undefined) {
+              ordinal = subagent.nextChildItemOrdinal += NATIVE_SUBAGENT_ITEM_ORDINAL_GAP;
+            } else {
+              const inserted = (state.insertions.get(anchor) ?? 0) + 1;
+              state.insertions.set(anchor, inserted);
+              ordinal = anchor - NATIVE_SUBAGENT_ITEM_ORDINAL_GAP + inserted;
+            }
+            yield* emitSubagentConversationMessage({
+              nativeItemId: index === 0 ? message.uuid : `${message.uuid}:text:${index}`,
+              threadId: subagent.childThreadId,
+              rootNodeId: subagent.childRootNodeId,
+              role: "assistant",
+              text: value,
+              ordinal,
+              now: yield* DateTime.now,
+            });
+          }
         });
         const readNativeSubagentText = Effect.fn("ClaudeAdapterV2.readNativeSubagentText")(
           function* (subagent: ActiveClaudeSubagent, nativeThreadId: string) {
@@ -6438,14 +6462,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               }
               for (const [index, line] of lines.entries()) {
                 if (isClaudeTranscriptConversationLine(line) && line.type === "assistant") {
-                  const anchor = followingTools[index];
-                  let ordinal: number | undefined;
-                  if (anchor !== undefined) {
-                    const inserted = (state.insertions.get(anchor) ?? 0) + 1;
-                    state.insertions.set(anchor, inserted);
-                    ordinal = anchor - NATIVE_SUBAGENT_ITEM_ORDINAL_GAP + inserted;
-                  }
-                  yield* emitNativeSubagentText(subagent, line, ordinal);
+                  yield* emitNativeSubagentText(
+                    subagent,
+                    line,
+                    followingTools[index],
+                    "transcript",
+                  );
                 }
               }
               drained = !read.value.truncated || !advanced;
@@ -9291,7 +9313,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 steps: claudeTodoSteps(nativeToolInput),
               }).pipe(Effect.orDie);
             }
-            yield* ensureToolCallStarted({
+            const toolCall = yield* ensureToolCallStarted({
               context,
               nativeItemId: toolUse.id,
               toolName: toolUse.name,
@@ -9303,6 +9325,19 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   toolName: toolUse.name.replace(/^mcp__claude_ai_/u, "mcp__"),
                 }),
             });
+            if (frameParentToolUseId !== null && message.type === "assistant") {
+              const owner = yield* resolveSubagentByToolUseId(context, frameParentToolUseId);
+              if (owner !== undefined) {
+                const state = nativeSubagentTranscriptState(owner);
+                const messageId = message.message.id ?? message.uuid;
+                const previous = state.messageTools.get(messageId);
+                state.messageTools.set(
+                  messageId,
+                  Math.min(previous ?? toolCall.ordinal, toolCall.ordinal),
+                );
+                state.tools.set(toolUse.id, toolCall.ordinal);
+              }
+            }
             const heldPlan = heldProposedPlansByToolUseId.get(toolUse.id);
             if (heldPlan !== undefined) {
               heldProposedPlansByToolUseId.delete(toolUse.id);

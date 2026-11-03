@@ -12289,9 +12289,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
-  it.effect.each(["transcript-first", "sdk-first"] as const)(
-    "recovers native subagent transcript text incrementally without repeating SDK text (%s)",
-    (delivery) =>
+  it.effect.each([
+    { delivery: "transcript-first", groupedTranscript: false, singleBlock: false },
+    { delivery: "sdk-first", groupedTranscript: false, singleBlock: false },
+    { delivery: "transcript-first", groupedTranscript: true, singleBlock: false },
+    { delivery: "sdk-first", groupedTranscript: true, singleBlock: false },
+    { delivery: "transcript-first", groupedTranscript: false, singleBlock: true },
+  ] as const)(
+    "recovers native subagent transcript text incrementally without repeating SDK text (%j)",
+    ({ delivery, groupedTranscript, singleBlock }) =>
       Effect.scoped(
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
@@ -12332,7 +12338,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           const last = makeSubagentAssistantFrames({
             parentToolUseId: toolUseId,
             uuid: "text-native-last",
-            messageId: "msg-native-last",
+            messageId: "msg-native-tool",
             text: "Finished checking.",
           })[0]!;
           let progressIndex = 0;
@@ -12359,34 +12365,69 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           });
           // A missing transcript leaves the task running until a later progress frame.
           yield* offerProgress();
-          const sdkFirst = claudeSdkFrame({ ...first, uuid: "sdk-native-first" });
+          if (first.type !== "assistant") throw new Error("Expected assistant");
+          const texts = singleBlock
+            ? ["Searching definitions."]
+            : ["Searching definitions.", "Checking references.", "Checking references."];
+          const grouped = {
+            ...first,
+            message: { ...first.message, content: texts.map((text) => ({ type: "text", text })) },
+          };
+          const split = texts.map((text, index) => ({
+            ...first,
+            uuid: `split-first-${index}`,
+            message: { ...first.message, content: [{ type: "text", text }] },
+          }));
+          const sdkFrames = (groupedTranscript ? split : [grouped]).map((frame) =>
+            claudeSdkFrame({ ...frame, uuid: `sdk-${frame.uuid}` }),
+          );
           if (delivery === "sdk-first") {
-            yield* harness.offerAndWait(sdkFirst);
+            for (const frame of sdkFrames) yield* harness.offerAndWait(frame);
             yield* harness.until(() =>
               harness.events.some(
                 (event) =>
                   event.type === "turn_item.updated" &&
                   event.turnItem.type === "assistant_message" &&
-                  event.turnItem.text === "Searching definitions.",
+                  event.turnItem.text.startsWith("Searching definitions."),
               ),
             );
           }
-          const firstLine = JSON.stringify(first) + "\n";
+          const firstLine = (groupedTranscript ? [grouped] : split)
+            .map((frame) => JSON.stringify(frame) + "\n")
+            .join("");
           const lastLine = JSON.stringify(last);
           yield* fs.writeFileString(file, firstLine + lastLine.slice(0, 40));
           yield* offerProgress();
           const liveChild = subagentRouting(harness.events, []).childThreadId;
           assert.deepEqual(subagentRouting(harness.events, []).assistantTexts(liveChild), [
-            "Searching definitions.",
+            ...texts,
           ]);
-          yield* harness.offerAndWait(sdkFirst);
+          for (const frame of sdkFrames) yield* harness.offerAndWait(frame);
           for (const frame of makeSubagentAssistantFrames({
             parentToolUseId: toolUseId,
             uuid: "native-tool",
+            messageId: "msg-native-tool",
             bashToolUseId: "native-bash",
           }))
             yield* harness.offerAndWait(frame);
+          yield* fs.writeFileString(file, firstLine + lastLine + "\n");
           yield* offerProgress();
+          const orderedItems = () => {
+            const items = new Map(
+              harness.events.flatMap((event) =>
+                event.type === "turn_item.updated" &&
+                event.turnItem.threadId === liveChild &&
+                (event.turnItem.type === "assistant_message" ||
+                  event.turnItem.nativeItemRef?.nativeId === "native-bash")
+                  ? [[event.turnItem.id, event.turnItem] as const]
+                  : [],
+              ),
+            );
+            return [...items.values()]
+              .sort((a, b) => a.ordinal - b.ordinal)
+              .map((item) => (item.type === "assistant_message" ? item.text : "Bash"));
+          };
+          assert.deepEqual(orderedItems(), [...texts, "Finished checking.", "Bash"]);
           yield* fs.writeFileString(
             file,
             firstLine +
@@ -12396,6 +12437,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 makeSubagentAssistantFrames({
                   parentToolUseId: toolUseId,
                   uuid: "native-tool",
+                  messageId: "msg-native-tool",
                   bashToolUseId: "native-bash",
                 })[0],
               ) +
@@ -12431,26 +12473,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           yield* harness.awaitTerminal(1);
           const routing = subagentRouting(harness.events, ["native-bash"]);
           assert.deepEqual(routing.assistantTexts(routing.childThreadId), [
-            "Searching definitions.",
+            ...texts,
             "Finished checking.",
             "Report.",
           ]);
-          const items = new Map(
-            harness.events.flatMap((event) =>
-              event.type === "turn_item.updated" &&
-              event.turnItem.threadId === routing.childThreadId &&
-              (event.turnItem.type === "assistant_message" ||
-                event.turnItem.nativeItemRef?.nativeId === "native-bash")
-                ? [[event.turnItem.id, event.turnItem] as const]
-                : [],
-            ),
-          );
-          assert.deepEqual(
-            [...items.values()]
-              .sort((a, b) => a.ordinal - b.ordinal)
-              .map((item) => (item.type === "assistant_message" ? item.text : "Bash")),
-            ["Searching definitions.", "Finished checking.", "Bash", "Report."],
-          );
+          assert.deepEqual(orderedItems(), [...texts, "Finished checking.", "Bash", "Report."]);
         }).pipe(
           Effect.provide(
             Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
