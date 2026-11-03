@@ -1,3 +1,4 @@
+import * as ProjectionStore from "../ProjectionStore.ts";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import { claudeTaskOutputRoot, tailClaudeTaskOutput } from "./ClaudeTaskOutputTail.ts";
@@ -4542,6 +4543,7 @@ export interface ClaudeAdapterV2Options {
   readonly crypto: Crypto.Crypto;
   readonly idAllocator: IdAllocator.IdAllocatorV2["Service"];
   readonly queryRunner: ClaudeAgentSdkQueryRunnerShape;
+  readonly nextSubagentItemOrdinal?: (threadId: ThreadId) => Effect.Effect<number>;
   readonly scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>;
   readonly onUsageLimits?: ManagedServerProvider["applyUsageLimits"];
   readonly continuationRequests?: {
@@ -5877,7 +5879,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ),
             runToolUseId: launchToolUseId,
             effort: undefined,
-            nextChildItemOrdinal: 100,
+            nextChildItemOrdinal: Math.max(
+              100,
+              (yield* (
+                adapterOptions.nextSubagentItemOrdinal?.(ids.childThreadId) ?? Effect.succeed(101)
+              )) - 1,
+            ),
             resultItemOrdinal: null,
             lastAssistantText: null,
             lastAssistantMessageId: null,
@@ -6383,7 +6390,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           state.textEntries.add(entryKey);
           const nativeMessageId = message.message.id ?? null;
           anchor = state.messageTools.get(nativeMessageId ?? message.uuid) ?? anchor;
-          for (const [index, value] of blocks.entries()) {
+          for (const value of blocks) {
             const key = encodeClaudeJson([nativeMessageId ?? message.uuid, value]);
             const counts = state.texts.get(key) ?? { sdk: 0, transcript: 0 };
             const emitted = Math.max(counts.sdk, counts.transcript);
@@ -6404,7 +6411,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ordinal = anchor - NATIVE_SUBAGENT_ITEM_ORDINAL_GAP + inserted;
             }
             yield* emitSubagentConversationMessage({
-              nativeItemId: index === 0 ? message.uuid : `${message.uuid}:text:${index}`,
+              nativeItemId: `${nativeMessageId ?? message.uuid}:text:${Buffer.from(yield* crypto.digest("SHA-256", new TextEncoder().encode(value)).pipe(Effect.orDie)).toString("hex")}:${counts[source]}`,
               threadId: subagent.childThreadId,
               rootNodeId: subagent.childRootNodeId,
               role: "assistant",
@@ -6855,6 +6862,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
           if (input.status !== "running") {
             yield* readNativeSubagentText(subagent, input.context.nativeThreadId);
+            nativeSubagentTranscripts.delete(String(subagent.childThreadId));
           }
 
           const resultAlreadyShown =
@@ -9185,7 +9193,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
           if (message.type === "system" && message.subtype === "task_progress") {
             const registered = (yield* Ref.get(sessionSubagentsByTaskId)).get(message.task_id);
-            if (registered !== undefined)
+            if (registered !== undefined && registered.task.status === "running")
               yield* readNativeSubagentText(registered, liveQuery.nativeThreadId);
             const progress = message.description.trim();
             const isBackgroundTask = yield* hasPendingBackgroundTaskOnNativeThread(
@@ -11785,6 +11793,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     const queryRunner = yield* ClaudeAgentSdkQueryRunner;
     const serverConfig = yield* ServerConfig.ServerConfig;
     const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
+    const projections = yield* Effect.serviceOption(ProjectionStore.ProjectionStoreV2);
     const baseEnvironment = yield* mergeProviderInstanceEnvironment(environment, hostEnvironment);
     const claudeEnvironment = yield* makeClaudeEnvironment(config, baseEnvironment);
     const path = yield* Path.Path;
@@ -11804,6 +11813,10 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
       idAllocator,
       queryRunner,
       continuationRequests,
+      nextSubagentItemOrdinal: (threadId) =>
+        Option.isSome(projections)
+          ? projections.value.getNextTurnItemOrdinal(threadId).pipe(Effect.orDie)
+          : Effect.die("Claude subagent restart recovery requires the projection store."),
       ...hooks,
     });
   },

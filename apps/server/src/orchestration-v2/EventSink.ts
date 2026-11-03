@@ -330,7 +330,7 @@ const layerBase: Layer.Layer<
         });
       });
 
-    // Lineage never changes after creation, so one read per child thread serves the sink's lifetime.
+    // Lineage is immutable; evicted entries can be read again.
     const subagentThreads = new Map<ThreadId, boolean>();
     const isSubagentThread = (
       threadId: ThreadId,
@@ -347,7 +347,15 @@ const layerBase: Layer.Layer<
           : projectionStore.getThread(threadId).pipe(Effect.map((thread) => thread.lineage));
       return lineage.pipe(
         Effect.map((lineage) => lineage.relationshipToParent === "subagent"),
-        Effect.tap((subagent) => Effect.sync(() => subagentThreads.set(threadId, subagent))),
+        Effect.tap((subagent) =>
+          Effect.sync(() => {
+            subagentThreads.set(threadId, subagent);
+            if (subagentThreads.size > 1024) {
+              const oldest = subagentThreads.keys().next().value;
+              if (oldest !== undefined) subagentThreads.delete(oldest);
+            }
+          }),
+        ),
         Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(false) }),
       );
     };

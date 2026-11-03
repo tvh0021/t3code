@@ -2970,6 +2970,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ) => Effect.Effect<boolean, ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError>;
     readonly environment?: NodeJS.ProcessEnv;
     readonly subagentLaunchToolUseId?: string;
+    readonly nextChildItemOrdinal?: number;
     readonly nativeSessionId?: string;
     readonly settings?: ClaudeSettings;
     readonly freshQueueOnReopen?: boolean;
@@ -3031,6 +3032,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
         instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
         settings: options?.settings ?? DEFAULT_CLAUDE_SETTINGS,
+        nextSubagentItemOrdinal: () => Effect.succeed(options?.nextChildItemOrdinal ?? 101),
         environment: options?.environment ?? {},
         attachmentsDir,
         fileSystem,
@@ -12485,6 +12487,64 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               : [],
           );
           assert.isTrue(childItems.every((item) => item.ordinal < 1_000_000));
+          const beforeReread = new Set(childItems.map((item) => item.id));
+          const textEventCount = () =>
+            harness.events.filter(
+              (event) =>
+                event.type === "turn_item.updated" &&
+                event.turnItem.threadId === liveChild &&
+                event.turnItem.type === "assistant_message",
+            ).length;
+          const beforeCount = textEventCount();
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make("native-text-resume"),
+              providerTurnOrdinal: 2,
+              text: "Continue.",
+              attachments: [],
+            }),
+          );
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              type: "assistant",
+              uuid: "native-resume-call",
+              session_id: WAKE_NATIVE_SESSION,
+              parent_tool_use_id: null,
+              message: {
+                id: "native-resume-call",
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "native-resume-send",
+                    name: "SendMessage",
+                    input: { to: taskId, message: "Continue." },
+                  },
+                ],
+              },
+            }),
+          );
+          yield* harness.offerAndWait(
+            makeSubagentTaskStartedFrame({
+              taskId,
+              toolUseId: "native-resume-send",
+              uuid: "native-resume-start",
+            }),
+          );
+          yield* offerProgress();
+          assert.isAbove(textEventCount(), beforeCount);
+          const rereadItems = harness.events.flatMap((event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.threadId === liveChild &&
+            event.turnItem.type === "assistant_message"
+              ? [event.turnItem]
+              : [],
+          );
+          assert.isTrue(rereadItems.every((item) => beforeReread.has(item.id)));
+
           const ordinalOf = (match: (item: (typeof childItems)[number]) => boolean) =>
             childItems.find(match)!.ordinal;
           assert.isBelow(
@@ -12499,6 +12559,79 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ),
         ),
       ),
+  );
+
+  it.effect("restores native subagent ordinals after restart", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({
+          subagentLaunchToolUseId: "original-launch",
+          nextChildItemOrdinal: 1102,
+        });
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("restart-native-order"),
+            text: "Continue.",
+            attachments: [],
+          }),
+        );
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "assistant",
+            uuid: "resume-call",
+            session_id: WAKE_NATIVE_SESSION,
+            parent_tool_use_id: null,
+            message: {
+              id: "resume-call-message",
+              role: "assistant",
+              content: [
+                {
+                  type: "tool_use",
+                  id: "resume-send",
+                  name: "SendMessage",
+                  input: { to: "resume-agent", message: "Continue." },
+                },
+              ],
+            },
+          }),
+        );
+        yield* harness.offerAndWait(
+          makeSubagentTaskStartedFrame({
+            taskId: "resume-agent",
+            toolUseId: "resume-send",
+            uuid: "resume-start",
+          }),
+        );
+        for (const frame of makeSubagentAssistantFrames({
+          parentToolUseId: "original-launch",
+          uuid: "resume-text",
+          text: "Resumed text.",
+          bashToolUseId: "resume-bash",
+        }))
+          yield* harness.offerAndWait(frame);
+        yield* harness.offerAndWait(makeResultFrame({ uuid: "resume-root-end", result: "Done." }));
+        yield* harness.awaitTerminal(1);
+        const child = subagentRouting(harness.events, []).childThreadId;
+        const items = harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.threadId === child
+            ? [event.turnItem]
+            : [],
+        );
+        const prompt = items.find((item) => item.type === "user_message")!;
+        const text = items.find((item) => item.type === "assistant_message")!;
+        const tool = items.find((item) => item.nativeItemRef?.nativeId === "resume-bash")!;
+        assert.equal(prompt.ordinal, 1102);
+        assert.isAbove(text.ordinal, prompt.ordinal);
+        assert.isBelow(text.ordinal, tool.ordinal);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
   );
 
   it.effect("holds subagent frames that precede task_started and shows its result once", () =>
