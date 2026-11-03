@@ -8,10 +8,7 @@ User-visible changes per release, newest first. Current behavior is in
 
 ### 0.12.2 (2026-11-03)
 
-- Issue: server CLI invocation and Claude skill discovery tests failed on macOS due to `/tmp` symlink path resolution → Fix: canonicalize temporary test directories with realpath
-- Issue: local server port scanner tests failed under Vite+ subshells using Oils → Fix: isolate background server process groups natively using detached child processes
-- Issue: guest timeline browser tests timed out during LegendList initial bootstrap scroll → Fix: adjust test fixture turn counts so virtual list bottom alignment converges within frame limits
-- Issue: cached test runner failed on repository test scripts intended for Node's built-in test runner → Fix: exclude `.github/` test scripts from Vitest execution
+Maintenance release with no intended change to shipped behavior.
 
 ### 0.12.1 (2026-11-03)
 

@@ -360,12 +360,6 @@ need a password are skipped (`apps/desktop/src/electron/MacKeychain.ts`).
   for Documents access again. A stable signing identity keeps the grants.
 - 0.1.4: launch no longer shows Keychain dialogs for old or locked credentials.
   Encryption stays on; explicit cookie imports can still ask.
-- 0.12.2: on macOS, `/tmp` is a symlink to `/private/tmp`. `invocation.test.ts`
-  and `ClaudeSkills.test.ts` canonicalize temporary directories with
-  `fs.realPath` so path assertions match production resolution.
-- 0.12.2: `PortScanner.test.ts` starts background servers via detached Node
-  child processes instead of bash `set -m`, which Vite+'s embedded Oils shell
-  rejects.
 
 ## Upstream sync
 
