@@ -12478,6 +12478,21 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             "Report.",
           ]);
           assert.deepEqual(orderedItems(), [...texts, "Finished checking.", "Bash", "Report."]);
+          // The event sink keeps these ordinals only inside the run-less 0..999_999 bucket.
+          const childItems = harness.events.flatMap((event) =>
+            event.type === "turn_item.updated" && event.turnItem.threadId === liveChild
+              ? [event.turnItem]
+              : [],
+          );
+          assert.isTrue(childItems.every((item) => item.ordinal < 1_000_000));
+          const ordinalOf = (match: (item: (typeof childItems)[number]) => boolean) =>
+            childItems.find(match)!.ordinal;
+          assert.isBelow(
+            ordinalOf(
+              (item) => item.type === "assistant_message" && item.text === "Finished checking.",
+            ),
+            ordinalOf((item) => item.nativeItemRef?.nativeId === "native-bash"),
+          );
         }).pipe(
           Effect.provide(
             Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),

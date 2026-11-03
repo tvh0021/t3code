@@ -6339,7 +6339,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : new Map(current).set(nativeThreadId, { ...entry, messages });
           });
 
-        const NATIVE_SUBAGENT_ITEM_ORDINAL_GAP = 1_000_000;
+        const NATIVE_SUBAGENT_ITEM_ORDINAL_GAP = 1_000;
         const nativeSubagentTranscripts = new Map<
           string,
           {

@@ -56,3 +56,22 @@ it.effect("reuses an item's position without attempting another allocation inser
     );
   }).pipe(Effect.provide(layerTest)),
 );
+
+it.effect("keeps a free requested ordinal and appends when it is taken", () =>
+  Effect.gen(function* () {
+    const positions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
+    const threadId = ThreadId.make("thread:requested");
+    const allocate = (id: string, requestedOrdinal?: number) =>
+      positions.allocate({
+        threadId,
+        turnItemId: TurnItemId.make(id),
+        runId: null,
+        ...(requestedOrdinal === undefined ? {} : { requestedOrdinal }),
+      });
+    assert.equal(yield* allocate("item:tool", 2100), 2100);
+    assert.equal(yield* allocate("item:recovered-text", 1101), 1101);
+    assert.equal(yield* allocate("item:taken", 1101), 2101);
+    assert.equal(yield* allocate("item:outside-bucket", 1_000_100), 2102);
+    assert.equal(yield* allocate("item:recovered-text", 50), 1101);
+  }).pipe(Effect.provide(layerTest)),
+);

@@ -22,10 +22,12 @@ export interface TurnItemPositionStoreV2Shape {
     readonly turnItemId: TurnItemId;
     readonly runId: RunId | null;
     readonly runOrdinal?: number;
+    /** Kept when free and inside the item's bucket; otherwise the item appends. */
+    readonly requestedOrdinal?: number;
   }) => Effect.Effect<number, TurnItemPositionStoreError>;
   readonly normalize: (
     item: OrchestrationV2TurnItem,
-    runOrdinal?: number,
+    options?: { readonly runOrdinal?: number | undefined; readonly keepOrdinal?: boolean },
   ) => Effect.Effect<OrchestrationV2TurnItem, TurnItemPositionStoreError>;
 }
 
@@ -42,7 +44,13 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
     const allocate: TurnItemPositionStoreV2Shape["allocate"] =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
       Effect.fnUntraced(
-        function* ({ threadId, turnItemId, runId, runOrdinal: suppliedRunOrdinal }) {
+        function* ({
+          threadId,
+          turnItemId,
+          runId,
+          runOrdinal: suppliedRunOrdinal,
+          requestedOrdinal,
+        }) {
           const existing = yield* sql<{ readonly ordinal: number }>`
           SELECT ordinal
           FROM orchestration_v2_turn_item_positions
@@ -63,6 +71,21 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
           const runOrdinal = suppliedRunOrdinal ?? runRows[0]?.ordinal ?? null;
           const lowerBound = runOrdinal === null ? 0 : runOrdinal * 1_000_000;
           const upperBound = runOrdinal === null ? 999_999 : lowerBound + 999_999;
+          if (
+            requestedOrdinal !== undefined &&
+            Number.isSafeInteger(requestedOrdinal) &&
+            requestedOrdinal >= lowerBound &&
+            requestedOrdinal <= upperBound
+          ) {
+            // Bare DO NOTHING also covers UNIQUE(thread_id, ordinal): a taken ordinal appends.
+            const kept = yield* sql<{ readonly ordinal: number }>`
+            INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
+            VALUES (${threadId}, ${turnItemId}, ${requestedOrdinal})
+            ON CONFLICT DO NOTHING
+            RETURNING ordinal
+          `;
+            if (kept[0] !== undefined) return kept[0].ordinal;
+          }
           yield* sql`
           INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
           SELECT
@@ -104,12 +127,13 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
     return TurnItemPositionStoreV2.of({
       allocate,
       // Per-event normalization shares the enclosing orchestration span.
-      normalize: Effect.fnUntraced(function* (item, runOrdinal) {
+      normalize: Effect.fnUntraced(function* (item, options) {
         return yield* allocate({
           threadId: item.threadId,
           turnItemId: item.id,
           runId: item.runId,
-          ...(runOrdinal === undefined ? {} : { runOrdinal }),
+          ...(options?.runOrdinal === undefined ? {} : { runOrdinal: options.runOrdinal }),
+          ...(options?.keepOrdinal === true ? { requestedOrdinal: item.ordinal } : {}),
         }).pipe(Effect.map((ordinal) => (item.ordinal === ordinal ? item : { ...item, ordinal })));
       }),
     });
