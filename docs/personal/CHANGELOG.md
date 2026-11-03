@@ -6,6 +6,11 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.12.1 (2026-11-03)
+
+- Issue: native Claude subagent threads omitted progress text or placed it below later tools → Fix: recover transcript text live and preserve message order across resumes
+- Issue: Claude subagent reports started with an internal tool list → Fix: strip the tool-list tag from final reports
+
 ### 0.12.0 (2026-11-01)
 
 - Upstream sync: merged upstream 88f611368e
