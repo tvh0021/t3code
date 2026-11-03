@@ -1844,6 +1844,14 @@ function isClaudeGoalAcknowledgement(message: SDKMessage): boolean {
 
 const providerGoalsEqual = Schema.toEquivalence(Schema.NullOr(OrchestrationV2ProviderGoal));
 
+// Claude Code prefixes native subagent summaries with a tool list the user never wrote.
+function claudeTaskSummaryText(summary: string): string {
+  return summary.replace(
+    /^\s*<tools-used-before-summary>[\s\S]*?<\/tools-used-before-summary>\s*/,
+    "",
+  );
+}
+
 function normalizeClaudeResultText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -6508,6 +6516,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           >;
           readonly onlyIfRunningInRun?: RunId | null;
         }) {
+          const result =
+            input.result === undefined ? undefined : claudeTaskSummaryText(input.result);
           const registeredSubagent = (yield* Ref.get(sessionSubagentsByTaskId)).get(input.taskId);
           const existingSubagent =
             input.onlyIfRunningInRun !== undefined
@@ -6634,7 +6644,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : {}),
             ...(input.progress === undefined ? {} : { progress: input.progress }),
             ...(workflowWithThreads === undefined ? {} : { workflow: workflowWithThreads }),
-            ...(input.result === undefined ? {} : { result: input.result }),
+            ...(result === undefined ? {} : { result }),
             ...(isReopen ? { startedAt: now } : {}),
             completedAt: input.status === "running" ? null : (priorTask?.completedAt ?? now),
             updatedAt: now,
@@ -6867,12 +6877,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
           const resultAlreadyShown =
             input.status === "completed" &&
-            input.result !== undefined &&
+            result !== undefined &&
             normalizeClaudeResultText(subagent.lastAssistantText ?? "") ===
-              normalizeClaudeResultText(input.result);
+              normalizeClaudeResultText(result);
           if (
-            input.result !== undefined &&
-            input.result.trim().length > 0 &&
+            result !== undefined &&
+            result.trim().length > 0 &&
             input.status !== "running" &&
             !resultAlreadyShown
           ) {
@@ -6884,7 +6894,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               threadId: childThreadId,
               rootNodeId: childRootNodeId,
               role: "assistant",
-              text: input.result,
+              text: result,
               ordinal: resultItemOrdinal,
               now,
             });

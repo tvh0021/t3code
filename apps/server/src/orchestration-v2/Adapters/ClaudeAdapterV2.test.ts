@@ -12466,7 +12466,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               taskId,
               toolUseId,
               uuid: "done-native-text",
-              summary: "Report.",
+              summary:
+                "<tools-used-before-summary>Bash, Read</tools-used-before-summary>\n\nReport.",
             }),
           );
           yield* harness.offerAndWait(
