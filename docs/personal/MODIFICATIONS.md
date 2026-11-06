@@ -55,10 +55,10 @@ models. Its agent loop streams tool calls and runs `read_file`, `write_file`,
 destructive commands. `read_file` returns a PDF's text with `--- page N ---`
 markers, extracted by the isolated document-text worker (`readPdfText`) without
 writing a sidecar. File attachments reach the model as saved paths it can read;
-image attachments are still rejected. A turn allows 200 tool calls on models whose id contains
-`flash` and 50 on others (`abacusMaxTurnSteps`); `requestTimeoutMs` (default
-600 s) applies to each request. Stop interrupts the active request or command,
-and a final turn update clears the running status.
+image attachments are still rejected. A turn allows 200 tool calls when the
+model ID contains `flash` and 50 otherwise (`abacusMaxTurnSteps`).
+`requestTimeoutMs` defaults to 600 s per request. Stop interrupts the active
+request or command. A final turn update clears the running status.
 
 **Decisions.**
 
@@ -81,7 +81,7 @@ and a final turn update clears the running status.
   The loop now runs in a fiber forked into the session scope, as
   `ClaudeAdapterV2` does, and the turn ends with a final `provider_turn.updated`
   so the projection shows it finished.
-- 0.12.3 (CHATLLM-PDF-001): `read_file` decoded PDFs as UTF-8 and any
+- 0.13.0 (CHATLLM-PDF-001): `read_file` decoded PDFs as UTF-8 and any
   attachment failed the turn. PDFs now go through upstream's document-text
   worker with a pdf.js branch. Uploaded PDFs still get no `.txt` sidecar, so
   Claude and Codex attachment prompts are unchanged. Scanned PDFs return an
