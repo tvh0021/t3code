@@ -42,47 +42,76 @@ export class DocumentText extends Context.Service<
   }
 >()("t3/provider/DocumentText") {}
 
+// In a bundle import.meta.url is bin.mjs; development and tests use this source module.
+const entry = NodeURL.fileURLToPath(
+  new URL(import.meta.url.endsWith(".ts") ? "../bin.ts" : "./bin.mjs", import.meta.url),
+);
+
+interface WorkerHost {
+  readonly executable: string;
+  readonly isExecutable: boolean;
+  readonly environment: NodeJS.ProcessEnv;
+}
+
+const runWorker = (
+  { executable, isExecutable, environment }: WorkerHost,
+  path: string,
+  extension: string,
+  abort?: AbortSignal,
+) =>
+  Effect.tryPromise({
+    try: (fiberSignal) =>
+      new Promise<string>((resolve, reject) => {
+        NodeChildProcess.execFile(
+          executable,
+          [...(isExecutable ? [] : [entry]), "__document-text", path, `.${extension}`],
+          {
+            signal: abort ? AbortSignal.any([fiberSignal, abort]) : fiberSignal,
+            timeout: 15_000,
+            maxBuffer: 4 * 1024 * 1024 + 1024,
+            encoding: "utf8",
+            windowsHide: true,
+            env: {
+              ...environment,
+              ELECTRON_RUN_AS_NODE: "1",
+              NODE_OPTIONS: `${environment.NODE_OPTIONS ?? ""} --max-old-space-size=192`,
+            },
+          },
+          (error, stdout) => (error ? reject(error) : resolve(stdout)),
+        );
+      }),
+    catch: (cause) => new DocumentTextError({ operation: "extract", path, extension, cause }),
+  });
+
+const workerHost = Effect.gen(function* () {
+  return {
+    executable: yield* HostProcess.ExecutablePath,
+    isExecutable: yield* HostProcess.IsExecutable,
+    environment: yield* HostProcess.Environment,
+  } satisfies WorkerHost;
+});
+
+/** Reads a PDF's text in the isolated worker without writing a sidecar beside it. */
+export const readPdfText = Effect.fn("DocumentText.readPdfText")(function* (
+  path: string,
+  abort?: AbortSignal,
+) {
+  return yield* runWorker(yield* workerHost, path, "pdf", abort);
+});
+
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
-  const executable = yield* HostProcess.ExecutablePath;
-  const isExecutable = yield* HostProcess.IsExecutable;
-  const environment = yield* HostProcess.Environment;
+  const host = yield* workerHost;
   const clock = yield* Clock.Clock;
   const lock = yield* Semaphore.make(1);
   const failed = new Map<string, number>();
-  // In a bundle import.meta.url is bin.mjs; development and tests use this source module.
-  const entry = NodeURL.fileURLToPath(
-    new URL(import.meta.url.endsWith(".ts") ? "../bin.ts" : "./bin.mjs", import.meta.url),
-  );
   const extract = Effect.fn("DocumentText.extract")(function* (path: string, extension: string) {
     const sidecar = `${path}.txt`;
     if (yield* fs.exists(sidecar)) return sidecar;
     if ((failed.get(path) ?? 0) > clock.currentTimeMillisUnsafe()) return;
     const info = yield* fs.stat(path);
     if (Number(info.size) > 16 * 1024 * 1024) return;
-    const content = yield* Effect.tryPromise({
-      try: (signal) =>
-        new Promise<string>((resolve, reject) => {
-          NodeChildProcess.execFile(
-            executable,
-            [...(isExecutable ? [] : [entry]), "__document-text", path, `.${extension}`],
-            {
-              signal,
-              timeout: 15_000,
-              maxBuffer: 4 * 1024 * 1024 + 1024,
-              encoding: "utf8",
-              windowsHide: true,
-              env: {
-                ...environment,
-                ELECTRON_RUN_AS_NODE: "1",
-                NODE_OPTIONS: `${environment.NODE_OPTIONS ?? ""} --max-old-space-size=192`,
-              },
-            },
-            (error, stdout) => (error ? reject(error) : resolve(stdout)),
-          );
-        }),
-      catch: (cause) => new DocumentTextError({ operation: "extract", path, extension, cause }),
-    }).pipe(
+    const content = yield* runWorker(host, path, extension).pipe(
       Effect.tapError(({ cause }) => {
         if (failed.size >= 1024) failed.delete(failed.keys().next().value!);
         failed.set(

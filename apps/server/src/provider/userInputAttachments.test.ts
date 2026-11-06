@@ -21,6 +21,7 @@ import * as PreviewManager from "../preview/Manager.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as NodeZlib from "node:zlib";
 import { appendUserInputAttachmentPaths } from "./userInputAttachments.ts";
+import { pdfFixture } from "../testUtils/pdfFixture.ts";
 
 vi.mock("node:child_process", { spy: true });
 
@@ -1091,6 +1092,21 @@ describe("question answer paths", () => {
       yield* Effect.promise(async () => {
         expect(await extractDocumentText(path, ".rtf")).toContain("[Extracted text truncated");
       });
+    }).pipe(Effect.provide(layer)),
+  );
+  it.effect("extracts PDF text by page and rejects PDFs without a text layer", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const path = NodePath.join(config.attachmentsDir, "pages.pdf");
+      NodeFS.writeFileSync(path, pdfFixture(["First page", null, "Third page"]));
+      expect(yield* Effect.promise(() => extractDocumentText(path, ".pdf"))).toBe(
+        "--- page 1 ---\nFirst page\n\n--- page 2 ---\n\n--- page 3 ---\nThird page",
+      );
+      const scanned = NodePath.join(config.attachmentsDir, "scanned.pdf");
+      NodeFS.writeFileSync(scanned, pdfFixture([null, null]));
+      yield* Effect.promise(() =>
+        expect(extractDocumentText(scanned, ".pdf")).rejects.toThrow("No text extracted"),
+      );
     }).pipe(Effect.provide(layer)),
   );
   it.effect("keeps selected values intact and appends an actual readable server path", () =>

@@ -33,6 +33,8 @@ import {
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
+import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
+import * as DocumentText from "../../provider/DocumentText.ts";
 import { appendProviderTurnUsage } from "../../usage/providerTurnUsageWriter.ts";
 
 const ABACUS_PROVIDER = ProviderDriverKind.make("abacus");
@@ -77,7 +79,7 @@ export const ABACUS_AGENT_TOOLS = [
     function: {
       name: "read_file",
       description:
-        "Read the contents of a file. Specify path (relative to workspace or absolute). Optionally specify start_line and end_line (1-indexed).",
+        "Read the contents of a file. Specify path (relative to workspace or absolute). Optionally specify start_line and end_line (1-indexed). PDFs return extracted text with '--- page N ---' markers; line numbers refer to that text.",
       parameters: {
         type: "object",
         properties: {
@@ -259,7 +261,7 @@ function buildAbacusSystemPrompt(workspaceDir: string, model: string): string {
 The active workspace directory is: ${workspaceDir}
 
 You have access to tools to inspect and modify this workspace:
-- read_file: Read the contents of a file (supports optional line numbers).
+- read_file: Read the contents of a file (supports optional line numbers). PDFs return their extracted text with "--- page N ---" markers.
 - edit_file: Make targeted modifications to an existing file in the workspace by replacing an exact string match (old_string) with (new_string).
 - write_file: Create a new file or completely overwrite a file in the workspace.
 - list_directory: List files and folders in a directory.
@@ -288,16 +290,46 @@ export function handleReadFile(
   if (stat.isDirectory()) {
     return `Error: Path is a directory, not a file: ${args.path}`;
   }
-  const content = NodeFS.readFileSync(target, "utf-8");
-  if (args.start_line !== undefined || args.end_line !== undefined) {
-    const allLines = content.split("\n");
-    const start = Math.max(1, args.start_line ?? 1);
-    const end = Math.min(allLines.length, args.end_line ?? allLines.length);
-    const selected = allLines.slice(start - 1, end);
-    return selected.map((line, idx) => `${start + idx} | ${line}`).join("\n");
-  }
-  return content;
+  return selectLines(NodeFS.readFileSync(target, "utf-8"), args);
 }
+
+function selectLines(content: string, args: { start_line?: number; end_line?: number }): string {
+  if (args.start_line === undefined && args.end_line === undefined) return content;
+  const allLines = content.split("\n");
+  const start = Math.max(1, args.start_line ?? 1);
+  const end = Math.min(allLines.length, args.end_line ?? allLines.length);
+  const selected = allLines.slice(start - 1, end);
+  return selected.map((line, idx) => `${start + idx} | ${line}`).join("\n");
+}
+
+const MAX_PDF_BYTES = 16 * 1024 * 1024;
+
+/** read_file with PDFs read as extracted page text; every other file reads as UTF-8. */
+export const readFileTool = Effect.fn("AbacusAdapterV2.readFileTool")(function* (
+  args: { path: string; start_line?: number; end_line?: number },
+  cwd: string,
+  abort?: AbortSignal,
+) {
+  const target = resolvePath(args.path, cwd);
+  const stat = NodeFS.statSync(target, { throwIfNoEntry: false });
+  if (NodePath.extname(target).toLowerCase() !== ".pdf" || !stat?.isFile()) {
+    return handleReadFile(args, cwd);
+  }
+  if (stat.size > MAX_PDF_BYTES) {
+    return `Error: PDF is larger than 16 MiB and cannot be read: ${args.path}`;
+  }
+  return yield* DocumentText.readPdfText(target, abort).pipe(
+    Effect.map((text) => selectLines(text, args)),
+    Effect.catch(({ cause }) =>
+      Effect.succeed(
+        // The worker exits 2 when it rejects the document itself.
+        cause instanceof Error && "code" in cause && cause.code === 2
+          ? `Error: No text could be extracted from ${args.path}. It may be scanned (images only), encrypted, or damaged.`
+          : `Error: Failed to extract text from ${args.path}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      ),
+    ),
+  );
+});
 
 export function handleWriteFile(args: { path: string; content: string }, cwd: string): string {
   const target = resolveWorkspaceWritePath(args.path, cwd);
@@ -508,6 +540,12 @@ export interface AbacusAdapterV2Options {
   readonly apiKey: string;
   readonly defaultModel: string;
   readonly stateDir?: string | undefined;
+  readonly attachments?:
+    | Pick<
+        ProviderHost.ProviderHost["Service"],
+        "resolveAttachmentPath" | "resolveExtractedTextPath"
+      >
+    | undefined;
   readonly fetch?: Fetch;
   readonly requestTimeoutMs?: number;
 }
@@ -599,12 +637,30 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
         const startTurn = Effect.fn("AbacusAdapterV2.startTurn")(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
         ) {
-          if (turnInput.message.attachments.length > 0) {
+          const { attachments } = turnInput.message;
+          if (attachments.some((attachment) => attachment.type === "image")) {
             return yield* new ProviderAdapter.ProviderAdapterProtocolError({
               driver: ABACUS_PROVIDER,
-              detail: "ChatLLM does not support file or image attachments.",
+              detail: "ChatLLM does not support image attachments.",
             });
           }
+          const attachmentHost = options.attachments;
+          if (attachments.length > 0 && attachmentHost === undefined) {
+            return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+              driver: ABACUS_PROVIDER,
+              detail: "ChatLLM cannot resolve file attachments without a provider host.",
+            });
+          }
+          // read_file opens the saved paths; office documents also list their extracted text.
+          const userText =
+            attachments.length === 0 || attachmentHost === undefined
+              ? turnInput.message.text
+              : yield* providerMessageTextWithAttachmentPaths({
+                  text: turnInput.message.text,
+                  attachments,
+                  resolveAttachmentPath: attachmentHost.resolveAttachmentPath,
+                  resolveExtractedTextPath: attachmentHost.resolveExtractedTextPath,
+                });
 
           yield* Queue.offer(events, {
             type: "provider_thread.updated",
@@ -659,10 +715,10 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
               ),
             });
           }
-          messages.push({ role: "user", content: turnInput.message.text });
+          messages.push({ role: "user", content: userText });
 
           const currentTurnItems: Array<{ role: string; content?: string | null }> = [
-            { role: "user", content: turnInput.message.text },
+            { role: "user", content: userText },
           ];
 
           // The loop runs in the session scope so startTurn returns at once.
@@ -1089,9 +1145,10 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
               try {
                 switch (tc.function.name) {
                   case "read_file":
-                    rawOutput = handleReadFile(
+                    rawOutput = yield* readFileTool(
                       toolArgs as { path: string; start_line?: number; end_line?: number },
                       cwd,
+                      controller.signal,
                     );
                     break;
                   case "write_file":
@@ -1381,6 +1438,7 @@ export const AbacusAdapterV2Driver: ProviderAdapterDriver<
       apiKey,
       defaultModel: "route-llm",
       stateDir: Option.isSome(host) ? host.value.paths.stateDir : undefined,
+      attachments: Option.isSome(host) ? host.value : undefined,
     });
   }),
 };

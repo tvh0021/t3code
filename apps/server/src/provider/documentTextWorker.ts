@@ -397,9 +397,42 @@ function* rtf(source: string): Generator<string, void> {
   }
 }
 
+async function* pdf(path: string): AsyncGenerator<TextPart, void> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  // A preloaded worker module runs in-process; bundles cannot resolve pdf.js's worker file.
+  Object.assign(globalThis, {
+    pdfjsWorker: await import("pdfjs-dist/legacy/build/pdf.worker.mjs"),
+  });
+  const loading = pdfjs.getDocument({
+    data: new Uint8Array(await NodeFSP.readFile(path)),
+    disableFontFace: true,
+    // Per-glyph warnings on stderr could overflow execFile's buffer.
+    verbosity: pdfjs.VerbosityLevel.ERRORS,
+  });
+  let found = false;
+  try {
+    const document = await loading.promise;
+    for (let number = 1; number <= document.numPages; number++) {
+      yield `\n\n--- page ${number} ---\n`;
+      const page = await document.getPage(number);
+      for (const item of (await page.getTextContent()).items) {
+        if (!("str" in item)) continue;
+        found ||= item.str.trim() !== "";
+        yield item.str;
+        if (item.hasEOL) yield "\n";
+      }
+      page.cleanup();
+    }
+  } finally {
+    await loading.destroy();
+  }
+  if (!found) throw new Error("No text extracted");
+}
+
 async function* document(path: string, extension: string): AsyncGenerator<TextPart, void> {
   if ((await NodeFSP.stat(path)).size > MAX_INPUT) throw new Truncation("Input byte limit");
-  if (extension === ".ipynb") yield* notebook(await NodeFSP.readFile(path, "utf8"));
+  if (extension === ".pdf") yield* pdf(path);
+  else if (extension === ".ipynb") yield* notebook(await NodeFSP.readFile(path, "utf8"));
   else if (extension === ".rtf") yield* rtf((await NodeFSP.readFile(path)).toString("latin1"));
   else {
     const files = await archive(path);

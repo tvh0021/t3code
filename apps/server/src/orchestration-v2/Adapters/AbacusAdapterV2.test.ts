@@ -34,8 +34,10 @@ import {
   isInsideWorkspace,
   makeAbacusAdapterV2,
   parseAbacusSse,
+  readFileTool,
   truncateToolOutput,
 } from "./AbacusAdapterV2.ts";
+import { pdfFixture } from "../../testUtils/pdfFixture.ts";
 
 const encoder = new TextEncoder();
 const sseResponse = (parts: ReadonlyArray<string>) =>
@@ -208,6 +210,31 @@ describe("AbacusAdapterV2 unit helpers", () => {
       NodeFS.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it.effect("reads PDFs as page text and explains PDFs without a text layer", () =>
+    Effect.gen(function* () {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-test-pdf-"));
+      try {
+        NodeFS.writeFileSync(
+          NodePath.join(tempDir, "paper.pdf"),
+          pdfFixture(["Abstract", "Results"]),
+        );
+        NodeFS.writeFileSync(NodePath.join(tempDir, "scan.pdf"), pdfFixture([null]));
+        expect(
+          yield* readFileTool({ path: "paper.pdf", start_line: 4, end_line: 5 }, tempDir),
+        ).toBe("4 | --- page 2 ---\n5 | Results");
+        expect(yield* readFileTool({ path: "paper.pdf" }, tempDir, AbortSignal.abort())).toContain(
+          "Failed to extract text from paper.pdf",
+        );
+        expect(yield* readFileTool({ path: "scan.pdf" }, tempDir)).toContain(
+          "No text could be extracted from scan.pdf",
+        );
+        expect(NodeFS.readdirSync(tempDir).toSorted()).toEqual(["paper.pdf", "scan.pdf"]);
+      } finally {
+        NodeFS.rmSync(tempDir, { recursive: true, force: true });
+      }
+    }),
+  );
 
   it("allows flash models longer tool loops than pricier models", () => {
     expect(abacusMaxTurnSteps("zai-org/GLM-5.3-Flash")).toBe(200);
@@ -384,9 +411,10 @@ describe("AbacusAdapterV2 session and turn execution", () => {
     }),
   );
 
-  it.effect("rejects attachments before making a request", () =>
+  it.effect("rejects images and sends file attachments as readable paths", () =>
     Effect.gen(function* () {
       let calls = 0;
+      const bodies: Array<{ messages: Array<{ role: string; content: string }> }> = [];
       const instanceId = ProviderInstanceId.make("abacus-attachments");
       const threadId = ThreadId.make("thread-attachments");
       const modelSelection = { instanceId, model: "route-llm" } as const;
@@ -401,9 +429,16 @@ describe("AbacusAdapterV2 session and turn execution", () => {
         apiBaseUrl: "https://example.test/v1/",
         apiKey: "secret",
         defaultModel: "route-llm",
-        fetch: async () => {
+        attachments: {
+          resolveAttachmentPath: (attachment) => `/attachments/${attachment.id}`,
+        },
+        fetch: async (_input, init) => {
           calls += 1;
-          return sseResponse([]);
+          bodies.push(JSON.parse(String(init?.body)));
+          return sseResponse([
+            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]);
         },
       });
 
@@ -459,13 +494,13 @@ describe("AbacusAdapterV2 session and turn execution", () => {
           providerTurnOrdinal: 1,
           message: {
             messageId: MessageId.make("msg-1"),
-            text: "read this",
+            text: "look at this",
             attachments: [
               {
-                type: "file",
-                id: "attachment-1",
-                name: "a.txt",
-                mimeType: "text/plain",
+                type: "image",
+                id: "attachment-0",
+                name: "a.png",
+                mimeType: "image/png",
                 sizeBytes: 1,
               } as any,
             ],
@@ -477,6 +512,40 @@ describe("AbacusAdapterV2 session and turn execution", () => {
 
       expect(result._tag).toBe("Failure");
       expect(calls).toBe(0);
+
+      const events = yield* collectTurnEvents(session);
+      yield* session.startTurn({
+        threadId,
+        runId: RunId.make("run-2"),
+        attemptId: RunAttemptId.make("attempt-2"),
+        rootNodeId: NodeId.make("node-2"),
+        appThread,
+        providerThread,
+        runtimePolicy,
+        modelSelection,
+        runOrdinal: 2,
+        providerTurnOrdinal: 1,
+        message: {
+          messageId: MessageId.make("msg-2"),
+          text: "read this",
+          attachments: [
+            {
+              type: "file",
+              id: "attachment-1",
+              name: "paper.pdf",
+              mimeType: "application/pdf",
+              sizeBytes: 1,
+            } as any,
+          ],
+          createdBy: "user",
+          creationSource: "web",
+        },
+      });
+      yield* Fiber.join(events);
+      expect(bodies[0]?.messages.at(-1)).toEqual({
+        role: "user",
+        content: 'read this\n\n[Attached file "paper.pdf" is saved at: /attachments/attachment-1]',
+      });
     }),
   );
 
