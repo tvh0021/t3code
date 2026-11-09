@@ -18,11 +18,11 @@ the workspace, including images at absolute paths outside the project.
 
 **Decisions.**
 
+- 0.14.0 (CHAT-IMAGE-001): upstream's `WorkspaceMutationIdContext` in
+  `ChatMarkdownMedia.tsx` now refreshes local images after workspace changes,
+  replacing the fork's duplicate context.
 - 0.11.1 (CHAT-IMAGE-001): mounted images kept their cached URLs after file
-  rewrites. Retired in the 2026-11-08 sync: upstream's `WorkspaceMutationIdContext`
-  in `ChatMarkdownMedia.tsx` refreshes local images, so the fork plumbing is gone.
-  The fork keeps its `MessagesTimeline` browser test for an image outside the
-  workspace.
+  rewrites. Workspace changes now invalidate those URLs.
 - Before 0.0.42: messages without math delimiters skip math preprocessing and
   plugins, so ordinary chat pays nothing for KaTeX.
 - 0.3.1: KaTeX markup and stylesheet are pinned to the same version (0.18.7).
@@ -45,7 +45,8 @@ the workspace, including images at absolute paths outside the project.
   still named "Abacus" as ChatLLM.
 
 **Removed.** Single-instance provider badges were hidden before 0.0.42; 0.3.3
-restored upstream's badges.
+restored upstream's badges. Version 0.14.0 removed the fork's image refresh
+context in favor of upstream's equivalent.
 
 ## ChatLLM provider
 
@@ -216,14 +217,18 @@ an ended billing period by calendar months and rereads spend once.
 
 ## Antigravity
 
-**Now.** Antigravity runs over ACP with the Zed client identity, which upstream
-sends itself for runtimes before 1.5.1, so the account can offer Claude Opus 5.5 and Sonnet 5.5 at
-low, medium, and high effort next to Gemini. Built-in seeds fill the picker until live discovery answers.
+**Now.** Antigravity runs over ACP with the Zed client identity on runtimes before
+1.5.1 and the `t3-code` identity on newer runtimes. Accounts can offer Claude
+Opus 5.5 and Sonnet 5.5 at low, medium, and high effort next to Gemini.
+Built-in seeds fill the picker until live discovery answers.
 Native task results appear in the work trace without ending the prompt. ACP
 errors keep the native operation and error text.
 
 **Decisions.**
 
+- 0.14.0: newer Antigravity runtimes support the `t3-code` identity.
+  `AntigravityAcpSupport.ts` adopts upstream's 1.5.1 version gate and keeps the
+  Zed identity for older runtimes, including the pinned 1.4.5 release.
 - 0.3.0: the Claude variants depend on the Google account and Google's
   undocumented client allowlist. Catalog refreshes keep them only when account
   discovery reports them.

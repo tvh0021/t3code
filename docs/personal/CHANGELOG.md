@@ -6,6 +6,10 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.14.0 (2026-11-09)
+
+- Upstream sync: merged upstream 521ac7c218
+
 ### 0.13.0 (2026-11-06)
 
 - New feature: ChatLLM can read text from PDFs and open files attached to a turn (CHATLLM-PDF-001)
