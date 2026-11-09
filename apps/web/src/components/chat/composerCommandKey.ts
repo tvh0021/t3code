@@ -41,10 +41,9 @@ export function composerCommandKeyHandler(input: {
   readonly isCompacting: boolean;
   readonly followUpBehavior: ChatComposerProps["settings"]["followUpBehavior"];
   readonly isSoftwareKeyboardOpen: boolean;
-  readonly planModeUiEnabled: boolean;
   readonly isLiteralPendingAnswer: boolean;
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;
-  readonly promptHistoryMessages: ChatComposerProps["promptHistoryMessages"];
+  readonly promptHistoryEntries: ChatComposerProps["promptHistoryEntries"];
   readonly promptHistoryPositionRef: RefObject<{
     targetKey: string;
     position: ComposerPromptHistoryPosition;
@@ -68,7 +67,6 @@ export function composerCommandKeyHandler(input: {
   readonly setComposerTrigger: (trigger: ComposerTrigger | null) => void;
   readonly setComposerHighlightedItemId: Dispatch<SetStateAction<string | null>>;
   readonly dismissComposerTrigger: (trigger: ComposerTrigger | null) => void;
-  readonly toggleInteractionMode: () => void;
   readonly nudgeComposerMenuHighlight: (key: "ArrowDown" | "ArrowUp") => void;
   readonly onSelectComposerItem: (item: ComposerCommandItem) => void;
   readonly resolveActiveComposerTrigger: () => { trigger: ComposerTrigger | null };
@@ -93,10 +91,9 @@ export function composerCommandKeyHandler(input: {
     isCompacting,
     followUpBehavior,
     isSoftwareKeyboardOpen,
-    planModeUiEnabled,
     isLiteralPendingAnswer,
     pendingUserInputs,
-    promptHistoryMessages,
+    promptHistoryEntries,
     promptHistoryPositionRef,
     composerDraftTarget,
     promptRef,
@@ -114,7 +111,6 @@ export function composerCommandKeyHandler(input: {
     setComposerTrigger,
     setComposerHighlightedItemId,
     dismissComposerTrigger,
-    toggleInteractionMode,
     nudgeComposerMenuHighlight,
     onSelectComposerItem,
     resolveActiveComposerTrigger,
@@ -165,7 +161,9 @@ export function composerCommandKeyHandler(input: {
     const step = stepComposerPromptHistory({
       direction,
       // Built on the keypress, not per render: the timeline changes on every streamed delta.
-      entries: buildComposerPromptHistoryEntries(promptHistoryMessages),
+      entries: buildComposerPromptHistoryEntries(
+        promptHistoryEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
+      ),
       position,
       currentPrompt: promptRef.current,
     });
@@ -207,10 +205,7 @@ export function composerCommandKeyHandler(input: {
       prompt: promptRef.current,
     });
     if (key === "Tab" && event.shiftKey && submissionIntent === null) {
-      if (applyListEdit(event, listOutdentForTab)) return true;
-      if (!planModeUiEnabled) return false;
-      toggleInteractionMode();
-      return true;
+      return applyListEdit(event, listOutdentForTab);
     }
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive =

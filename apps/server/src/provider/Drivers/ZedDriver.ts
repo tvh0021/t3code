@@ -91,6 +91,8 @@ export const ZedDriver: ProviderDriver<ZedSettings, ZedDriverEnv> = {
       generateBranchName: () => unsupportedTextGen("generateBranchName"),
       generateThreadTitle: () => unsupportedTextGen("generateThreadTitle"),
       generateReviewGuide: () => unsupportedTextGen("generateReviewGuide"),
+      generateTranscriptionPostProcessing: () =>
+        unsupportedTextGen("generateTranscriptionPostProcessing"),
     };
 
     // Account spend is read at startup, after Zed prompts, and once when the

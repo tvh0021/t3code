@@ -40,6 +40,10 @@ import { appendProviderTurnUsage } from "../../usage/providerTurnUsageWriter.ts"
 const ABACUS_PROVIDER = ProviderDriverKind.make("abacus");
 const decodeAbacusSettings = Schema.decodeSync(AbacusSettings);
 
+// RouteLLM request and stream bodies are untyped wire JSON parsed inside fetch callbacks.
+const encodeJsonText = (value: unknown): string => JSON.stringify(value);
+const decodeJsonText = (text: string): unknown => JSON.parse(text);
+
 /**
  * Tool calls one turn may run. Flash models are cheap enough for long agent
  * loops such as delegated reviews; pricier models stop sooner.
@@ -850,7 +854,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                     Authorization: `Bearer ${options.apiKey}`,
                     "Content-Type": "application/json",
                   },
-                  body: JSON.stringify({
+                  body: encodeJsonText({
                     model: turnModel,
                     messages,
                     stream: true,
@@ -892,7 +896,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                     usage?: unknown;
                   };
                   try {
-                    chunk = JSON.parse(payload) as typeof chunk;
+                    chunk = decodeJsonText(payload) as typeof chunk;
                   } catch {
                     failureHint = "RouteLLM returned malformed streaming data.";
                     throw new Error(failureHint);
@@ -1136,7 +1140,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
 
               let toolArgs: Record<string, unknown> = {};
               try {
-                toolArgs = JSON.parse(tc.function.arguments || "{}") as Record<string, unknown>;
+                toolArgs = decodeJsonText(tc.function.arguments || "{}") as Record<string, unknown>;
               } catch {
                 toolArgs = {};
               }

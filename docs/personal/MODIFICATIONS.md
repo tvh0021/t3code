@@ -19,9 +19,10 @@ the workspace, including images at absolute paths outside the project.
 **Decisions.**
 
 - 0.11.1 (CHAT-IMAGE-001): mounted images kept their cached URLs after file
-  rewrites. `MessagesTimeline` supplies `WorkspaceMutationContext` to
-  `ChatMarkdownAssetImage`, which reuses the revision-aware asset query without
-  reparsing every message.
+  rewrites. Retired in the 2026-11-08 sync: upstream's `WorkspaceMutationIdContext`
+  in `ChatMarkdownMedia.tsx` refreshes local images, so the fork plumbing is gone.
+  The fork keeps its `MessagesTimeline` browser test for an image outside the
+  workspace.
 - Before 0.0.42: messages without math delimiters skip math preprocessing and
   plugins, so ordinary chat pays nothing for KaTeX.
 - 0.3.1: KaTeX markup and stylesheet are pinned to the same version (0.18.7).
@@ -216,7 +217,7 @@ an ended billing period by calendar months and rereads spend once.
 ## Antigravity
 
 **Now.** Antigravity runs over ACP with the Zed client identity, which upstream
-now sends itself, so the account can offer Claude Opus 5.5 and Sonnet 5.5 at
+sends itself for runtimes before 1.5.1, so the account can offer Claude Opus 5.5 and Sonnet 5.5 at
 low, medium, and high effort next to Gemini. Built-in seeds fill the picker until live discovery answers.
 Native task results appear in the work trace without ending the prompt. ACP
 errors keep the native operation and error text.

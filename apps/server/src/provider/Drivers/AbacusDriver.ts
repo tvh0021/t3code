@@ -239,6 +239,8 @@ export const AbacusDriver: ProviderDriver<AbacusSettings, AbacusDriverEnv> = {
       generateBranchName: () => unsupportedTextGen("generateBranchName"),
       generateThreadTitle: () => unsupportedTextGen("generateThreadTitle"),
       generateReviewGuide: () => unsupportedTextGen("generateReviewGuide"),
+      generateTranscriptionPostProcessing: () =>
+        unsupportedTextGen("generateTranscriptionPostProcessing"),
     };
 
     return {

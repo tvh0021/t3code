@@ -34,7 +34,7 @@ History: offline tests, typechecks and lint pass. The branch predates 0.7.4 and 
 
 ## Resolved
 
-- **CHAT-IMAGE-001** (0.11.1): Rewritten chat images stayed stale. Cause: mounted images retained cached URLs. Fix: workspace changes refresh local image URLs, including outside-workspace files.
+- **CHAT-IMAGE-001** (0.11.1): Rewritten chat images stayed stale. Cause: mounted images retained cached URLs. Fix: workspace changes refresh local image URLs, including outside-workspace files. Upstream's equivalent replaced the fork code in the 2026-11-08 sync.
 
 - **CHATLLM-CANCEL-001** (0.10.0): ChatLLM ignored Stop and stayed running after completion. Cause: inline execution blocked interrupts; completion updates were missing. Fix: fork execution and publish final status.
 

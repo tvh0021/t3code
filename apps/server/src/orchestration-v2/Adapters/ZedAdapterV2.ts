@@ -9,7 +9,7 @@ import {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSelfInvocation, type SelfInvocation } from "@t3tools/shared/nodeRuntime";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -73,7 +73,7 @@ export interface ZedAdapterV2Options {
 }
 
 interface ZedFlavorServices {
-  readonly crypto: Crypto.Crypto;
+  readonly crypto: SecureRandom.SecureRandom["Service"];
   readonly fileSystem: FileSystem.FileSystem;
   readonly path: Path.Path;
   readonly host: ProviderHost.ProviderHost["Service"];
@@ -158,7 +158,7 @@ function makeZedAcpAdapterFlavor(
             ),
       };
     },
-    Effect.provideService(Crypto.Crypto, options.crypto),
+    Effect.provideService(SecureRandom.SecureRandom, options.crypto),
     Effect.mapError((cause): EffectAcpErrors.AcpError =>
       cause._tag === "ProviderSetupError"
         ? new EffectAcpErrors.AcpTransportError({ detail: cause.detail, cause })
@@ -199,7 +199,7 @@ function makeZedAcpAdapterFlavor(
 
 const makeZedAdapterV2 = Effect.fn("makeZedAdapterV2")(function* (options: ZedAdapterV2Options) {
   const services: ZedFlavorServices = {
-    crypto: yield* Crypto.Crypto,
+    crypto: yield* SecureRandom.SecureRandom,
     fileSystem: yield* FileSystem.FileSystem,
     path: yield* Path.Path,
     host: yield* ProviderHost.ProviderHost,
@@ -217,7 +217,7 @@ const makeZedAdapterV2 = Effect.fn("makeZedAdapterV2")(function* (options: ZedAd
 
 export type ZedAdapterV2DriverEnv =
   | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
+  | SecureRandom.SecureRandom
   | FileSystem.FileSystem
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
@@ -230,7 +230,7 @@ export const createZedAdapterV2 = Effect.fn("ZedAdapterV2Driver.create")(
     input: ProviderAdapterDriverCreateInput<ZedSettings>,
     hooks: Pick<ZedAdapterV2Options, "onPromptSettled"> = {},
   ) {
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const hostEnvironment = yield* HostProcess.Environment;
     const selfInvocation = yield* resolveSelfInvocation();
@@ -247,7 +247,7 @@ export const createZedAdapterV2 = Effect.fn("ZedAdapterV2Driver.create")(
           childProcessSpawner,
           zedSettings: input.config,
           environment: processEnv,
-        }).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+        }).pipe(Effect.provideService(SecureRandom.SecureRandom, crypto)),
       nativeLogging: (threadId) =>
         makeNativeLogger({
           nativeEventLogger: providerEventLoggers.native,

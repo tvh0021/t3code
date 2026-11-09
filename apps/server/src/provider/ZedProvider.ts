@@ -25,6 +25,11 @@ import {
 import { buildZedAcpSpawnInput } from "./acp/ZedAcpSupport.ts";
 import { zedUsageNotYetRead, zedUsageWithoutSession } from "./zedAccountUsage.ts";
 
+class ZedModelDiscoveryError extends Schema.TaggedError<ZedModelDiscoveryError>()(
+  "ZedModelDiscoveryError",
+  { cause: Schema.Defect() },
+) {}
+
 const ZED_PRESENTATION = {
   displayName: "Zed",
   supportsConversationRollback: false,
@@ -239,11 +244,14 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
     ),
   ).pipe(
     Effect.flatMap((result) =>
-      Effect.try(() => {
-        if (result.code !== 0) throw new Error("Zed model discovery failed");
-        const discovered = parseZedModels(result.stdout);
-        if (discovered.length === 0) throw new Error("Zed supplied no models");
-        return discovered;
+      Effect.try({
+        try: () => {
+          if (result.code !== 0) throw new Error("Zed model discovery failed");
+          const discovered = parseZedModels(result.stdout);
+          if (discovered.length === 0) throw new Error("Zed supplied no models");
+          return discovered;
+        },
+        catch: (cause) => new ZedModelDiscoveryError({ cause }),
       }),
     ),
     Effect.timeout("40 seconds"),

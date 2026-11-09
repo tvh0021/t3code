@@ -40,7 +40,7 @@ describe("providerTurnUsageWriter", () => {
       const state = initialCodexScanState();
       const records = [];
       for (const line of lines) {
-        const record = parseCodexLine(line, state, "antigravity");
+        const record = parseCodexLine(line, state, "antigravity")[0] ?? null;
         if (record) records.push(record);
       }
 
@@ -94,7 +94,7 @@ describe("providerTurnUsageWriter", () => {
       const state = initialCodexScanState();
       const records = [];
       for (const line of lines) {
-        const record = parseCodexLine(line, state, "abacus");
+        const record = parseCodexLine(line, state, "abacus")[0] ?? null;
         if (record) records.push(record);
       }
 

@@ -2,7 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 
 import type { ModelSelection, ZedSettings, ProviderApprovalDecision } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
@@ -69,7 +69,7 @@ export const makeZedAcpRuntime = Effect.fn("makeZedAcpRuntime")(function* (
 ): Effect.fn.Return<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
   EffectAcpErrors.AcpError,
-  Crypto.Crypto | Scope.Scope
+  SecureRandom.SecureRandom | Scope.Scope
 > {
   // Zed scans historical entries on each text update and resends completed
   // tools. Suppress identical snapshots before they close an assistant segment.

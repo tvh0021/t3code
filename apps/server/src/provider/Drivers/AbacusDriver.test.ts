@@ -15,6 +15,7 @@ it("registers Abacus without replacing the existing built-in drivers", () => {
     "fx",
     "opencode",
     "antigravity",
+    "kiro",
     "pi",
     "muse",
     "acpRegistry",

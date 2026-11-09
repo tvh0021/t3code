@@ -368,4 +368,32 @@ describe("usage pricing", () => {
     );
     expect(lookupRate(table, "route-llm")?.outputCostPerToken).toBe(1.2 / 1_000_000);
   });
+
+  it("prices a bare name at the model maker's rate when a reseller marks it up", () => {
+    const reseller = { "kyma/gemini-example-pro": rate(5.4e-6) };
+    const makers = {
+      "gemini/gemini-example-pro": rate(2e-6, 1e-7),
+      "vertex_ai/gemini-example-pro": rate(2e-6, 1e-7),
+    };
+
+    for (const document of [
+      { ...reseller, ...makers },
+      { ...makers, ...reseller },
+    ]) {
+      const table = parseRateTable(document);
+      expect(lookupRate(table, "gemini-example-pro")).toEqual(
+        lookupRate(table, "gemini/gemini-example-pro"),
+      );
+    }
+  });
+
+  it("leaves a bare name unpriced when model makers' own entries disagree", () => {
+    const table = parseRateTable({
+      "openai/example-model": rate(1),
+      "xai/example-model": rate(3),
+      "kyma/example-model": rate(1),
+    });
+
+    expect(lookupRate(table, "example-model")).toBeNull();
+  });
 });

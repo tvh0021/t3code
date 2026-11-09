@@ -15,7 +15,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -122,7 +122,7 @@ const make = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const projects = yield* ProjectService.ProjectService;
   const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   // Personal fork: the server always provides this; upstream's tests do not.
   const delegationGuards = yield* Effect.serviceOption(DelegationGuards);
   const hereId = yield* ServerEnvironment.ServerEnvironment.pipe(
@@ -259,7 +259,7 @@ const make = Effect.gen(function* () {
       // One key for the launch there and the record here, so a retry finds both.
       // Both are scoped to the provider session, as every key a caller passes is:
       // the forwarder scopes the launch's, and the record's names it.
-      const key = input.clientRequestId ?? (yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+      const key = input.clientRequestId ?? (yield* random.uuidV4());
       const task = taskPrompt(input);
       const commandId = CommandId.make(
         `command:mcp:${encodeURIComponent(scope.requestNamespace)}:remote-delegate:${encodeURIComponent(key)}`,
@@ -394,7 +394,7 @@ const make = Effect.gen(function* () {
     stoppedThere: "ran-out" | "stopped" | undefined,
     stopCount?: number,
   ) {
-    const attempt = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+    const attempt = yield* random.uuidV4();
     yield* threads
       .dispatch({
         type: "delegated_task.remote.complete",
@@ -724,7 +724,7 @@ const make = Effect.gen(function* () {
       const there = followScope(scope.thread, remote);
       // A later cancel stops what started there since; a retry of this one, nothing new.
       const key = `cancel:${encodeURIComponent(scope.requestNamespace)}:${
-        input.clientRequestId ?? (yield* crypto.randomUUIDv4().pipe(Effect.orDie))
+        input.clientRequestId ?? (yield* random.uuidV4())
       }`;
       if (task.result !== null) {
         // Best effort: the result stands whether or not the stop gets there.
