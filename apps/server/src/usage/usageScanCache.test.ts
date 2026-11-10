@@ -231,7 +231,10 @@ describe("scan cache round trip", () => {
       expect(restored.get("/clean-codex.jsonl")).toEqual({
         ...cleanCodex,
         size: version >= 8 ? cleanCodex.size : -1,
-        position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+        position:
+          version >= 11
+            ? cleanCodex.position
+            : { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
       });
       expect(restored.get("/gone-pi.jsonl")).toEqual(
         version >= 6
