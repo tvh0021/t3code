@@ -355,9 +355,29 @@ describe("parseCodexLine", () => {
     expect(
       parseCodexLine(counted(counters(100, 20), counters(200, 40)), state)?.totals.outputTokens,
     ).toBe(20);
-    // Records explained by an earlier snapshot cannot bridge a later gap.
+    // Records explained by an earlier snapshot cannot bridge a later gap, which is billed whole.
     parseCodexLine(usageRecord(counters(10, 2)), state);
-    expect(parseCodexLine(counted(counters(10, 2), counters(340, 65)), state)).toBeNull();
+    expect(
+      parseCodexRecords(counted(counters(10, 2), counters(340, 65)), state).map(
+        (record) => record.totals.outputTokens,
+      ),
+    ).toEqual([23, 2]);
+    expect(state.malformedRecords).toBe(0);
+  });
+
+  it("bills requests a turn never reported, and flags a gap that is not whole requests", () => {
+    const state = initialCodexScanState();
+    parseCodexLine(turnContext, state);
+    parseCodexLine(counted(counters(100, 20), counters(100, 20)), state);
+    // Two tool-call requests ended without a snapshot; only the last is in `last_token_usage`.
+    expect(
+      parseCodexRecords(counted(counters(50, 5), counters(250, 40)), state).map((record) =>
+        totalTokens(record.totals),
+      ),
+    ).toEqual([115, 55]);
+    expect(state.malformedRecords).toBe(0);
+    // Input without output cannot be a request.
+    expect(parseCodexLine(counted(counters(50, 5), counters(351, 45)), state)).toBeNull();
     expect(state.malformedRecords).toBe(1);
   });
 
@@ -968,6 +988,46 @@ describe("parseCodexLine", () => {
         processed: [first, copied, afterBurst, next],
         skipped: codexUsageFormat.readMalformedRecords?.(state),
       }).toEqual({ processed: [120, 0, 120, 35], skipped: 0 });
+    });
+
+    it("does not bill the parent's totals a truncated copied burst leaves before the first request", () => {
+      const state = initialCodexScanState();
+      const forkInstant = "2026-08-01T05:00:00.000Z";
+      const billed = [
+        meta({ id: "child", timestamp: forkInstant, forkedFromId: "parent" }),
+        stamped(forkInstant, turnContext),
+        stamped("2026-08-01T05:00:00.001Z", counted(counters(100, 10), counters(100, 10))),
+        // A re-emitted copied snapshot before the first own request is stale, not an own request.
+        stamped("2026-08-01T05:00:03.000Z", counted(counters(100, 10), counters(100, 10))),
+        stamped("2026-08-01T05:00:06.000Z", counted(counters(50, 5), counters(5000, 500))),
+        // Past the inherited prefix, an unreported request is the child's own.
+        stamped("2026-08-01T05:00:12.000Z", counted(counters(50, 5), counters(5150, 515))),
+      ].flatMap((line) => parseCodexRecords(line, state));
+
+      expect({
+        processed: billed.map((record) => totalTokens(record.totals)),
+        skipped: codexUsageFormat.readMalformedRecords?.(state),
+      }).toEqual({ processed: [55, 110, 55], skipped: 0 });
+    });
+
+    it("ends the inherited prefix at the first own snapshot even when its request is malformed", () => {
+      const state = initialCodexScanState();
+      const forkInstant = "2026-08-01T05:00:00.000Z";
+      const billed = [
+        meta({ id: "child", timestamp: forkInstant, forkedFromId: "parent" }),
+        stamped(forkInstant, turnContext),
+        stamped("2026-08-01T05:00:00.001Z", counted(counters(100, 10), counters(100, 10))),
+        stamped(
+          "2026-08-01T05:00:06.000Z",
+          counted({ ...counters(50, 5), total_tokens: 99 }, counters(5000, 500)),
+        ),
+        stamped("2026-08-01T05:00:12.000Z", counted(counters(50, 5), counters(5150, 515))),
+      ].flatMap((line) => parseCodexRecords(line, state));
+
+      expect({
+        processed: billed.map((record) => totalTokens(record.totals)),
+        skipped: codexUsageFormat.readMalformedRecords?.(state),
+      }).toEqual({ processed: [110, 55], skipped: 1 });
     });
 
     it("bills the child's first request when its turn is interrupted before any snapshot", () => {

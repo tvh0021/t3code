@@ -138,6 +138,9 @@ export const CodexScanState = Schema.Struct({
   turnId: Schema.mutableKey(Schema.String),
   sawThreadSettings: Schema.mutableKey(Schema.Boolean),
   suppressingForkCopies: Schema.mutableKey(Schema.Boolean),
+  // A fork's counters start at its parent's totals, which the parent already bills. Set until its
+  // first own snapshot.
+  inheritsParentUsage: Schema.mutableKey(Schema.optionalKey(Schema.Boolean)),
   forkCopyAnchorMs: Schema.mutableKey(Schema.Finite),
 });
 export type CodexScanState = typeof CodexScanState.Type;
@@ -228,6 +231,7 @@ function parseCodexRecord(
     const metaTimestampMs = parseTimestampMs(record["timestamp"]);
     if (metaTimestampMs !== null && isForkedSessionMeta(payloadRecord)) {
       state.suppressingForkCopies = true;
+      state.inheritsParentUsage = true;
       state.forkCopyAnchorMs = metaTimestampMs;
     }
     return [];
@@ -292,9 +296,18 @@ function parseCodexRecord(
   }
 
   const previous = state.lastCumulativeUsage;
+  const inheritsParentUsage = state.inheritsParentUsage === true;
   const pending = state.unreportedRequests;
   // A valid snapshot remains the next baseline even when its paired request is malformed.
   if (cumulative !== null) rebaseCodexUsage(state, cumulative);
+  // A re-emitted baseline is stale; any other own snapshot ends the inherited prefix, however it parses.
+  if (
+    inheritsParentUsage &&
+    cumulative !== null &&
+    !(previous !== null && CODEX_USAGE_FIELDS.every((key) => cumulative[key] === previous[key]))
+  ) {
+    delete state.inheritsParentUsage;
+  }
   if (last === null || (hasCumulative && cumulative === null)) {
     state.malformedRecords += 1;
     return [];
@@ -341,11 +354,35 @@ function parseCodexRecord(
         : CODEX_USAGE_FIELDS.every((key) => cumulative[key] - previous[key] === last[key]);
     if (!restarted && !reconciled) {
       const bridged = unreportedRequests(previous, cumulative, last, pending);
-      if (bridged === null) {
-        state.malformedRecords += 1;
-        return [];
+      if (bridged !== null) {
+        unreported = bridged;
+      } else {
+        // Codex reports only the last request of a multi-request turn, and a copied fork burst can
+        // stop short of the parent's totals. A gap with both input and output tokens is whole
+        // requests; anything else is a counter disagreement.
+        const gap =
+          previous === null
+            ? null
+            : readCodexTokenUsage(
+                Object.fromEntries(
+                  CODEX_USAGE_FIELDS.map((key) => [
+                    key,
+                    cumulative[key] - previous[key] - last[key],
+                  ]),
+                ),
+              );
+        if (
+          gap === null ||
+          gap.total_tokens !== gap.input_tokens + gap.output_tokens ||
+          (gap.input_tokens === 0) !== (gap.output_tokens === 0)
+        ) {
+          state.malformedRecords += 1;
+          return [];
+        }
+        if (!inheritsParentUsage && gap.input_tokens > 0) {
+          unreported = [{ ...codexAttribution(state, timestampMs), usage: gap }];
+        }
       }
-      unreported = bridged;
     }
     if (restarted) state.sequenceStartSignature = sequenceStart;
   } else {

@@ -2458,7 +2458,7 @@ describe("UsageService", () => {
             type: "event_msg",
             payload: { type: "thread_settings_applied", thread_settings: { service_tier } },
           });
-        const bad = counted(10, 2, 130, 28);
+        const bad = counted(50, 2, 130, 28);
         // Cross the reader's projection threshold so cumulative fields must survive selection.
         const stale = counted(20, 5, 100, 20).replace(
           '"payload":',
@@ -2610,7 +2610,7 @@ describe("UsageService", () => {
       }).pipe(Effect.scoped),
   );
 
-  it.live.each([4, 5, 6, 7, 8, 10])(
+  it.live.each([4, 5, 6, 7, 8, 10, 11])(
     "upgrades a v%s cache: reparses live Codex usage, keeps deleted rollouts and the old file",
     (version) =>
       Effect.gen(function* () {
@@ -2710,7 +2710,7 @@ describe("UsageService", () => {
             60 + 20 * (version === 4 ? 1 : 2),
           );
           yield* upgraded.awaitPersisted;
-          assert.strictEqual(SCAN_CACHE_FILE_NAME, "usage-scan-cache-v11.json");
+          assert.strictEqual(SCAN_CACHE_FILE_NAME, "usage-scan-cache-v12.json");
           assert.strictEqual(
             yield* Effect.promise(() => NodeFSP.readFile(legacyPath, "utf8")),
             legacy,
