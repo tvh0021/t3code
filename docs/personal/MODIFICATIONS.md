@@ -62,6 +62,13 @@ model ID contains `flash` and 50 otherwise (`abacusMaxTurnSteps`).
 `requestTimeoutMs` defaults to 600 s per request. Stop interrupts the active
 request or command. A final turn update clears the running status.
 
+The adapter is also an HTTP MCP client of T3's own server (`abacusT3Mcp.ts`),
+using the thread's credential from `McpProviderSessions`. Every request carries
+`delegate_task`, `orchestrator_capabilities`, `task_status`, `task_cancel` and
+`t3_thread_read`; the system prompt names the other T3 tools, which the model
+loads with `load_t3_tools` before calling them. Sending all ~80 schemas on each
+request of a 200-call loop would spend credits on tools the turn never uses.
+
 **Decisions.**
 
 - 0.7.4 (CHATLLM-USAGE-001): `AbacusAdapterV2` overwrote usage after each
@@ -83,6 +90,9 @@ request or command. A final turn update clears the running status.
   The loop now runs in a fiber forked into the session scope, as
   `ClaudeAdapterV2` does, and the turn ends with a final `provider_turn.updated`
   so the projection shows it finished.
+- Unreleased (CHATLLM-MCP-001): the adapter offered only its five built-in
+  tools, so a ChatLLM model asked to delegate ran `t3 thread start` and made an
+  unlinked top-level thread. It now reaches T3's MCP tools as above.
 - 0.13.0 (CHATLLM-PDF-001): `read_file` decoded PDFs as UTF-8 and any
   attachment failed the turn. PDFs now go through upstream's document-text
   worker with a pdf.js branch. Uploaded PDFs still get no `.txt` sidecar, so

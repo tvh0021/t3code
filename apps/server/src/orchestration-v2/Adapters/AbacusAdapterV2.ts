@@ -12,6 +12,7 @@ import {
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ProviderTurn,
   type ProviderInstanceId,
+  type ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -31,11 +32,25 @@ import {
   type ProviderAdapterDriverCreateInput,
 } from "@t3tools/provider-core/server/adapterDriver";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import type { McpProviderSessionConfig } from "@t3tools/provider-core/server/mcpSession";
+import { t3OrchestrationInstructions } from "@t3tools/provider-core/server/orchestrationInstructions";
+import { mcpToolResultOutput } from "@t3tools/shared/toolOutput";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import { appendProviderTurnUsage } from "../../usage/providerTurnUsageWriter.ts";
+import {
+  ABACUS_DIRECT_T3_TOOLS,
+  LOAD_T3_TOOLS,
+  LOAD_T3_TOOLS_DEFINITION,
+  makeT3McpClient,
+  t3ToolDefinition,
+  t3ToolResultText,
+  type T3McpClient,
+  type T3McpTool,
+} from "./abacusT3Mcp.ts";
 
 const ABACUS_PROVIDER = ProviderDriverKind.make("abacus");
 const decodeAbacusSettings = Schema.decodeSync(AbacusSettings);
@@ -182,6 +197,32 @@ export const ABACUS_AGENT_TOOLS = [
   },
 ] as const;
 
+const BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...ABACUS_AGENT_TOOLS.map((tool) => tool.function.name),
+  LOAD_T3_TOOLS,
+]);
+
+interface T3Mcp {
+  readonly key: string;
+  readonly client: T3McpClient;
+  readonly tools: ReadonlyMap<string, T3McpTool>;
+}
+
+function loadT3Tools(
+  tools: ReadonlyMap<string, T3McpTool>,
+  loaded: Set<string>,
+  names: unknown,
+): string {
+  const requested = Array.isArray(names) ? names.filter((name) => typeof name === "string") : [];
+  const found = requested.filter((name) => tools.has(name));
+  const missing = requested.filter((name) => !tools.has(name));
+  for (const name of found) loaded.add(name);
+  return [
+    found.length === 0 ? "Loaded no tools." : `Loaded: ${found.join(", ")}.`,
+    ...(missing.length === 0 ? [] : [`Unknown T3 Code tools: ${missing.join(", ")}.`]),
+  ].join(" ");
+}
+
 const DANGEROUS_PATTERNS: ReadonlyArray<RegExp> = [
   /\bsudo\b/i,
   /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+[/~]/i,
@@ -260,7 +301,23 @@ export function truncateToolOutput(output: string): string {
   return output;
 }
 
-function buildAbacusSystemPrompt(workspaceDir: string, model: string): string {
+function t3ToolsPrompt(tools: ReadonlyMap<string, T3McpTool>): string {
+  const direct = [...tools.keys()].filter((name) => ABACUS_DIRECT_T3_TOOLS.has(name));
+  const deferred = [...tools.keys()].filter((name) => !ABACUS_DIRECT_T3_TOOLS.has(name));
+  return `
+
+## T3 Code tools
+
+You can call these T3 Code tools now: ${direct.join(", ")}. Load any other T3 Code tool with ${LOAD_T3_TOOLS} before calling it: ${deferred.join(", ")}.
+Use these tools, never the \`t3\` CLI, to start, message, read, or wait on threads.
+${t3OrchestrationInstructions()}`;
+}
+
+function buildAbacusSystemPrompt(
+  workspaceDir: string,
+  model: string,
+  t3Tools: ReadonlyMap<string, T3McpTool> | undefined,
+): string {
   return `You are an expert AI software engineering agent working in T3 Code on macOS.
 The active workspace directory is: ${workspaceDir}
 
@@ -279,7 +336,9 @@ Rules and Guidelines:
 5. If a command or file read produces extensive output, rely on the summary and inspect specific sections as needed.
 6. When your work is complete, provide a concise summary of the changes made and any verification performed.
 
-<runtime_info>In case you're asked: you are running in T3 Code through the ChatLLM harness, as ${model}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>`;
+<runtime_info>In case you're asked: you are running in T3 Code through the ChatLLM harness, as ${model}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>${
+    t3Tools === undefined || t3Tools.size === 0 ? "" : t3ToolsPrompt(t3Tools)
+  }`;
 }
 
 export function handleReadFile(
@@ -552,6 +611,10 @@ export interface AbacusAdapterV2Options {
     | undefined;
   readonly fetch?: Fetch;
   readonly requestTimeoutMs?: number;
+  /** The thread's T3 MCP credential; T3 tools are offered only when it resolves. */
+  readonly readMcpSession?:
+    | ((threadId: ThreadId) => Effect.Effect<McpProviderSessionConfig | undefined>)
+    | undefined;
 }
 
 interface ActiveTurn {
@@ -589,6 +652,47 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
           turnId: OrchestrationV2ProviderTurn["id"];
           items: Array<{ role: string; content?: string | null }>;
         }> = [];
+        // One client per credential: the server rotates a thread's token when its access changes.
+        let t3Mcp: T3Mcp | undefined;
+        const loadedT3Tools = new Set<string>();
+        const resolveT3Mcp = Effect.fnUntraced(function* (threadId: ThreadId, signal: AbortSignal) {
+          const config =
+            options.readMcpSession === undefined
+              ? undefined
+              : yield* options.readMcpSession(threadId);
+          if (config === undefined) {
+            t3Mcp = undefined;
+            return undefined;
+          }
+          const key = `${config.endpoint}\n${config.authorizationHeader}`;
+          if (t3Mcp?.key === key) return t3Mcp;
+          const client = makeT3McpClient({
+            endpoint: config.endpoint,
+            authorizationHeader: config.authorizationHeader,
+            fetch: fetchFn,
+          });
+          const listed = yield* Effect.tryPromise({
+            try: () => client.listTools(AbortSignal.any([signal, AbortSignal.timeout(10_000)])),
+            catch: (cause) => cause,
+          }).pipe(
+            Effect.tapError((cause) =>
+              Effect.logWarning("ChatLLM turn runs without T3 tools", { cause: String(cause) }),
+            ),
+            Effect.option,
+          );
+          t3Mcp = Option.isNone(listed)
+            ? undefined
+            : {
+                key,
+                client,
+                tools: new Map(
+                  listed.value
+                    .filter((tool) => !BUILTIN_TOOL_NAMES.has(tool.name))
+                    .map((tool) => [tool.name, tool]),
+                ),
+              };
+          return t3Mcp;
+        });
 
         const now = yield* DateTime.now;
         const providerSession: OrchestrationV2ProviderSession = {
@@ -709,16 +813,9 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
           };
           yield* Ref.set(activeTurnRef, active);
 
+          // The forked turn fills this in once T3 tool discovery settles.
+          if (messages[0]?.role !== "system") messages.unshift({ role: "system", content: "" });
           const initialMessageCount = messages.length;
-          if (messages.length === 0) {
-            messages.push({
-              role: "system",
-              content: buildAbacusSystemPrompt(
-                turnInput.runtimePolicy.cwd ?? process.cwd(),
-                turnInput.modelSelection.model || options.defaultModel,
-              ),
-            });
-          }
           messages.push({ role: "user", content: userText });
 
           const currentTurnItems: Array<{ role: string; content?: string | null }> = [
@@ -728,14 +825,27 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
           // The loop runs in the session scope so startTurn returns at once.
           // Holding the thread's effect lane for the whole turn would starve the
           // interrupt and steer effects queued behind it.
-          yield* runTurnLoop(
-            turnInput,
-            providerTurn,
-            syntheticNativeTurnId,
-            active,
-            currentTurnItems,
-            initialMessageCount,
-          ).pipe(
+          yield* Effect.gen(function* () {
+            const t3 = yield* resolveT3Mcp(turnInput.threadId, controller.signal);
+            // Rebuilt each turn so T3 tools appear or disappear with the thread's credential.
+            messages[0] = {
+              role: "system",
+              content: buildAbacusSystemPrompt(
+                turnInput.runtimePolicy.cwd ?? process.cwd(),
+                turnInput.modelSelection.model || options.defaultModel,
+                t3?.tools,
+              ),
+            };
+            yield* runTurnLoop(
+              turnInput,
+              providerTurn,
+              syntheticNativeTurnId,
+              active,
+              currentTurnItems,
+              initialMessageCount,
+              t3,
+            );
+          }).pipe(
             Effect.catchCause((cause) => {
               messages.length = initialMessageCount;
               return finishTurn({
@@ -802,6 +912,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
           active: ActiveTurn,
           currentTurnItems: Array<{ role: string; content?: string | null }>,
           initialMessageCount: number,
+          t3: T3Mcp | undefined,
         ) {
           const { controller } = active;
           const providerTurnId = providerTurn.id;
@@ -841,6 +952,20 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
               `item-abacus-assistant-${syntheticNativeTurnId}-${stepCount}`,
             );
 
+            const requestTools =
+              t3 === undefined
+                ? ABACUS_AGENT_TOOLS
+                : [
+                    ...ABACUS_AGENT_TOOLS,
+                    LOAD_T3_TOOLS_DEFINITION,
+                    ...[...t3.tools.values()]
+                      .filter(
+                        (tool) =>
+                          ABACUS_DIRECT_T3_TOOLS.has(tool.name) || loadedT3Tools.has(tool.name),
+                      )
+                      .map(t3ToolDefinition),
+                  ];
+
             // Per request: a long tool loop may run well past one request's budget.
             const timeout = setTimeout(
               () => controller.abort("timeout"),
@@ -859,7 +984,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                     messages,
                     stream: true,
                     stream_options: { include_usage: true },
-                    tools: ABACUS_AGENT_TOOLS,
+                    tools: requestTools,
                     tool_choice: "auto",
                   }),
                   signal: controller.signal,
@@ -1146,6 +1271,8 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
               }
 
               let rawOutput = "";
+              const t3Tool = t3?.tools.get(tc.function.name);
+              let t3Result: unknown;
               try {
                 switch (tc.function.name) {
                   case "read_file":
@@ -1182,8 +1309,33 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                     );
                     active.currentProcess = undefined;
                     break;
+                  case LOAD_T3_TOOLS:
+                    rawOutput =
+                      t3 === undefined
+                        ? `Error: Unknown tool '${tc.function.name}'`
+                        : loadT3Tools(t3.tools, loadedT3Tools, toolArgs.names);
+                    break;
                   default:
-                    rawOutput = `Error: Unknown tool '${tc.function.name}'`;
+                    if (t3 === undefined || t3Tool === undefined) {
+                      rawOutput = `Error: Unknown tool '${tc.function.name}'`;
+                      break;
+                    }
+                    // A gateway may pass a call to an unloaded tool through; run it and keep it loaded.
+                    loadedT3Tools.add(t3Tool.name);
+                    const callExit = yield* Effect.tryPromise({
+                      try: () => t3.client.callTool(t3Tool.name, toolArgs, controller.signal),
+                      catch: (cause) => cause,
+                    }).pipe(Effect.exit);
+                    if (callExit._tag === "Success") {
+                      t3Result = callExit.value;
+                      const { text, isError } = t3ToolResultText(t3Result);
+                      rawOutput = isError ? `Error: ${text}` : text;
+                    } else {
+                      const cause = Cause.squash(callExit.cause);
+                      rawOutput = `Error executing tool '${tc.function.name}': ${
+                        cause instanceof Error ? cause.message : String(cause)
+                      }`;
+                    }
                 }
               } catch (err: unknown) {
                 rawOutput = `Error executing tool '${tc.function.name}': ${
@@ -1236,14 +1388,19 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                     parentItemId: null,
                     ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 2,
                     status: "completed",
-                    title: tc.function.name,
+                    // T3 tools render from their qualified name, as on other providers.
+                    title: t3Tool === undefined ? tc.function.name : null,
                     startedAt: toolNow,
                     completedAt: toolNow,
                     updatedAt: toolNow,
                     type: "dynamic_tool",
-                    toolName: tc.function.name,
+                    toolName:
+                      t3Tool === undefined ? tc.function.name : `mcp__t3-code__${t3Tool.name}`,
                     input: toolArgs,
-                    output: truncated,
+                    output:
+                      t3Result !== null && typeof t3Result === "object"
+                        ? mcpToolResultOutput(t3Result)
+                        : truncated,
                   },
                 });
               }
@@ -1434,6 +1591,7 @@ export const AbacusAdapterV2Driver: ProviderAdapterDriver<
     input: ProviderAdapterDriverCreateInput<AbacusSettings>,
   ) {
     const host = yield* Effect.serviceOption(ProviderHost.ProviderHost);
+    const mcpSessions = yield* Effect.serviceOption(McpProviderSessions.McpProviderSessions);
     const apiKey =
       input.environment.find((entry) => entry.name === "ABACUS_API_KEY")?.value.trim() ?? "";
     return yield* makeAbacusAdapterV2({
@@ -1443,6 +1601,7 @@ export const AbacusAdapterV2Driver: ProviderAdapterDriver<
       defaultModel: "route-llm",
       stateDir: Option.isSome(host) ? host.value.paths.stateDir : undefined,
       attachments: Option.isSome(host) ? host.value : undefined,
+      readMcpSession: Option.isSome(mcpSessions) ? mcpSessions.value.read : undefined,
     });
   }),
 };
