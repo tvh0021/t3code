@@ -37,6 +37,7 @@ import {
   readFileTool,
   truncateToolOutput,
 } from "./AbacusAdapterV2.ts";
+import { makeT3McpClient } from "./abacusT3Mcp.ts";
 import { pdfFixture } from "../../testUtils/pdfFixture.ts";
 
 const encoder = new TextEncoder();
@@ -241,6 +242,44 @@ describe("AbacusAdapterV2 unit helpers", () => {
     expect(abacusMaxTurnSteps("gemini-3.8-flash")).toBe(200);
     expect(abacusMaxTurnSteps("claude-opus-5-5")).toBe(50);
     expect(abacusMaxTurnSteps("route-llm")).toBe(50);
+  });
+
+  it("starts a new MCP session when the server forgets the old one", async () => {
+    const seen: Array<{ method: string; session: string | null }> = [];
+    let sessions = 0;
+    let forgotten = false;
+    const client = makeT3McpClient({
+      endpoint: "http://t3.test/mcp",
+      authorizationHeader: "Bearer t3-token",
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as { id?: number; method: string };
+        const session = new Headers(init?.headers).get("mcp-session-id");
+        seen.push({ method: body.method, session });
+        if (body.method === "initialize") {
+          sessions += 1;
+          return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: {} }), {
+            headers: { "content-type": "application/json", "mcp-session-id": `s${sessions}` },
+          });
+        }
+        if (body.id === undefined) return new Response(null, { status: 202 });
+        if (session === "s1" && forgotten)
+          return new Response("session not found", { status: 404 });
+        return new Response(
+          JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [], session } }),
+          { headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    await client.callTool("task_status", {});
+    forgotten = true;
+    // A 404 can replace the response of a call that already ran, so the call is not replayed.
+    await expect(client.callTool("delegate_task", {})).rejects.toThrow("may have run");
+    expect(await client.callTool("task_status", {})).toMatchObject({ session: "s2" });
+    expect(seen.filter((entry) => entry.method === "tools/call")).toHaveLength(3);
+    expect(seen.filter((entry) => entry.method === "initialize").map((e) => e.session)).toEqual([
+      null,
+      null,
+    ]);
   });
 
   it("truncates large tool outputs", () => {
@@ -674,6 +713,191 @@ describe("AbacusAdapterV2 session and turn execution", () => {
     }),
   );
 
+  it.effect("delegates through the thread's T3 MCP session and loads deferred T3 tools", () =>
+    Effect.gen(function* () {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-t3-mcp-"));
+      const mcpEndpoint = "http://t3.test/mcp";
+      const routeRequests: Array<Record<string, unknown>> = [];
+      const mcpCalls: Array<{ method: string; params: any; headers: Headers }> = [];
+      const tool = (name: string) => ({
+        name,
+        description: `${name} description`,
+        inputSchema: { type: "object", properties: { task: { type: "string" } } },
+      });
+      const fetch: typeof globalThis.fetch = async (input, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, any>;
+        if (String(input) === mcpEndpoint) {
+          mcpCalls.push({
+            method: body.method,
+            params: body.params,
+            headers: new Headers(init?.headers),
+          });
+          const result =
+            body.method === "initialize"
+              ? { protocolVersion: "2025-06-18", capabilities: {} }
+              : body.method === "tools/list"
+                ? { tools: [tool("delegate_task"), tool("t3_thread_wait"), tool("read_file")] }
+                : body.method === "tools/call"
+                  ? {
+                      content: [
+                        { type: "text", text: "Child started. Completion wakes this thread." },
+                      ],
+                      structuredContent: { taskId: "task-1" },
+                    }
+                  : undefined;
+          return body.id === undefined
+            ? new Response(null, { status: 202 })
+            : new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
+                headers: { "content-type": "application/json", "mcp-session-id": "mcp-1" },
+              });
+        }
+        routeRequests.push(body);
+        if (routeRequests.length === 1) {
+          const call = (id: string, name: string, args: unknown) =>
+            `{"index":${id === "call_load" ? 0 : 1},"id":"${id}","type":"function","function":{"name":"${name}","arguments":${JSON.stringify(JSON.stringify(args))}}}`;
+          return sseResponse([
+            `data: {"choices":[{"delta":{"tool_calls":[${call("call_load", "load_t3_tools", { names: ["t3_thread_wait", "nope"] })},${call("call_delegate", "delegate_task", { task: "review" })}]},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n`,
+          ]);
+        }
+        return sseResponse([
+          'data: {"choices":[{"delta":{"content":"Delegated."},"finish_reason":"stop"}]}\n\n',
+          "data: [DONE]\n\n",
+        ]);
+      };
+
+      const instanceId = ProviderInstanceId.make("abacus-mcp-test");
+      const threadId = ThreadId.make("thread-mcp");
+      const modelSelection = { instanceId, model: "route-llm" } as const;
+      const runtimePolicy = {
+        cwd: tempDir,
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+      };
+      const adapter = yield* makeAbacusAdapterV2({
+        instanceId,
+        apiBaseUrl: "https://example.test/v1/",
+        apiKey: "secret-key",
+        defaultModel: "route-llm",
+        fetch,
+        readMcpSession: (requested) =>
+          Effect.succeed(
+            requested === threadId
+              ? {
+                  environmentId: "env-1" as never,
+                  threadId,
+                  providerSessionId: "mcp-credential",
+                  providerInstanceId: instanceId,
+                  endpoint: mcpEndpoint,
+                  authorizationHeader: "Bearer t3-token",
+                  browserToolsAvailable: false,
+                }
+              : undefined,
+          ),
+      });
+      const session = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("session-mcp"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* session.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      const turnEvents = yield* collectTurnEvents(session);
+      yield* session.startTurn({
+        threadId,
+        runId: RunId.make("run-mcp"),
+        attemptId: RunAttemptId.make("attempt-mcp"),
+        rootNodeId: NodeId.make("node-mcp"),
+        appThread: {
+          id: threadId,
+          createdBy: "user",
+          creationSource: "web",
+          projectId: ProjectId.make("project-1"),
+          title: "MCP",
+          providerInstanceId: instanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: tempDir,
+          activeProviderThreadId: providerThread.id,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+        providerThread,
+        runtimePolicy,
+        modelSelection,
+        runOrdinal: 1,
+        providerTurnOrdinal: 1,
+        message: {
+          messageId: MessageId.make("msg-mcp"),
+          text: "Delegate a review.",
+          attachments: [],
+          createdBy: "user",
+          creationSource: "web",
+        },
+      });
+      const events = yield* Fiber.join(turnEvents);
+
+      const toolNames = (request: Record<string, unknown> | undefined) =>
+        ((request?.tools ?? []) as Array<{ function: { name: string } }>).map(
+          (t) => t.function.name,
+        );
+      // A T3 tool named like a built-in never shadows it.
+      expect(toolNames(routeRequests[0]).filter((name) => name === "read_file")).toHaveLength(1);
+      expect(toolNames(routeRequests[0])).toEqual(
+        expect.arrayContaining(["load_t3_tools", "delegate_task"]),
+      );
+      expect(toolNames(routeRequests[0])).not.toContain("t3_thread_wait");
+      expect(toolNames(routeRequests[1])).toContain("t3_thread_wait");
+      const system = (
+        (routeRequests[0]?.messages ?? []) as Array<{ role: string; content: string }>
+      )[0];
+      expect(system?.role).toBe("system");
+      expect(system?.content).toContain("load_t3_tools before calling it: t3_thread_wait");
+
+      const call = mcpCalls.find((entry) => entry.method === "tools/call");
+      expect(call?.params).toEqual({ name: "delegate_task", arguments: { task: "review" } });
+      expect(call?.headers.get("authorization")).toBe("Bearer t3-token");
+      expect(call?.headers.get("mcp-session-id")).toBe("mcp-1");
+      const toolMessages = (
+        (routeRequests[1]?.messages ?? []) as Array<Record<string, unknown>>
+      ).filter((message) => message.role === "tool");
+      expect(toolMessages).toEqual([
+        {
+          role: "tool",
+          tool_call_id: "call_load",
+          content: "Loaded: t3_thread_wait. Unknown T3 Code tools: nope.",
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_delegate",
+          content: "Child started. Completion wakes this thread.",
+        },
+      ]);
+      const delegateItem = Array.from(events).find(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "dynamic_tool" &&
+          event.turnItem.toolName === "mcp__t3-code__delegate_task",
+      );
+      expect(delegateItem).toBeDefined();
+
+      NodeFS.rmSync(tempDir, { recursive: true, force: true });
+    }),
+  );
+
   it.effect("ends a turn visibly at the tool-call limit and keeps history answerable", () =>
     Effect.gen(function* () {
       const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "abacus-step-limit-"));
@@ -793,112 +1017,132 @@ describe("AbacusAdapterV2 session and turn execution", () => {
       NodeFS.rmSync(tempDir, { recursive: true, force: true });
     }),
   );
-  it.effect("interrupting a turn mid-request ends it without waiting for the request", () =>
-    Effect.gen(function* () {
-      let requestStarted = () => {};
-      const requestPending = new Promise<void>((resolve) => {
-        requestStarted = resolve;
-      });
-      const fetch: typeof globalThis.fetch = (_input, init) =>
-        new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () =>
-            reject(new DOMException("aborted", "AbortError")),
-          );
-          requestStarted();
+  // T3 tool discovery runs before the first request, so Stop must reach it too.
+  it.effect.each(["request", "MCP discovery"] as const)(
+    "interrupting a turn mid-%s ends it without waiting for it",
+    (stage) =>
+      Effect.gen(function* () {
+        let requestStarted = () => {};
+        const requestPending = new Promise<void>((resolve) => {
+          requestStarted = resolve;
         });
+        let firstSignal: AbortSignal | undefined;
+        const fetch: typeof globalThis.fetch = (_input, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")),
+            );
+            firstSignal ??= init?.signal ?? undefined;
+            requestStarted();
+          });
 
-      const instanceId = ProviderInstanceId.make("abacus-interrupt-test");
-      const threadId = ThreadId.make("thread-interrupt");
-      const modelSelection = { instanceId, model: "route-llm" } as const;
-      const runtimePolicy = {
-        cwd: process.cwd(),
-        runtimeMode: "full-access" as const,
-        interactionMode: "default" as const,
-      };
-      const adapter = yield* makeAbacusAdapterV2({
-        instanceId,
-        apiBaseUrl: "https://example.test/v1/",
-        apiKey: "secret-key",
-        defaultModel: "route-llm",
-        fetch,
-      });
-      const session = yield* adapter.openSession({
-        threadId,
-        providerSessionId: ProviderSessionId.make("session-interrupt"),
-        modelSelection,
-        runtimePolicy,
-      });
-      const providerThread = yield* session.ensureThread({
-        threadId,
-        modelSelection,
-        runtimePolicy,
-      });
-      const now = yield* DateTime.now;
-      const appThread: OrchestrationV2AppThread = {
-        id: threadId,
-        createdBy: "user",
-        creationSource: "web",
-        projectId: ProjectId.make("project-1"),
-        title: "Interrupt",
-        providerInstanceId: instanceId,
-        modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: process.cwd(),
-        activeProviderThreadId: providerThread.id,
-        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
-        forkedFrom: null,
-        createdAt: now,
-        updatedAt: now,
-        archivedAt: null,
-        settledOverride: null,
-        settledAt: null,
-        lastVisitedAt: null,
-        deletedAt: null,
-      };
-
-      const turnEvents = yield* collectTurnEvents(session);
-      // Must return while the request is still pending; a blocking startTurn
-      // holds the thread's effect lane so the interrupt is never delivered.
-      yield* session.startTurn({
-        threadId,
-        runId: RunId.make("run-1"),
-        attemptId: RunAttemptId.make("attempt-1"),
-        rootNodeId: NodeId.make("node-1"),
-        appThread,
-        providerThread,
-        runtimePolicy,
-        modelSelection,
-        runOrdinal: 1,
-        providerTurnOrdinal: 1,
-        message: {
-          messageId: MessageId.make("msg-1"),
-          text: "Hang forever.",
-          attachments: [],
+        const instanceId = ProviderInstanceId.make("abacus-interrupt-test");
+        const threadId = ThreadId.make("thread-interrupt");
+        const modelSelection = { instanceId, model: "route-llm" } as const;
+        const runtimePolicy = {
+          cwd: process.cwd(),
+          runtimeMode: "full-access" as const,
+          interactionMode: "default" as const,
+        };
+        const adapter = yield* makeAbacusAdapterV2({
+          instanceId,
+          apiBaseUrl: "https://example.test/v1/",
+          apiKey: "secret-key",
+          defaultModel: "route-llm",
+          fetch,
+          ...(stage === "MCP discovery"
+            ? {
+                readMcpSession: () =>
+                  Effect.succeed({
+                    environmentId: "env-1" as never,
+                    threadId,
+                    providerSessionId: "mcp-credential",
+                    providerInstanceId: instanceId,
+                    endpoint: "http://t3.test/mcp",
+                    authorizationHeader: "Bearer t3-token",
+                    browserToolsAvailable: false,
+                  }),
+              }
+            : {}),
+        });
+        const session = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("session-interrupt"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = yield* session.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const now = yield* DateTime.now;
+        const appThread: OrchestrationV2AppThread = {
+          id: threadId,
           createdBy: "user",
           creationSource: "web",
-        },
-      });
-      yield* Effect.promise(() => requestPending);
-      yield* session.interruptTurn({
-        providerThread,
-        providerTurnId: IdAllocator.derive.providerTurn({
-          driver: ProviderDriverKind.make("abacus"),
-          nativeTurnId: `${providerThread.id}:turn:1`,
-        }),
-      });
+          projectId: ProjectId.make("project-1"),
+          title: "Interrupt",
+          providerInstanceId: instanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: process.cwd(),
+          activeProviderThreadId: providerThread.id,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        };
 
-      const collected = [...(yield* Fiber.join(turnEvents))];
-      expect(collected.at(-1)).toMatchObject({ type: "turn.terminal", status: "interrupted" });
-      expect(
-        collected.some(
-          (event) =>
-            event.type === "provider_turn.updated" &&
-            event.providerTurn.status === "interrupted" &&
-            event.providerTurn.completedAt !== null,
-        ),
-      ).toBe(true);
-    }),
+        const turnEvents = yield* collectTurnEvents(session);
+        // Must return while the request is still pending; a blocking startTurn
+        // holds the thread's effect lane so the interrupt is never delivered.
+        yield* session.startTurn({
+          threadId,
+          runId: RunId.make("run-1"),
+          attemptId: RunAttemptId.make("attempt-1"),
+          rootNodeId: NodeId.make("node-1"),
+          appThread,
+          providerThread,
+          runtimePolicy,
+          modelSelection,
+          runOrdinal: 1,
+          providerTurnOrdinal: 1,
+          message: {
+            messageId: MessageId.make("msg-1"),
+            text: "Hang forever.",
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+          },
+        });
+        yield* Effect.promise(() => requestPending);
+        yield* session.interruptTurn({
+          providerThread,
+          providerTurnId: IdAllocator.derive.providerTurn({
+            driver: ProviderDriverKind.make("abacus"),
+            nativeTurnId: `${providerThread.id}:turn:1`,
+          }),
+        });
+
+        const collected = [...(yield* Fiber.join(turnEvents))];
+        expect(firstSignal?.reason).toBe("cancelled");
+        expect(collected.at(-1)).toMatchObject({ type: "turn.terminal", status: "interrupted" });
+        expect(
+          collected.some(
+            (event) =>
+              event.type === "provider_turn.updated" &&
+              event.providerTurn.status === "interrupted" &&
+              event.providerTurn.completedAt !== null,
+          ),
+        ).toBe(true);
+      }),
   );
 });
