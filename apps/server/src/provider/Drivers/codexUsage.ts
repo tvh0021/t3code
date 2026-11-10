@@ -342,10 +342,21 @@ function parseCodexRecord(
     if (!restarted && !reconciled) {
       const bridged = unreportedRequests(previous, cumulative, last, pending);
       if (bridged === null) {
-        state.malformedRecords += 1;
-        return [];
+        // Codex logs only a turn's last request, and a fork's copied history can stop short of the
+        // parent's totals. A gap of whole requests goes unbilled; only the reported one is certain.
+        const gap =
+          previous &&
+          readCodexTokenUsage(
+            Object.fromEntries(
+              CODEX_USAGE_FIELDS.map((key) => [key, cumulative[key] - previous[key] - last[key]]),
+            ),
+          );
+        if (!gap || gap.input_tokens * gap.output_tokens === 0) {
+          state.malformedRecords += 1;
+          return [];
+        }
       }
-      unreported = bridged;
+      unreported = bridged ?? [];
     }
     if (restarted) state.sequenceStartSignature = sequenceStart;
   } else {

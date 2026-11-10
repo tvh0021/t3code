@@ -355,9 +355,12 @@ describe("parseCodexLine", () => {
     expect(
       parseCodexLine(counted(counters(100, 20), counters(200, 40)), state)?.totals.outputTokens,
     ).toBe(20);
-    // Records explained by an earlier snapshot cannot bridge a later gap.
+    // Records explained by an earlier snapshot cannot bridge a later gap, which goes unbilled.
     parseCodexLine(usageRecord(counters(10, 2)), state);
-    expect(parseCodexLine(counted(counters(10, 2), counters(340, 65)), state)).toBeNull();
+    expect(
+      parseCodexLine(counted(counters(10, 2), counters(340, 65)), state)?.totals.outputTokens,
+    ).toBe(2);
+    expect(parseCodexLine(counted(counters(50, 2), counters(370, 67)), state)).toBeNull();
     expect(state.malformedRecords).toBe(1);
   });
 
