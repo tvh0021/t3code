@@ -25,6 +25,7 @@ import {
   ProviderInstanceId,
   ProviderSessionId,
   ThreadId,
+  type OrchestrationV2ProviderFailure,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2TurnItem,
   type OrchestrationV2UserInputQuestion,
@@ -521,17 +522,33 @@ const isProviderAdapterProtocolError = Schema.is(ProviderAdapter.ProviderAdapter
 const makePromptInactivityHarness = Effect.fnUntraced(function* (input: {
   readonly environment: (runtimeOrdinal: number) => Readonly<Record<string, string>>;
   readonly runtimeMode?: "full-access" | "approval-required";
+  /** The native error each prompt's outcome watch reports when the prompt stalls. */
+  readonly nativeErrors?: ReadonlyArray<OrchestrationV2ProviderFailure | undefined>;
 }) {
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const path = yield* Path.Path;
   const natives: Array<AcpSessionRuntime.AcpSessionRuntime["Service"]> = [];
   const instanceId = ProviderInstanceId.make("acp-prompt-inactivity");
+  let watches = 0;
+  const nativeErrors = input.nativeErrors;
   const adapter = yield* makeAcpAdapterV2({
     instanceId,
     flavor: {
       driver: ACP_TEST_DRIVER,
       capabilities: AcpProviderCapabilitiesV2,
       promptInactivityTimeout: "15 minutes",
+      ...(nativeErrors === undefined
+        ? {}
+        : {
+            watchPromptOutcome: () =>
+              Effect.sync(() => {
+                const stalled = nativeErrors[watches++];
+                return {
+                  settled: () => Effect.undefined,
+                  stalled: Effect.succeed(stalled),
+                };
+              }),
+          }),
       makeRuntime: makeMockRuntime({
         childProcessSpawner,
         mockAgentPath: yield* path.fromFileUrl(
@@ -1002,7 +1019,7 @@ describe("AcpAdapterV2", () => {
             Effect.sync(() => {
               watchedSessions.push(sessionId);
               const failed = watchedSessions.length === 1;
-              return () => Effect.succeed(failed ? quota : undefined);
+              return { settled: () => Effect.succeed(failed ? quota : undefined) };
             }),
           makeRuntime: makeMockRuntime({
             childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
@@ -4112,9 +4129,16 @@ describe("AcpAdapterV2", () => {
 
   it.effect("fails a prompt its agent leaves silent past the inactivity timeout", () =>
     Effect.gen(function* () {
+      const badGateway = {
+        class: "provider_error",
+        message: "Bad Gateway: Failed to connect to backend API",
+        code: "502 Bad Gateway",
+        retryable: true,
+      } as const;
       const harness = yield* makePromptInactivityHarness({
         environment: (runtimeOrdinal) =>
-          runtimeOrdinal === 1 ? { T3_ACP_HANG_PROMPT_FOREVER: "1" } : {},
+          runtimeOrdinal <= 2 ? { T3_ACP_HANG_PROMPT_FOREVER: "1" } : {},
+        nativeErrors: [undefined, badGateway],
       });
       const thought = (sessionId: string) => ({
         sessionId,
@@ -4138,11 +4162,26 @@ describe("AcpAdapterV2", () => {
 
       yield* TestClock.adjust("1 millis");
       yield* harness.startTurn(2);
-      const [silent, next] = yield* harness.terminals(2);
+      // The agent logged a native error before going silent, so the failure names it.
+      yield* TestClock.adjust("15 minutes");
+      yield* harness.startTurn(3);
+      const [silent, failedUpstream, next] = yield* harness.terminals(3);
       assert.equal(silent?.status, "failed");
-      assert.include(silent?.failure?.message, "15 minutes");
+      assert.deepEqual(silent?.failure, {
+        class: "provider_error",
+        message:
+          "acp-test sent nothing for 15 minutes, so T3 Code stopped the turn and restarted the agent. Send a message to continue.",
+        code: null,
+        retryable: null,
+      });
+      assert.equal(failedUpstream?.status, "failed");
+      assert.deepEqual(failedUpstream?.failure, {
+        ...badGateway,
+        message:
+          "acp-test hit an error (Bad Gateway: Failed to connect to backend API) and then sent nothing for 15 minutes, so T3 Code stopped the turn and restarted the agent. Send a message to continue.",
+      });
       assert.equal(next?.status, "completed");
-      assert.lengthOf(harness.natives, 2);
+      assert.lengthOf(harness.natives, 3);
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 

@@ -233,9 +233,17 @@ Opus 5.5 and Sonnet 5.5 at low, medium, and high effort next to Gemini.
 Built-in seeds fill the picker until live discovery answers.
 Native task results appear in the work trace without ending the prompt. ACP
 errors keep the native operation and error text.
+Work rows lead with Antigravity's own step description. A turn that sends
+nothing for 15 minutes ends with the last native error, when there is one.
 
 **Decisions.**
 
+- Unreleased: Antigravity hides its per-step description in `rawInput.toolAction`
+  or `toolSummary` for built-in tools and in `_meta.prompt` for MCP tools.
+  `antigravityToolLabel` reads it into the turn item's `intent`, which web and
+  mobile rows show first. The prompt watchdog reads the native conversation
+  database for the last step, so a silent Gemini 502 retry loop reports the
+  backend error instead of a generic timeout.
 - 0.14.0: newer Antigravity runtimes support the `t3-code` identity.
   `AntigravityAcpSupport.ts` adopts upstream's 1.5.1 version gate and keeps the
   Zed identity for older runtimes, including the pinned 1.4.5 release.

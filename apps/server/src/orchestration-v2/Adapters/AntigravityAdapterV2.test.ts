@@ -658,8 +658,32 @@ describe("AntigravityAdapterV2 html_render pages", () => {
                       kind: "other",
                       status: "in_progress",
                       rawInput,
+                      // The agent moves the model's progress line for an MCP call here.
+                      ...(toolCallId === "published"
+                        ? {
+                            _meta: {
+                              mcp: { tool: "html_render", server: "t3-code" },
+                              is_mcp_tool_call: true,
+                              prompt: "Charting the revenue",
+                            },
+                          }
+                        : {}),
                     });
                   }
+                  // Only the step label moves on; the call stays open.
+                  yield* send({
+                    sessionUpdate: "tool_call",
+                    toolCallId: "probe",
+                    title: "Running tool",
+                    kind: "other",
+                    status: "in_progress",
+                    rawInput: { toolAction: "Checking port 8768" },
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "probe",
+                    rawInput: { toolAction: "Waiting for port 8768" },
+                  });
                   yield* mcpSessions.recordHtmlRender(threadId, report, page("report"));
                   yield* mcpSessions.recordHtmlRender(threadId, failed, page("failed"));
                   yield* mcpSessions.recordHtmlRender(threadId, errored, page("error"));
@@ -812,28 +836,45 @@ describe("AntigravityAdapterV2 html_render pages", () => {
           toolName: item.toolName,
           page: htmlRenderFromToolItem(item),
           output: item.output,
+          intent: item.intent,
         };
       };
 
+      assert.deepEqual(
+        events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.nativeItemRef?.nativeId === "probe"
+            ? [[event.turnItem.status, event.turnItem.intent]]
+            : [],
+        ),
+        [
+          ["running", "Checking port 8768"],
+          ["running", "Waiting for port 8768"],
+          ["completed", "Waiting for port 8768"],
+        ],
+      );
       assert.deepEqual(tool("published"), {
+        intent: "Charting the revenue",
         status: "completed",
         toolName: "t3-code.html_render",
         page: page("replacement"),
         output: { htmlRender: page("replacement") },
       });
       assert.deepEqual(tool("unpublished"), {
+        intent: undefined,
         status: "completed",
         toolName: "t3-code.html_render",
         page: undefined,
         output: "Summary of unpublished",
       });
       assert.deepEqual(tool("failed"), {
+        intent: undefined,
         status: "failed",
         toolName: "t3-code.html_render",
         page: undefined,
         output: "Summary of failed",
       });
       assert.deepEqual(tool("error"), {
+        intent: undefined,
         status: "completed",
         toolName: "t3-code.html_render",
         page: undefined,
@@ -852,6 +893,7 @@ describe("AntigravityAdapterV2 html_render pages", () => {
       );
       for (const name of ["failed-retry", "error-retry"]) {
         assert.deepEqual(tool(name), {
+          intent: undefined,
           status: "completed",
           toolName: "t3-code.html_render",
           page: page(name),

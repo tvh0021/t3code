@@ -308,6 +308,11 @@ function checksFor(entry: WorkLogPresentationEntry) {
   return checks;
 }
 
+/** The agent's own description of a step; it leads the row, ahead of the command or path. */
+export function workEntryIntent(entry: WorkLogPresentationEntry): string | undefined {
+  return entry.structuredPayload?.intent?.trim() || undefined;
+}
+
 export function workEntryIndicatesToolFailure(entry: WorkLogPresentationEntry): boolean {
   return (checksFor(entry).failure ??= workEntryIndicatesToolFailureFromOutput(entry, true));
 }

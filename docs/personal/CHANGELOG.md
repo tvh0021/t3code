@@ -8,6 +8,8 @@ User-visible changes per release, newest first. Current behavior is in
 
 ### Unreleased
 
+- Issue: Antigravity turns that went silent after a backend error ended with a generic watchdog message → Fix: the message names the native error, such as `502 Bad Gateway`, and marks the turn retryable
+- Issue: Antigravity work rows showed only the tool or path, without the per-step description the Antigravity app shows → Fix: rows lead with Antigravity's step description and keep the tool or path as muted detail
 - Issue: ChatLLM's session cookie was saved in `settings.json` and sent unredacted to connected clients → Fix: store `sessionCookie` in the host's secret store and redact it over WebSocket
 
 ### 0.14.0 (2026-11-09)

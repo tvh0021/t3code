@@ -22,6 +22,7 @@ import {
 const TOOL_TEXT_LIMIT = 8_000;
 const TOOL_TEXT_TRUNCATED = "[Earlier output truncated]\n\n";
 const QUESTION_LABEL_LIMIT = 512;
+const TOOL_LABEL_LIMIT = 160;
 
 /** Recognizes complete native task-result messages without treating quoted markup as a task. */
 export function parseAntigravityTaskNotification(text: string, sessionId: string) {
@@ -437,6 +438,33 @@ function withAntigravityEditPatches(
   });
 }
 
+/**
+ * The model writes a progress line on every call. Built-in tools keep it in `toolAction`
+ * (or the imperative `toolSummary`); MCP calls move it to `_meta.prompt`, which falls back
+ * to the call's own prompt or description argument.
+ */
+function antigravityToolLabel(data: Record<string, unknown>): string | undefined {
+  const input = Predicate.isObject(data.rawInput) ? data.rawInput : undefined;
+  const meta = Predicate.isObject(data.meta) ? data.meta : undefined;
+  for (const value of [
+    input?.toolAction,
+    input?.toolSummary,
+    meta?.is_mcp_tool_call === true ? meta.prompt : undefined,
+  ]) {
+    if (typeof value !== "string") continue;
+    const line = value
+      .trimStart()
+      .slice(0, TOOL_LABEL_LIMIT * 2)
+      .split("\n", 1)[0]!;
+    const label = line.replace(/\s+/g, " ").trim();
+    if (!label) continue;
+    return copyBoundedText(
+      label.length > TOOL_LABEL_LIMIT ? `${label.slice(0, TOOL_LABEL_LIMIT - 3)}...` : label,
+    );
+  }
+  return undefined;
+}
+
 export function normalizeAntigravityToolCall(
   toolCall: AcpToolCallState,
   readPreEditFile = readAntigravityPreEditFile,
@@ -465,6 +493,7 @@ export function normalizeAntigravityToolCall(
   const aggregatedOutput = nativeOutput === undefined ? undefined : boundText(nativeOutput);
   const exitCode = output?.exitCode ?? output?.exit_code;
   const imagePath = localImagePath(output?.imagePath);
+  const label = antigravityToolLabel(toolCall.data);
   const sanitizedData = sanitizeAntigravityToolPayload(toolCall.data);
   const data: Record<string, unknown> = Predicate.isObject(sanitizedData) ? sanitizedData : {};
   const kind = toolCall.kind ?? (command !== undefined ? "execute" : undefined);
@@ -497,6 +526,7 @@ export function normalizeAntigravityToolCall(
     ...(kind !== undefined ? { kind } : {}),
     ...(command !== undefined ? { command } : {}),
     ...(toolCall.title !== undefined ? { title: boundText(toolCall.title) } : {}),
+    ...(label !== undefined ? { label } : {}),
     ...(command !== undefined
       ? { detail: command }
       : toolCall.detail !== undefined

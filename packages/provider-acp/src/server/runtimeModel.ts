@@ -43,6 +43,8 @@ export interface AcpToolCallState {
   readonly status?: "pending" | "inProgress" | "requiresAction" | "completed" | "failed";
   readonly command?: string;
   readonly detail?: string;
+  /** The agent's own one-line description of this call; it becomes the item title. */
+  readonly label?: string;
   readonly data: Record<string, unknown>;
 }
 
@@ -934,6 +936,7 @@ export function mergeToolCallState(
   const status = next.status ?? previous?.status;
   const command = next.command ?? previous?.command;
   const detail = next.detail ?? previous?.detail;
+  const label = next.label ?? previous?.label;
   const data = mergeToolActivityData(previous?.data, next.data) ?? next.data;
   return {
     toolCallId: next.toolCallId,
@@ -942,6 +945,7 @@ export function mergeToolCallState(
     ...(status ? { status } : {}),
     ...(command ? { command } : {}),
     ...(detail ? { detail } : {}),
+    ...(label ? { label } : {}),
     data,
   };
 }

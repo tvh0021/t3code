@@ -17,6 +17,7 @@ import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-
 import {
   resolveViewedImageAsset,
   toolGroupAction,
+  workEntryIntent,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
@@ -41,6 +42,7 @@ import {
   threadReadTargetId,
   threadReadTargetTitle,
   workEntryDisplayLabel,
+  workEntryIntentDetail,
   workEntryReadOutput,
 } from "./MessagesTimeline.logic";
 import { cn } from "~/lib/utils";
@@ -294,6 +296,10 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         ? "Thinking"
         : "Thought"
       : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
+  const intentDetail =
+    previewText === workEntryIntent(workEntry)
+      ? workEntryIntentDetail(workEntry, workspaceRoot)
+      : null;
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
       ? getQuestionAnswerPreview(workEntry.questionAnswer)
@@ -374,7 +380,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         ? "text-secondary-label"
         : "text-foreground/80";
   const threadLabel = isReasoning ? null : threadReadLabel(previewText, threadTarget);
-  const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview]
+  const accessiblePreview = [threadLabel?.text ?? previewText, intentDetail, answerPreview]
     .filter(Boolean)
     .join(": ");
   const accessibleDisplayText = showFailedIndicator
@@ -419,7 +425,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         <div className="min-w-0 flex-1 overflow-hidden">
           <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
             <span
-              className={cn(answerPreview ? "min-w-0" : "min-w-0 flex-1", "truncate", headingClass)}
+              className={cn(
+                answerPreview || intentDetail ? "min-w-0" : "min-w-0 flex-1",
+                "truncate",
+                headingClass,
+              )}
             >
               {isReasoning && !expanded ? (
                 <ChatMarkdown
@@ -443,6 +453,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                 previewText
               )}
             </span>
+            {intentDetail ? (
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{intentDetail}</span>
+            ) : null}
             {answerPreview ? (
               <span
                 className={cn(

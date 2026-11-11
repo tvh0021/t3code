@@ -18,6 +18,7 @@ import {
   liveWorkEntryLabel,
   resolveWorkGroupScrollIndex,
   shouldFollowWorkGroupAppend,
+  workEntryIntentDetail,
   workEntryIsVisibleInGroup,
   type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
@@ -498,6 +499,7 @@ export function LiveWorkEntryTimelineRow({
   const ctx = use(TimelineRowCtx);
   const threadTarget = useThreadReadTarget(row.entry, ctx.activeThreadEnvironmentId);
   const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
+  const intentDetail = workEntryIntentDetail(row.entry, ctx.workspaceRoot);
   const threadLabel = threadReadLabel(label, threadTarget);
 
   const item = row.entry.projectedItem?.item;
@@ -518,7 +520,7 @@ export function LiveWorkEntryTimelineRow({
       )}
       aria-label={
         failed
-          ? `${thoughtLine ? `${thoughtLine} ` : ""}${threadLabel?.text ?? label}, tool call failed`
+          ? `${thoughtLine ? `${thoughtLine} ` : ""}${threadLabel?.text ?? label}${intentDetail ? `: ${intentDetail}` : ""}, tool call failed`
           : undefined
       }
       aria-expanded={row.expanded}
@@ -572,6 +574,11 @@ export function LiveWorkEntryTimelineRow({
               environmentId={ctx.activeThreadEnvironmentId}
               linked={false}
             />
+          ) : intentDetail ? (
+            <>
+              {label}
+              <span className="ms-1.5 text-muted-foreground">{intentDetail}</span>
+            </>
           ) : (
             label
           )

@@ -30,6 +30,7 @@ import {
   type WorkLogPresentationEntry,
   type WorkLogToolLifecycleStatus,
   workEntryHiddenByToolCallVisibility,
+  workEntryIntent,
 } from "@t3tools/client-runtime/work-log/presentation";
 import type { ToolCallVisibility } from "@t3tools/contracts/settings";
 import {
@@ -256,6 +257,18 @@ function compactWorkEntryText(value: string): string {
 }
 
 export function workEntryRowLabel(entry: WorkLogPresentationEntry, expanded = false): string {
+  const intent = workEntryIntent(entry);
+  return intent
+    ? truncate(intent, WORK_LOG_LABEL_MAX_LENGTH)
+    : workEntryActionLabel(entry, expanded);
+}
+
+/** The command, path, or tool name behind a row whose primary text is the agent's intent. */
+export function workEntryIntentDetail(entry: WorkLogPresentationEntry): string | null {
+  return workEntryIntent(entry) === undefined ? null : workEntryActionLabel(entry, false);
+}
+
+function workEntryActionLabel(entry: WorkLogPresentationEntry, expanded: boolean): string {
   if (entry.itemType === "fork") return entry.label;
   if (expanded && entry.itemType === "reasoning")
     return entry.toolLifecycleStatus === "inProgress" ? "Thinking" : "Thought";
@@ -859,6 +872,7 @@ function singleToolCallLabel(activity: ThreadFeedActivity, expanded: boolean): s
     return expanded
       ? "Thought"
       : compactWorkEntryText(activity.workEntry.detail ?? "") || "Thought";
+  if (workEntryIntent(activity.workEntry)) return workEntryRowLabel(activity.workEntry);
   const presentation = resolveWorkEntryToolPresentation(activity.workEntry, "completed");
   if (presentation) return presentation.displayName;
   const command = activity.workEntry.command?.trim();
@@ -1958,7 +1972,8 @@ function appendToolGroupRows(
       : liveToolActivitySummary(latestActivity, live)
     : singleActivity !== null &&
         singleActivity.toolLike &&
-        toolGroupAction(singleActivity.workEntry) !== "edit"
+        (toolGroupAction(singleActivity.workEntry) !== "edit" ||
+          workEntryIntent(singleActivity.workEntry) !== undefined)
       ? singleToolCallLabel(singleActivity, expanded)
       : singleActivity !== null && !singleActivity.toolLike
         ? singleActivity.workEntry.label
@@ -2051,6 +2066,7 @@ function liveToolActivitySummary(activity: ThreadFeedActivity, presentTense: boo
       activity.workEntry.detail?.trim() || (status === "inProgress" ? "Thinking" : "Thought"),
     );
   }
+  if (workEntryIntent(activity.workEntry)) return workEntryRowLabel(activity.workEntry);
   const presentation = resolveWorkEntryToolPresentation({
     ...activity.workEntry,
     toolLifecycleStatus: status,

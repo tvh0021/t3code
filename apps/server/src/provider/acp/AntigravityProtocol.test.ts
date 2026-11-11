@@ -474,6 +474,57 @@ describe("Antigravity tool results", () => {
   });
 
   it.each([
+    {
+      name: "a built-in tool's progress line",
+      update: {
+        ...commandStarted.update,
+        rawInput: {
+          CommandLine: "lsof -i :8768",
+          toolAction: "Checking port 8768 availability",
+          toolSummary: "Check port 8768 availability",
+        },
+      },
+      label: "Checking port 8768 availability",
+    },
+    {
+      name: "a built-in tool's summary when it has no progress line",
+      update: {
+        ...commandStarted.update,
+        rawInput: { CommandLine: "lsof -i :8768", toolSummary: "Check port 8768 availability" },
+      },
+      label: "Check port 8768 availability",
+    },
+    {
+      name: "an MCP call's metadata prompt, first line only",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "trajectory:12",
+        title: "Running t3_thread_wait",
+        kind: "other",
+        status: "in_progress",
+        rawInput: { threadId: "thread-1" },
+        _meta: {
+          mcp: { tool: "t3_thread_wait", server: "t3-code" },
+          is_mcp_tool_call: true,
+          prompt: "  Waiting for Opus High verification\nthen merge",
+        },
+      },
+      label: "Waiting for Opus High verification",
+    },
+    {
+      name: "nothing when the call carries no progress line",
+      update: commandStarted.update,
+      label: undefined,
+    },
+  ] as const)("labels $name", ({ update, label }) => {
+    const parsed = parseToolUpdate({ sessionId: "session-1", update }).toolCall;
+    const toolCall = normalizeAntigravityToolCall(parsed);
+    expect(toolCall.label).toBe(label);
+    expect(toolCall.title).toBe(parsed.title);
+    expect(toolCall.data.rawInput).toEqual(update.rawInput);
+  });
+
+  it.each([
     { CommandLine: "pwd", Cwd: "/one" },
     { CommandLine: "pwd", WorkingDirectory: "/one" },
     { command_line: "pwd", working_dir: "/one" },

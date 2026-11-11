@@ -1527,6 +1527,8 @@ const OrchestrationV2TurnItemBaseFields = {
   ordinal: NonNegativeInt,
   status: OrchestrationV2TurnItemStatus,
   title: Schema.NullOr(Schema.String),
+  /** The agent's own one-line description of this step, shown ahead of the command or path. */
+  intent: Schema.optional(Schema.String),
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
   updatedAt: Schema.DateTimeUtc,

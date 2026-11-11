@@ -32,8 +32,63 @@ import {
   shouldCollapseUserMessage,
   resolveAssistantMessageCopyState,
   type MessagesTimelineRow,
+  liveWorkEntryLabel,
   workEntryDisplayLabel,
+  workEntryIntentDetail,
 } from "./MessagesTimeline.logic";
+
+describe("agent intent labels", () => {
+  const fixture = makeStreamingTimelineFixture();
+  const command = fixture.visibleTurnItems.find((row) => row.item.type === "command_execution")!;
+  const read = fixture.visibleTurnItems.find((row) => row.item.type === "dynamic_tool")!;
+
+  it.each([
+    {
+      name: "a command leads with the intent and keeps the command",
+      source: command,
+      patch: { intent: "Running the test suite" },
+      primary: "Running the test suite",
+      live: "Running the test suite",
+      detail: "vp test",
+    },
+    {
+      name: "a file read leads with the intent and keeps the path",
+      source: read,
+      patch: { toolName: "Read", intent: "Reading the entry point" },
+      primary: "Reading the entry point",
+      live: "Reading the entry point",
+      detail: "Read repo/src/index.ts",
+    },
+    {
+      name: "a T3 tool leads with the intent and keeps the tool name",
+      source: read,
+      patch: { toolName: "t3-code.list_thread_pull_requests", intent: "Checking open PRs" },
+      primary: "Checking open PRs",
+      live: "Checking open PRs",
+      detail: "Checked linked pull requests",
+    },
+    {
+      name: "a row without an intent is unchanged",
+      source: command,
+      patch: { intent: "  " },
+      primary: "vp test",
+      live: "Failed vp",
+      detail: null,
+    },
+  ])("$name", ({ source, patch, primary, live, detail }) => {
+    const entries = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: [
+        { ...source, item: { ...source.item, ...patch } as OrchestrationV2TurnItem },
+      ],
+      optimisticMessages: [],
+    });
+    const work = entries.find((row) => row.kind === "work");
+    if (work?.kind !== "work") throw new Error("Expected a work entry");
+    expect(workEntryDisplayLabel(work.entry, "/repo")).toBe(primary);
+    expect(liveWorkEntryLabel(work.entry, "/repo", false)).toBe(live);
+    expect(workEntryIntentDetail(work.entry, "/repo")).toBe(detail);
+  });
+});
 
 describe("resolveAssistantMessageCopyState", () => {
   it("copies the rendered representation of Codex directives", () => {

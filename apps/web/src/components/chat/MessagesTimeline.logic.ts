@@ -30,6 +30,7 @@ import {
   type ToolGroupSummaryKind,
   liveThoughtLine,
   workEntryHiddenByToolCallVisibility,
+  workEntryIntent,
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
   deriveRevertTurnCountByUserMessageId,
@@ -99,6 +100,8 @@ function workEntryIsActiveTurnActivity(entry: WorkLogEntry): boolean {
 
 function singleToolCallLabel(entry: WorkLogEntry): string {
   if (entry.itemType === "reasoning") return entry.detail?.trim().replace(/\s+/g, " ") || "Thought";
+  const intent = workEntryIntent(entry);
+  if (intent) return intent;
   const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
   if (toolPresentation) return toolPresentation.displayName;
   const item = entry.structuredPayload;
@@ -135,6 +138,18 @@ function workEntryReadPaths(entry: WorkLogEntry, workspaceRoot: string | undefin
 }
 
 export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
+  return workEntryIntent(entry) ?? workEntryActionLabel(entry, workspaceRoot);
+}
+
+/** The command, path, or tool name behind a row whose primary text is the agent's intent. */
+export function workEntryIntentDetail(
+  entry: WorkLogEntry,
+  workspaceRoot: string | undefined,
+): string | null {
+  return workEntryIntent(entry) === undefined ? null : workEntryActionLabel(entry, workspaceRoot);
+}
+
+function workEntryActionLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
   if (entry.itemType === "system_notice") return entry.label;
   if (entry.itemType === "reasoning" || entry.tone === "thinking") {
     const thought = entry.detail?.trim().replace(/\s+/g, " ");
@@ -246,6 +261,8 @@ export function liveWorkEntryLabel(
       (status === "inProgress" ? "Thinking" : "Thought")
     );
   }
+  const intent = workEntryIntent(entry);
+  if (intent) return intent;
   const toolPresentation = resolveWorkEntryToolPresentation({
     ...entry,
     toolLifecycleStatus: status,
@@ -2005,7 +2022,7 @@ export function deriveMessagesTimelineRows(input: {
             groupedEntries: visibleGroupedEntries,
             isExpandedToolGroup: false,
             displayLabel:
-              toolGroupAction(singleEntry) === "edit"
+              toolGroupAction(singleEntry) === "edit" && workEntryIntent(singleEntry) === undefined
                 ? summarizeToolGroup(visibleGroupedEntries).summary
                 : singleToolCallLabel(singleEntry),
           });

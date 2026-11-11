@@ -13,6 +13,9 @@ const USER_INPUT = 14;
 const PLANNER_RESPONSE = 15;
 const TOOL = 8;
 const ERROR_MESSAGE = 17;
+// Step statuses: DONE, and any other value such as a retry still generating.
+const DONE = 3;
+const UNFINISHED = 0;
 
 // Error-step payloads trimmed from Antigravity 1.4.5 against a local Gemini endpoint.
 const errorPayload = (error: string) =>
@@ -28,6 +31,9 @@ const QUOTA_ERROR = errorPayload(
 );
 const RATE_LIMIT_ERROR = errorPayload(
   "Error 429, Message: Resource has been exhausted (e.g. check quota)., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.ErrorInfo domain:cloudcode-pa.googleapis.com reason:RATE_LIMIT_EXCEEDED] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:42s]]",
+);
+const BAD_GATEWAY_ERROR = errorPayload(
+  "Error 502, Message: Bad Gateway: Failed to connect to backend API, Status: 502 Bad Gateway, Details: []",
 );
 const INVALID_ARGUMENT_ERROR = errorPayload(
   "Error 400, Message: Request contains an invalid argument., Status: INVALID_ARGUMENT, Details: []",
@@ -47,14 +53,20 @@ describe("watchAntigravityPromptOutcome", () => {
       const conversations = path.join(profileDirectory, "antigravity-acp", "conversations");
       yield* fs.makeDirectory(conversations, { recursive: true });
       let nextIndex = 0;
-      const appendSteps = (steps: ReadonlyArray<readonly [number, Uint8Array]>) => {
+      const appendSteps = (
+        steps: ReadonlyArray<readonly [number, Uint8Array] | readonly [number, Uint8Array, number]>,
+      ) => {
         const database = new NodeSqlite.DatabaseSync(path.join(conversations, `${sessionId}.db`));
         try {
           database.exec(
-            "CREATE TABLE IF NOT EXISTS steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)",
+            "CREATE TABLE IF NOT EXISTS steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER NOT NULL DEFAULT 3, step_payload BLOB)",
           );
-          const insert = database.prepare("INSERT INTO steps VALUES (?, ?, ?)");
-          for (const [type, payload] of steps) insert.run(nextIndex++, type, payload);
+          const insert = database.prepare(
+            "INSERT INTO steps (idx, step_type, status, step_payload) VALUES (?, ?, ?, ?)",
+          );
+          for (const [type, payload, status = DONE] of steps) {
+            insert.run(nextIndex++, type, status, payload);
+          }
         } finally {
           database.close();
         }
@@ -66,7 +78,7 @@ describe("watchAntigravityPromptOutcome", () => {
         Effect.gen(function* () {
           const check = yield* watchAntigravityPromptOutcome(profileDirectory, sessionId);
           appendSteps(steps);
-          return yield* check(result);
+          return yield* check.settled(result);
         });
       const input = Buffer.from("Run the fixture.");
       const reply = Buffer.from("FIXTURE_OK");
@@ -151,6 +163,29 @@ describe("watchAntigravityPromptOutcome", () => {
           [PLANNER_RESPONSE, reply],
         ]),
       );
+      // A retried model request logs its error before later steps, and the prompt stays open.
+      const stalled = yield* watchAntigravityPromptOutcome(profileDirectory, sessionId);
+      assert.isUndefined(yield* stalled.stalled, "earlier prompts' errors are not this prompt's");
+      appendSteps([
+        [USER_INPUT, input],
+        [ERROR_MESSAGE, BAD_GATEWAY_ERROR],
+        [PLANNER_RESPONSE, reply, UNFINISHED],
+      ]);
+      assert.deepEqual(yield* stalled.stalled, {
+        class: "provider_error",
+        message: "Bad Gateway: Failed to connect to backend API",
+        code: "502 Bad Gateway",
+        retryable: true,
+      });
+      // A finished step after the error means the agent recovered, so a later stall is not that error.
+      const recovered = yield* watchAntigravityPromptOutcome(profileDirectory, sessionId);
+      appendSteps([
+        [USER_INPUT, input],
+        [ERROR_MESSAGE, BAD_GATEWAY_ERROR],
+        [PLANNER_RESPONSE, reply],
+        [PLANNER_RESPONSE, reply, UNFINISHED],
+      ]);
+      assert.isUndefined(yield* recovered.stalled);
       // The agent maps the SDK's QUOTA_EXHAUSTED stop reason to `refusal`.
       assert.deepEqual(yield* turn([], { stopReason: "refusal" }), {
         class: "usage_limit",
@@ -174,7 +209,7 @@ describe("watchAntigravityPromptOutcome", () => {
         const database = new NodeSqlite.DatabaseSync(path.join(conversations, `${sessionId}.db`));
         try {
           database.exec(
-            "CREATE TABLE IF NOT EXISTS steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)",
+            "CREATE TABLE IF NOT EXISTS steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER NOT NULL DEFAULT 3, step_payload BLOB)",
           );
           database
             .prepare("INSERT INTO steps (step_type, step_payload) VALUES (?, ?)")
@@ -192,15 +227,16 @@ describe("watchAntigravityPromptOutcome", () => {
       );
       const linked = yield* watchAntigravityPromptOutcome(profileDirectory, own);
       append(peer, ERROR_MESSAGE, QUOTA_ERROR);
-      assert.isUndefined(yield* linked({ stopReason: "end_turn" }));
-      assert.equal((yield* linked({ stopReason: "refusal" }))?.class, "usage_limit");
+      assert.isUndefined(yield* linked.settled({ stopReason: "end_turn" }));
+      assert.isUndefined(yield* linked.stalled);
+      assert.equal((yield* linked.settled({ stopReason: "refusal" }))?.class, "usage_limit");
 
       // An unreadable log gives no evidence, but the agent's typed refusal still fails the turn.
       yield* fs.remove(path.join(conversations, `${own}.db`));
       yield* fs.writeFileString(path.join(conversations, `${own}.db`), "not a database");
       const corrupt = yield* watchAntigravityPromptOutcome(profileDirectory, own);
-      assert.isUndefined(yield* corrupt({ stopReason: "end_turn" }));
-      assert.deepEqual(yield* corrupt({ stopReason: "refusal" }), {
+      assert.isUndefined(yield* corrupt.settled({ stopReason: "end_turn" }));
+      assert.deepEqual(yield* corrupt.settled({ stopReason: "refusal" }), {
         class: "usage_limit",
         message: "You have reached your Antigravity quota for this period.",
         code: "QUOTA_EXHAUSTED",

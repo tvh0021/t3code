@@ -308,17 +308,17 @@ export interface AcpAdapterV2Flavor {
   }) => Effect.Effect<ReadonlyArray<EffectAcpSchema.ContentBlock>, EffectAcpErrors.AcpError>;
   readonly promptFailure?: (cause: unknown) => OrchestrationV2ProviderFailure;
   /**
-   * Runs before `session/prompt`. The returned check sees a prompt the agent ended
-   * without an error or cancel, and reports a failure its stop reason hid. A reported
-   * failure restarts the runtime before the next turn.
+   * Runs before `session/prompt`. `settled` sees a prompt the agent ended without an
+   * error or cancel, and reports a failure its stop reason hid. A reported failure
+   * restarts the runtime before the next turn. `stalled` reports the agent's latest
+   * native error since the prompt began, for a prompt the inactivity timeout retires.
    */
-  readonly watchPromptOutcome?: (
-    sessionId: string,
-  ) => Effect.Effect<
-    (
+  readonly watchPromptOutcome?: (sessionId: string) => Effect.Effect<{
+    readonly settled: (
       result: EffectAcpSchema.PromptResponse,
-    ) => Effect.Effect<OrchestrationV2ProviderFailure | undefined>
-  >;
+    ) => Effect.Effect<OrchestrationV2ProviderFailure | undefined>;
+    readonly stalled?: Effect.Effect<OrchestrationV2ProviderFailure | undefined>;
+  }>;
   readonly requiresSignIn?: (cause: unknown) => boolean;
   /**
    * Runs before attachment paths, T3 instructions and native slash-command detection,
@@ -1669,6 +1669,7 @@ function shouldPersistToolUpdate(
     previous === undefined ||
     previous.status !== next.status ||
     previous.title !== next.title ||
+    previous.label !== next.label ||
     toolCallVisibleOutputChanged(previous, next) ||
     skipped + 1 >= TOOL_UPDATE_PERSIST_EVERY;
   context.toolUpdatesSkipped.set(key, persist ? 0 : skipped + 1);
@@ -4053,6 +4054,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             ordinal,
             status,
             title,
+            ...(toolCall.label === undefined ? {} : { intent: toolCall.label }),
             startedAt,
             completedAt,
             updatedAt: now,
@@ -7838,6 +7840,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           context: ActiveAcpTurn,
           generation: number,
           timeoutMillis: number,
+          nativeError: OrchestrationV2ProviderFailure | undefined,
         ) {
           const retired = yield* runRuntimeCallbackAtGeneration(
             generation,
@@ -7859,13 +7862,20 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               yield* cancelPendingRuntimeRequests();
               yield* terminalizeOpenForegroundTools(context, "failed");
               const minutes = Math.max(1, Math.round(timeoutMillis / 60_000));
+              const silence = `sent nothing for ${minutes} ${minutes === 1 ? "minute" : "minutes"}, so T3 Code stopped the turn and restarted the agent. Send a message to continue.`;
+              const harness = flavor.runtimeHarness ?? driver;
               yield* finalizeTurn(
                 context,
                 "failed",
-                makeProviderFailure({
-                  class: "provider_error",
-                  message: `${flavor.runtimeHarness ?? driver} sent nothing for ${minutes} ${minutes === 1 ? "minute" : "minutes"}, so T3 Code stopped the turn and restarted the agent. Send a message to continue.`,
-                }),
+                makeProviderFailure(
+                  nativeError === undefined
+                    ? { class: "provider_error", message: `${harness} ${silence}` }
+                    : {
+                        ...nativeError,
+                        resetAt: nativeError.resetAt ?? null,
+                        message: `${harness} hit an error (${nativeError.message.replace(/\.+$/, "")}) and then ${silence}`,
+                      },
+                ),
               );
               return "retired" as const;
             }),
@@ -7889,6 +7899,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           context: ActiveAcpTurn,
           generation: number,
           timeoutMillis: number,
+          nativeError: Effect.Effect<OrchestrationV2ProviderFailure | undefined> | undefined,
         ) {
           yield* Deferred.await(context.promptDispatched);
           context.lastProgressAt = yield* Clock.currentTimeMillis;
@@ -7899,8 +7910,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               yield* Effect.sleep(Duration.millis(remaining));
               continue;
             }
+            // Read before taking the permit: the read is file I/O.
+            const error = nativeError === undefined ? undefined : yield* nativeError;
             const outcome = yield* runtimeTransitionPermit.withPermit(
-              retireInactivePrompt(context, generation, timeoutMillis),
+              retireInactivePrompt(context, generation, timeoutMillis, error),
             );
             if (outcome !== "rearm") return;
           }
@@ -8364,6 +8377,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 context,
                 promptGeneration,
                 promptInactivityTimeoutMillis,
+                checkPromptOutcome?.stalled,
               ).pipe(Effect.forkIn(sessionScope));
             }
             const compactSession = isCompactionMessage(turnInput.message)
@@ -8429,7 +8443,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       result.stopReason === "error" ||
                       result.stopReason === "cancelled"
                         ? undefined
-                        : yield* checkPromptOutcome(result);
+                        : yield* checkPromptOutcome.settled(result);
                     if (hiddenFailure !== undefined) {
                       yield* Ref.set(runtimeRestartRequired, true);
                     }

@@ -15,10 +15,13 @@ import { antigravityManagedPath, antigravityProfileRoot } from "./AntigravityPro
 
 // CORTEX_STEP_TYPE_ERROR_MESSAGE in the native trajectory.
 const ERROR_STEP_TYPE = 17;
+// CORTEX_STEP_STATUS_DONE; a retry still in flight has another status.
+const DONE_STEP_STATUS = 3;
 // The harness error text leads the payload; a Go stack trace follows it.
 const MAX_ERROR_PAYLOAD_BYTES = 16_384;
 // The Go harness's rendering of a Google API error, as the agent's api_errors.py reads it.
-const API_ERROR = /Error (\d{3}), Message: (.+?), Status: ([A-Z_]+)/s;
+// Status is a gRPC code, or an HTTP status line such as "502 Bad Gateway".
+const API_ERROR = /Error (\d{3}), Message: (.+?), Status: ([A-Z_]+|\d{3}[A-Za-z ]*)/s;
 const QUOTA_EXHAUSTED = /\breason:QUOTA_EXHAUSTED\b/;
 const RESET_TIMESTAMP = /\bquotaResetTimeStamp:([^\s\]]+)/;
 const RESET_DELAY = /\bquotaResetDelay:((?:\d+(?:\.\d+)?(?:ns|us|µs|μs|ms|h|m|s))+)(?=[\s\]])/;
@@ -77,14 +80,19 @@ const lastStepIndex = (database: NodeSqlite.DatabaseSync) => {
 };
 
 const lastStepAfter =
-  (index: number) =>
+  (index: number, doneOrErrorOnly: boolean) =>
   (database: NodeSqlite.DatabaseSync): LastStep | undefined => {
     const row = database
       .prepare(
         `SELECT step_type AS type, substr(step_payload, 1, ?) AS payload
-         FROM steps WHERE idx > ? ORDER BY idx DESC LIMIT 1`,
+         FROM steps WHERE idx > ? ${doneOrErrorOnly ? "AND (step_type = ? OR status = ?)" : ""}
+         ORDER BY idx DESC LIMIT 1`,
       )
-      .get(MAX_ERROR_PAYLOAD_BYTES, index);
+      .get(
+        MAX_ERROR_PAYLOAD_BYTES,
+        index,
+        ...(doneOrErrorOnly ? [ERROR_STEP_TYPE, DONE_STEP_STATUS] : []),
+      );
     if (typeof row?.type !== "number") return undefined;
     return { type: row.type, payload: row.payload instanceof Uint8Array ? row.payload : null };
   };
@@ -102,43 +110,54 @@ function resetAtFrom(text: string, now: DateTime.Utc): string | undefined {
   return delayMs > 0 ? DateTime.formatIso(DateTime.add(now, { milliseconds: delayMs })) : undefined;
 }
 
-function turnFailure(
-  stopReason: EffectAcpSchema.StopReason,
-  step: LastStep | undefined,
+const errorStepText = (step: LastStep | undefined) =>
+  step?.type === ERROR_STEP_TYPE
+    ? new TextDecoder().decode(step.payload ?? new Uint8Array())
+    : undefined;
+
+const quotaFailure = (text: string, now: DateTime.Utc) =>
+  makeProviderFailure({
+    class: "usage_limit",
+    message: "You have reached your Antigravity quota for this period.",
+    code: API_ERROR.exec(text)?.[3] ?? "QUOTA_EXHAUSTED",
+    retryable: true,
+    resetAt: resetAtFrom(text, now) ?? null,
+  });
+
+function namedErrorFailure(
+  text: string,
   now: DateTime.Utc,
 ): OrchestrationV2ProviderFailure | undefined {
-  const errorText =
-    step?.type === ERROR_STEP_TYPE
-      ? new TextDecoder().decode(step.payload ?? new Uint8Array())
-      : undefined;
-  // The agent maps only the SDK's QUOTA_EXHAUSTED stop reason to `refusal`.
-  if (errorText === undefined && stopReason !== "refusal") return undefined;
-  const text = errorText ?? "";
+  if (QUOTA_EXHAUSTED.test(text)) return quotaFailure(text, now);
   const apiError = API_ERROR.exec(text);
-  if (stopReason === "refusal" || QUOTA_EXHAUSTED.test(text)) {
-    return makeProviderFailure({
-      class: "usage_limit",
-      message: "You have reached your Antigravity quota for this period.",
-      code: apiError?.[3] ?? "QUOTA_EXHAUSTED",
-      retryable: true,
-      resetAt: resetAtFrom(text, now) ?? null,
-    });
-  }
-  if (apiError === null) {
-    return makeProviderFailure({
-      class: "provider_error",
-      message: "Antigravity stopped this turn because of an error.",
-    });
-  }
+  if (apiError === null) return undefined;
   const [, httpStatus, message, status] = apiError;
   const rateLimited = httpStatus === "429" || status === "RESOURCE_EXHAUSTED";
   return makeProviderFailure({
     class: rateLimited ? "usage_limit" : "provider_error",
     message: message!.trim(),
-    code: status ?? null,
+    code: status?.trim() ?? null,
     retryable: rateLimited || Number(httpStatus) >= 500,
     resetAt: resetAtFrom(text, now) ?? null,
   });
+}
+
+function turnFailure(
+  stopReason: EffectAcpSchema.StopReason,
+  step: LastStep | undefined,
+  now: DateTime.Utc,
+): OrchestrationV2ProviderFailure | undefined {
+  const errorText = errorStepText(step);
+  // The agent maps only the SDK's QUOTA_EXHAUSTED stop reason to `refusal`.
+  if (stopReason === "refusal") return quotaFailure(errorText ?? "", now);
+  if (errorText === undefined) return undefined;
+  return (
+    namedErrorFailure(errorText, now) ??
+    makeProviderFailure({
+      class: "provider_error",
+      message: "Antigravity stopped this turn because of an error.",
+    })
+  );
 }
 
 const conversationSegments = ["antigravity-acp", "conversations"];
@@ -153,8 +172,11 @@ export const watchAntigravityPromptOutcome = Effect.fn("AntigravityTurnOutcome.w
   profileDirectory: string,
   sessionId: string,
 ) {
-  const typedOnly = (result: EffectAcpSchema.PromptResponse) =>
-    DateTime.now.pipe(Effect.map((now) => turnFailure(result.stopReason, undefined, now)));
+  const typedOnly = {
+    settled: (result: EffectAcpSchema.PromptResponse) =>
+      DateTime.now.pipe(Effect.map((now) => turnFailure(result.stopReason, undefined, now))),
+    stalled: Effect.undefined,
+  };
   if (!NATIVE_SESSION_ID.test(sessionId)) return typedOnly;
   const segments = [...conversationSegments, `${sessionId}.db`];
   const before = yield* Effect.tryPromise({
@@ -191,26 +213,37 @@ export const watchAntigravityPromptOutcome = Effect.fn("AntigravityTurnOutcome.w
     yield* Effect.logWarning("Could not read the Antigravity session log before the prompt.");
     return typedOnly;
   }
-  return Effect.fn("AntigravityTurnOutcome.check")(function* (
-    result: EffectAcpSchema.PromptResponse,
-  ) {
-    // The same file as before the prompt, or one this prompt created, still unlinked.
-    const after = yield* Effect.tryPromise({
+  // The same file as before the prompt, or one this prompt created, still unlinked.
+  const readStepAfterStart = (doneOrErrorOnly: boolean) =>
+    Effect.tryPromise({
       try: () => antigravityManagedPath(before.root, segments, "file"),
       catch: sessionLogError,
-    }).pipe(Effect.orElseSucceed(() => undefined));
-    const sameFile =
-      after !== undefined &&
-      (before.identity === undefined ||
-        (after.info.dev === before.identity.dev && after.info.ino === before.identity.ino));
-    const step = sameFile
-      ? yield* readSteps(after.path, lastStepAfter(startIndex)).pipe(
-          Effect.tapError(() =>
-            Effect.logWarning("Could not read the Antigravity session log after the prompt."),
-          ),
-          Effect.orElseSucceed(() => undefined),
-        )
-      : undefined;
-    return turnFailure(result.stopReason, step, yield* DateTime.now);
-  });
+    }).pipe(
+      Effect.orElseSucceed(() => undefined),
+      Effect.flatMap((after) =>
+        after !== undefined &&
+        (before.identity === undefined ||
+          (after.info.dev === before.identity.dev && after.info.ino === before.identity.ino))
+          ? readSteps(after.path, lastStepAfter(startIndex, doneOrErrorOnly)).pipe(
+              Effect.tapError(() =>
+                Effect.logWarning("Could not read the Antigravity session log after the prompt."),
+              ),
+              Effect.orElseSucceed(() => undefined),
+            )
+          : Effect.undefined,
+      ),
+    );
+  return {
+    settled: Effect.fn("AntigravityTurnOutcome.check")(function* (
+      result: EffectAcpSchema.PromptResponse,
+    ) {
+      const step = yield* readStepAfterStart(false);
+      return turnFailure(result.stopReason, step, yield* DateTime.now);
+    }),
+    // Antigravity retries a failed model request without updates; name an error no finished step followed.
+    stalled: Effect.gen(function* () {
+      const text = errorStepText(yield* readStepAfterStart(true));
+      return text === undefined ? undefined : namedErrorFailure(text, yield* DateTime.now);
+    }).pipe(Effect.withSpan("AntigravityTurnOutcome.stalled")),
+  };
 });
