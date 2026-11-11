@@ -233,17 +233,33 @@ Opus 5.5 and Sonnet 5.5 at low, medium, and high effort next to Gemini.
 Built-in seeds fill the picker until live discovery answers.
 Native task results appear in the work trace without ending the prompt. ACP
 errors keep the native operation and error text.
-Work rows lead with Antigravity's own step description. A turn that sends
+Work rows can lead with a per-step description, but current runtimes never send
+one (see Decisions). A turn that sends
 nothing for 15 minutes ends with the last native error, when there is one.
+Conversational sessions on 1.4.5 follow the user's global rules in
+`~/.gemini/config/AGENTS.md`.
 
 **Decisions.**
 
-- Unreleased: Antigravity hides its per-step description in `rawInput.toolAction`
-  or `toolSummary` for built-in tools and in `_meta.prompt` for MCP tools.
+- Unreleased: T3's private `GEMINI_HOME` hides `~/.gemini/config/AGENTS.md`, and
+  the 1.4.5 runtime ignores rule files even inside its profile (probed at
+  `config/AGENTS.md`, `config/rules/AGENTS.md`, and `GEMINI.md` at the root and
+  in `config/`). The driver reads the real file at each runtime start and puts
+  it in `<user_rules>` ahead of T3's `systemPrompt.append`. Helpers and text
+  generation send no append, so they stay rule-free. Older runtimes cannot
+  append and get no rules.
+- Unreleased: Antigravity's protocol has a per-step description in
+  `rawInput.toolAction` or `toolSummary` for built-in tools and in
+  `_meta.prompt` for MCP tools.
   `antigravityToolLabel` reads it into the turn item's `intent`, which web and
-  mobile rows show first. The prompt watchdog reads the native conversation
-  database for the last step, so a silent Gemini 502 retry loop reports the
-  backend error instead of a generic timeout.
+  mobile rows show first. Browser tests on 1.1.1 and 1.4.5, under both client
+  identities, found that the ACP server strips `toolAction` and `toolSummary`
+  from `rawInput` and sends MCP calls without `_meta.prompt`, so rows still show
+  only the tool or path. Only the unit fixtures carry those fields. The
+  progress lines the Antigravity app shows come from the user's global rules,
+  now appended to the system prompt. The prompt watchdog reads the native
+  conversation database for the last step, so a silent Gemini 502 retry loop
+  reports the backend error instead of a generic timeout.
 - 0.14.0: newer Antigravity runtimes support the `t3-code` identity.
   `AntigravityAcpSupport.ts` adopts upstream's 1.5.1 version gate and keeps the
   Zed identity for older runtimes, including the pinned 1.4.5 release.

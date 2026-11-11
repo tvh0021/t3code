@@ -47,6 +47,8 @@ import {
   antigravityModelOptions,
   antigravityThinkingConfig,
   makeAntigravityAcpRuntime,
+  readAntigravityUserRules,
+  withAntigravityUserRules,
   type AntigravityAcpRuntimeInput,
 } from "../acp/AntigravityAcpSupport.ts";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
@@ -274,8 +276,20 @@ export const AntigravityDriver: ProviderDriver<
               ),
             ),
       );
+      const { sessionSystemPromptAppend } = input;
       const runtime = yield* makeAntigravityAcpRuntime({
         ...input,
+        ...(sessionSystemPromptAppend === undefined
+          ? {}
+          : {
+              sessionSystemPromptAppend: withAntigravityUserRules(
+                sessionSystemPromptAppend,
+                yield* readAntigravityUserRules(userHome).pipe(
+                  Effect.provideService(FileSystem.FileSystem, fileSystem),
+                  Effect.provideService(Path.Path, path),
+                ),
+              ),
+            }),
         runtimeVersion: executable.version,
         authMethod: auth.authMethod,
         childProcessSpawner: spawner,

@@ -111,6 +111,27 @@ export function antigravitySessionMeta(
   return Object.keys(antigravity).length === 0 ? undefined : { antigravity };
 }
 
+/**
+ * The user's global rules from the real `~/.gemini/config/AGENTS.md`. The ACP runtime ignores
+ * that file even inside its profile, so conversational sessions append it to the system prompt.
+ */
+export const readAntigravityUserRules = Effect.fn("readAntigravityUserRules")(function* (
+  userHome: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const rules = yield* fs
+    .readFileString(path.join(userHome, ".gemini", "config", "AGENTS.md"))
+    .pipe(Effect.orElseSucceed(() => ""));
+  return rules.trim() || undefined;
+});
+
+export function withAntigravityUserRules(append: string, userRules: string | undefined) {
+  return userRules === undefined
+    ? append
+    : `<user_rules>\n${userRules}\n</user_rules>\n\n${append}`;
+}
+
 /** Older releases offer non-Gemini models only to allowlisted clients such as Zed. */
 export function antigravityClientInfo(version: string | null | undefined) {
   const parsed = parseAntigravityVersion(version);

@@ -20,6 +20,8 @@ import {
   antigravitySessionMeta,
   buildAntigravityPrompt,
   isQualifiedAntigravityRelease,
+  readAntigravityUserRules,
+  withAntigravityUserRules,
 } from "./AntigravityAcpSupport.ts";
 
 const modelConfig = {
@@ -97,6 +99,26 @@ describe("Antigravity release gates", () => {
       expect(isQualifiedAntigravityRelease(version)).toBe(native);
       expect(antigravityClientInfo(version).name).toBe(ownName ? "t3-code" : "zed");
     },
+  );
+});
+
+describe("Antigravity user rules", () => {
+  it.effect("puts ~/.gemini/config/AGENTS.md ahead of T3's append, and nothing when absent", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const userHome = yield* fs.makeTempDirectoryScoped();
+      expect(yield* readAntigravityUserRules(userHome)).toBeUndefined();
+      yield* fs.makeDirectory(path.join(userHome, ".gemini", "config"), { recursive: true });
+      yield* fs.writeFileString(
+        path.join(userHome, ".gemini", "config", "AGENTS.md"),
+        "\nPost progress lines.\n",
+      );
+      const rules = yield* readAntigravityUserRules(userHome);
+      expect(withAntigravityUserRules("<pull_request_linking/>", rules)).toBe(
+        "<user_rules>\nPost progress lines.\n</user_rules>\n\n<pull_request_linking/>",
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
 
