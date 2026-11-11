@@ -6,11 +6,13 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
-### Unreleased
+### 0.14.1 (2026-11-11)
 
 - Issue: Antigravity ignored the user's global rules in `~/.gemini/config/AGENTS.md`, so it skipped progress lines and other rules the Antigravity app follows → Fix: conversational sessions append those rules to the system prompt
 - Issue: Antigravity turns that went silent after a backend error ended with a generic watchdog message → Fix: the message names the native error, such as `502 Bad Gateway`, and marks the turn retryable
-- Issue: ChatLLM's session cookie was saved in `settings.json` and sent unredacted to connected clients → Fix: store `sessionCookie` in the host's secret store and redact it over WebSocket
+- Issue: T3 Code saved ChatLLM's session cookie in settings and sent it unredacted to connected clients → Fix: store the session cookie in the host's secret store and redact it over WebSocket
+- Issue: Codex Usage flagged multi-request turns and forked rollouts as malformed records and dropped their reported tokens → Fix: bill the reported request when cumulative counters jump by whole unlogged requests
+- Issue: ChatLLM models asked to delegate had no T3 MCP tools and started unlinked threads → Fix: ChatLLM connects to T3's MCP tools and loads extra tools on demand (CHATLLM-MCP-001)
 
 ### 0.14.0 (2026-11-09)
 

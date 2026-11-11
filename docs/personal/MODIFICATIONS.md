@@ -90,9 +90,14 @@ request of a 200-call loop would spend credits on tools the turn never uses.
   The loop now runs in a fiber forked into the session scope, as
   `ClaudeAdapterV2` does, and the turn ends with a final `provider_turn.updated`
   so the projection shows it finished.
-- Unreleased (CHATLLM-MCP-001): the adapter offered only its five built-in
+- 0.14.1 (CHATLLM-MCP-001): the adapter offered only its five built-in
   tools, so a ChatLLM model asked to delegate ran `t3 thread start` and made an
   unlinked top-level thread. It now reaches T3's MCP tools as above.
+- 0.14.1: `settingsSecrets.ts` omitted `abacus` from `providerSecretFields`, so
+  `sessionCookie` stayed in `settings.json` and went unredacted over WebSocket.
+  `providerSecretFields` now includes `AbacusSettings`, so the secret store
+  holds the cookie and WebSocket snapshots redact it. `forkProviderSettings.ts`
+  isolates the ChatLLM and Zed settings schemas from `settings.ts`.
 - 0.13.0 (CHATLLM-PDF-001): `read_file` decoded PDFs as UTF-8 and any
   attachment failed the turn. PDFs now go through upstream's document-text
   worker with a pdf.js branch. Uploaded PDFs still get no `.txt` sidecar, so
@@ -183,6 +188,11 @@ steps inherit the nearest named model when available.
 - 0.7.5 (USAGE-008): Claude's local errors and interruptions appeared as an
   unpriced model. The fork skipped `<synthetic>` records in aggregation; since
   0.10.0 upstream drops them in the Claude parser and the scan cache instead.
+- 0.14.1: Codex logs only a turn's last request, and a forked rollout's copied
+  history can stop short of its parent's totals, so `parseCodexRecord` in
+  `codexUsage.ts` counted whole-request gaps as malformed and dropped the
+  reported request. Positive input and output gaps now bill the reported
+  request without marking the record malformed.
 - A 20,000-bucket merge has a 1,000 ms test budget (`usageMerge.test.ts`).
 
 **Removed.** In the 0.4.0 sync, the fork's Antigravity per-turn logs and its
@@ -241,14 +251,14 @@ Conversational sessions on 1.4.5 follow the user's global rules in
 
 **Decisions.**
 
-- Unreleased: T3's private `GEMINI_HOME` hides `~/.gemini/config/AGENTS.md`, and
+- 0.14.1: T3's private `GEMINI_HOME` hides `~/.gemini/config/AGENTS.md`, and
   the 1.4.5 runtime ignores rule files even inside its profile (probed at
   `config/AGENTS.md`, `config/rules/AGENTS.md`, and `GEMINI.md` at the root and
   in `config/`). The driver reads the real file at each runtime start and puts
   it in `<user_rules>` ahead of T3's `systemPrompt.append`. Helpers and text
   generation send no append, so they stay rule-free. Older runtimes cannot
   append and get no rules.
-- Unreleased: Antigravity's protocol has a per-step description in
+- 0.14.1: Antigravity's protocol has a per-step description in
   `rawInput.toolAction` or `toolSummary` for built-in tools and in
   `_meta.prompt` for MCP tools.
   `antigravityToolLabel` reads it into the turn item's `intent`, which web and
@@ -354,10 +364,10 @@ things:
   `reviewRef` with a remote `target.environmentId`.
 - **User orchestration rules.** `~/.agents/ORCHESTRATION.md` (or the path in
   `T3_USER_ORCHESTRATION_INSTRUCTIONS`) is appended to the orchestration
-  instructions every MCP-enabled provider receives: Claude, Codex, ACP
+  instructions every MCP-enabled provider receives: ChatLLM, Claude, Codex, ACP
   (Antigravity, Gemini, Grok), Cursor and OpenCode. It is reread at each session
-  start, and on every turn for Codex, so edits need no rebuild. Codex gets it
-  split into entries under its 4,000-byte cap
+  start, and on every turn for ChatLLM and Codex, so edits need no rebuild.
+  Codex gets it split into entries under its 4,000-byte cap
   (`userOrchestrationInstructions.ts`). Pi bakes its instructions into its
   extension at build time and doesn't get the file.
 
