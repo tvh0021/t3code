@@ -1,4 +1,5 @@
 import {
+  AbacusSettings,
   AntigravitySettings,
   ClaudeSettings,
   CloudSpeechCredentials,
@@ -34,6 +35,7 @@ const providerSecretFields = new Map([
   ["claudeAgent", secretSettingsFields(ClaudeSettings)],
   ["antigravity", secretSettingsFields(AntigravitySettings)],
   ["zed", secretSettingsFields(ZedSettings)],
+  ["abacus", secretSettingsFields(AbacusSettings)],
   ...[
     cursorClient,
     grokClient,

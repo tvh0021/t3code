@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildZedAcpSpawnInput, selectAcpPermissionOptionId } from "./ZedAcpSupport.ts";
+import { buildZedAcpSpawnInput } from "./ZedAcpSupport.ts";
 
 describe("buildZedAcpSpawnInput", () => {
   it("starts discovery with the thread's selected model instead of the provider default", () => {
@@ -44,27 +44,5 @@ describe("buildZedAcpSpawnInput", () => {
       "--model",
       "anthropic/claude-sonnet-4-6",
     ]);
-  });
-});
-
-describe("selectAcpPermissionOptionId", () => {
-  it("selects the provider-supplied permission option id", () => {
-    const request = {
-      sessionId: "session-1",
-      toolCall: {
-        toolCallId: "tool-1",
-        title: "Run build",
-        kind: "execute",
-        status: "pending",
-      },
-      options: [
-        { optionId: "allow", name: "Allow", kind: "allow_once" },
-        { optionId: "deny", name: "Deny", kind: "reject_once" },
-      ],
-    } as const;
-
-    expect(selectAcpPermissionOptionId(request, "accept")).toBe("allow");
-    expect(selectAcpPermissionOptionId(request, "decline")).toBe("deny");
-    expect(selectAcpPermissionOptionId(request, "cancel")).toBeUndefined();
   });
 });

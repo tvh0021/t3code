@@ -9,7 +9,6 @@ export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
   "opencode",
   "antigravity",
   "pi",
-  "abacus",
   "muse",
 ];
 
@@ -29,22 +28,6 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   abacus: "ChatLLM",
   muse: "Muse Code",
 };
-
-export const DRIVER_LABEL: Record<string, string> = {
-  codex: "Codex",
-  claudeAgent: "Claude",
-  zed: "Zed",
-  antigravity: "Antigravity",
-  abacus: "ChatLLM",
-  chatllm: "ChatLLM",
-  muse: "Muse Code",
-};
-
-export function getDriverLabel(driver: string): string {
-  const normalized = driver.trim().toLowerCase();
-  if (normalized === "claudeagent") return "Claude";
-  return DRIVER_LABEL[normalized] ?? DRIVER_LABEL[driver] ?? driver;
-}
 
 export function useProviderColors(): Record<UsageProviderKind, string> {
   const { themeAppearance: scheme } = useAppearancePreferences();

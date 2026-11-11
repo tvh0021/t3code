@@ -929,6 +929,45 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
           };
           let failure: string | undefined;
 
+          const makeMessageEvent = (input: {
+            readonly id: MessageId;
+            readonly text: string;
+            readonly createdAt: DateTime.Utc;
+            readonly updatedAt: DateTime.Utc;
+          }) => ({
+            type: "message.updated" as const,
+            driver: ABACUS_PROVIDER,
+            message: {
+              id: input.id,
+              threadId: turnInput.threadId,
+              runId: turnInput.runId,
+              nodeId: turnInput.rootNodeId,
+              role: "assistant" as const,
+              text: input.text,
+              attachments: [],
+              streaming: false,
+              createdBy: "agent" as const,
+              creationSource: "provider" as const,
+              createdAt: input.createdAt,
+              updatedAt: input.updatedAt,
+            },
+          });
+
+          const makeTurnItemEvent = <const Item extends object>(item: Item) => ({
+            type: "turn_item.updated" as const,
+            driver: ABACUS_PROVIDER,
+            turnItem: {
+              threadId: turnInput.threadId,
+              runId: turnInput.runId,
+              nodeId: turnInput.rootNodeId,
+              providerThreadId: turnInput.providerThread.id,
+              providerTurnId,
+              nativeItemRef: null,
+              parentItemId: null,
+              ...item,
+            },
+          });
+
           while (!active.cancelled) {
             let assistantText = "";
             let usage: unknown;
@@ -1036,18 +1075,10 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                         hasStartedAssistantItem = true;
                       }
                       await Effect.runPromise(
-                        Queue.offer(events, {
-                          type: "turn_item.updated",
-                          driver: ABACUS_PROVIDER,
-                          turnItem: {
+                        Queue.offer(
+                          events,
+                          makeTurnItemEvent({
                             id: assistantTurnItemId,
-                            threadId: turnInput.threadId,
-                            runId: turnInput.runId,
-                            nodeId: turnInput.rootNodeId,
-                            providerThreadId: turnInput.providerThread.id,
-                            providerTurnId,
-                            nativeItemRef: null,
-                            parentItemId: null,
                             ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 1,
                             status: "running",
                             title: null,
@@ -1058,8 +1089,8 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                             messageId: assistantMessageId,
                             text: assistantText,
                             streaming: true,
-                          },
-                        }),
+                          }),
+                        ),
                       );
                     }
 
@@ -1107,36 +1138,19 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
 
             if (hasStartedAssistantItem) {
               const messageNow = yield* DateTime.now;
-              yield* Queue.offer(events, {
-                type: "message.updated",
-                driver: ABACUS_PROVIDER,
-                message: {
+              yield* Queue.offer(
+                events,
+                makeMessageEvent({
                   id: assistantMessageId,
-                  threadId: turnInput.threadId,
-                  runId: turnInput.runId,
-                  nodeId: turnInput.rootNodeId,
-                  role: "assistant",
                   text: assistantText,
-                  attachments: [],
-                  streaming: false,
-                  createdBy: "agent",
-                  creationSource: "provider",
                   createdAt: startedAt,
                   updatedAt: messageNow,
-                },
-              });
-              yield* Queue.offer(events, {
-                type: "turn_item.updated",
-                driver: ABACUS_PROVIDER,
-                turnItem: {
+                }),
+              );
+              yield* Queue.offer(
+                events,
+                makeTurnItemEvent({
                   id: assistantTurnItemId,
-                  threadId: turnInput.threadId,
-                  runId: turnInput.runId,
-                  nodeId: turnInput.rootNodeId,
-                  providerThreadId: turnInput.providerThread.id,
-                  providerTurnId,
-                  nativeItemRef: null,
-                  parentItemId: null,
                   ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 1,
                   status: "completed",
                   title: null,
@@ -1147,8 +1161,8 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                   messageId: assistantMessageId,
                   text: assistantText,
                   streaming: false,
-                },
-              });
+                }),
+              );
             }
 
             if (usage !== undefined) {
@@ -1204,36 +1218,19 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
               const ceilingMessageId = MessageId.make(
                 `msg-abacus-assistant-${syntheticNativeTurnId}-step-limit`,
               );
-              yield* Queue.offer(events, {
-                type: "message.updated",
-                driver: ABACUS_PROVIDER,
-                message: {
+              yield* Queue.offer(
+                events,
+                makeMessageEvent({
                   id: ceilingMessageId,
-                  threadId: turnInput.threadId,
-                  runId: turnInput.runId,
-                  nodeId: turnInput.rootNodeId,
-                  role: "assistant",
                   text: ceilingText,
-                  attachments: [],
-                  streaming: false,
-                  createdBy: "agent",
-                  creationSource: "provider",
                   createdAt: ceilingNow,
                   updatedAt: ceilingNow,
-                },
-              });
-              yield* Queue.offer(events, {
-                type: "turn_item.updated",
-                driver: ABACUS_PROVIDER,
-                turnItem: {
+                }),
+              );
+              yield* Queue.offer(
+                events,
+                makeTurnItemEvent({
                   id: TurnItemId.make(`item-abacus-assistant-${syntheticNativeTurnId}-step-limit`),
-                  threadId: turnInput.threadId,
-                  runId: turnInput.runId,
-                  nodeId: turnInput.rootNodeId,
-                  providerThreadId: turnInput.providerThread.id,
-                  providerTurnId,
-                  nativeItemRef: null,
-                  parentItemId: null,
                   ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 3,
                   status: "completed",
                   title: null,
@@ -1244,8 +1241,8 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                   messageId: ceilingMessageId,
                   text: ceilingText,
                   streaming: false,
-                },
-              });
+                }),
+              );
               break;
             }
 
@@ -1350,18 +1347,10 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
               const toolNow = yield* DateTime.now;
 
               if (tc.function.name === "execute_command") {
-                yield* Queue.offer(events, {
-                  type: "turn_item.updated",
-                  driver: ABACUS_PROVIDER,
-                  turnItem: {
+                yield* Queue.offer(
+                  events,
+                  makeTurnItemEvent({
                     id: toolTurnItemId,
-                    threadId: turnInput.threadId,
-                    runId: turnInput.runId,
-                    nodeId: turnInput.rootNodeId,
-                    providerThreadId: turnInput.providerThread.id,
-                    providerTurnId,
-                    nativeItemRef: null,
-                    parentItemId: null,
                     ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 2,
                     status: "completed",
                     title: "Run command",
@@ -1371,21 +1360,13 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                     type: "command_execution",
                     input: String(toolArgs.command ?? ""),
                     output: truncated,
-                  },
-                });
+                  }),
+                );
               } else {
-                yield* Queue.offer(events, {
-                  type: "turn_item.updated",
-                  driver: ABACUS_PROVIDER,
-                  turnItem: {
+                yield* Queue.offer(
+                  events,
+                  makeTurnItemEvent({
                     id: toolTurnItemId,
-                    threadId: turnInput.threadId,
-                    runId: turnInput.runId,
-                    nodeId: turnInput.rootNodeId,
-                    providerThreadId: turnInput.providerThread.id,
-                    providerTurnId,
-                    nativeItemRef: null,
-                    parentItemId: null,
                     ordinal: turnInput.providerTurnOrdinal * 100 + stepCount * 2 + 2,
                     status: "completed",
                     // T3 tools render from their qualified name, as on other providers.
@@ -1401,8 +1382,8 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                       t3Result !== null && typeof t3Result === "object"
                         ? mcpToolResultOutput(t3Result)
                         : truncated,
-                  },
-                });
+                  }),
+                );
               }
 
               messages.push({

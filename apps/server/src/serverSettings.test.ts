@@ -1310,45 +1310,55 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("stores and redacts the Zed dashboard session through settings updates", () =>
+  it.effect.each([
+    {
+      driver: "zed",
+      instanceId: ProviderInstanceId.make("zed_dashboard_secrets"),
+      field: "dashboardSession",
+      secret: "session=zed-test-secret",
+      marker: "zed-test-secret",
+    },
+    {
+      driver: "abacus",
+      instanceId: ProviderInstanceId.make("abacus_session_secrets"),
+      field: "sessionCookie",
+      secret: "session=abacus-test-secret",
+      marker: "abacus-test-secret",
+    },
+  ] as const)("stores and redacts $driver $field through settings updates", (entry) =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
       const config = yield* ServerConfig.ServerConfig;
       const fs = yield* FileSystem.FileSystem;
-      const instanceId = ProviderInstanceId.make("zed_dashboard_secrets");
       const saved = yield* service.updateProviderInstance({
         operation: "upsert",
-        instanceId,
+        instanceId: entry.instanceId,
         instance: {
-          driver: ProviderDriverKind.make("zed"),
-          config: { dashboardSession: "session=zed-test-secret" },
+          driver: ProviderDriverKind.make(entry.driver),
+          config: { [entry.field]: entry.secret },
         },
       });
       const client = ServerSettingsModule.redactServerSettingsForClient(saved, {
         secretReferences: true,
       });
-      assert.propertyVal(
-        client.providerInstances[instanceId]?.config,
-        "dashboardSession",
-        "••••••",
-      );
-      assert.notInclude(yield* fs.readFileString(config.settingsPath), "zed-test-secret");
+      assert.propertyVal(client.providerInstances[entry.instanceId]?.config, entry.field, "••••••");
+      assert.notInclude(yield* fs.readFileString(config.settingsPath), entry.marker);
       const echoed = yield* service.updateProviderInstance({
         operation: "upsert",
-        instanceId,
-        instance: { ...client.providerInstances[instanceId]!, displayName: "Renamed" },
+        instanceId: entry.instanceId,
+        instance: { ...client.providerInstances[entry.instanceId]!, displayName: "Renamed" },
       });
       assert.propertyVal(
-        echoed.providerInstances[instanceId]?.config,
-        "dashboardSession",
-        "session=zed-test-secret",
+        echoed.providerInstances[entry.instanceId]?.config,
+        entry.field,
+        entry.secret,
       );
       const cleared = yield* service.updateProviderInstance({
         operation: "upsert",
-        instanceId,
-        instance: { ...client.providerInstances[instanceId]!, config: { dashboardSession: "" } },
+        instanceId: entry.instanceId,
+        instance: { ...client.providerInstances[entry.instanceId]!, config: { [entry.field]: "" } },
       });
-      assert.propertyVal(cleared.providerInstances[instanceId]?.config, "dashboardSession", "");
+      assert.propertyVal(cleared.providerInstances[entry.instanceId]?.config, entry.field, "");
     }).pipe(Effect.provide(layerServerSettings())),
   );
 

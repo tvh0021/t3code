@@ -127,16 +127,27 @@ function zedModelsFromSettings(
   return providerModelsFromSettings(builtInModels, customModels, EMPTY_CAPABILITIES);
 }
 
+function buildZedDraft(input: {
+  readonly enabled: boolean;
+  readonly checkedAt: string;
+  readonly models: ReadonlyArray<ServerProviderModel>;
+  readonly probe: Parameters<typeof buildServerProvider>[0]["probe"];
+}): ServerProviderDraft {
+  return buildServerProvider({
+    presentation: ZED_PRESENTATION,
+    slashCommands: ZED_SLASH_COMMANDS,
+    ...input,
+  });
+}
+
 function buildDisabledZedProviderSnapshot(
   checkedAt: string,
   models: ReadonlyArray<ServerProviderModel>,
 ): ServerProviderDraft {
-  return buildServerProvider({
-    presentation: ZED_PRESENTATION,
+  return buildZedDraft({
     enabled: false,
     checkedAt,
     models,
-    slashCommands: ZED_SLASH_COMMANDS,
     probe: {
       installed: false,
       version: null,
@@ -159,12 +170,10 @@ export const buildInitialZedProviderSnapshot: (
     return buildDisabledZedProviderSnapshot(checkedAt, models);
   }
 
-  return buildServerProvider({
-    presentation: ZED_PRESENTATION,
+  return buildZedDraft({
     enabled: true,
     checkedAt,
     models,
-    slashCommands: ZED_SLASH_COMMANDS,
     probe: {
       installed: false,
       version: null,
@@ -209,12 +218,10 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
   if (Result.isFailure(probeResult) || probeResult.success.code !== 0) {
     const commandMissing =
       Result.isFailure(probeResult) && isCommandMissingCause(probeResult.failure);
-    return buildServerProvider({
-      presentation: ZED_PRESENTATION,
+    return buildZedDraft({
       enabled: true,
       checkedAt,
       models,
-      slashCommands: ZED_SLASH_COMMANDS,
       probe: {
         installed: !commandMissing,
         version: null,
@@ -268,12 +275,10 @@ export const checkZedProviderStatus = Effect.fn("checkZedProviderStatus")(functi
     });
   }
 
-  return buildServerProvider({
-    presentation: ZED_PRESENTATION,
+  return buildZedDraft({
     enabled: true,
     checkedAt,
     models,
-    slashCommands: ZED_SLASH_COMMANDS,
     probe: {
       installed: true,
       version: parseGenericCliVersion(probeResult.success.stdout),

@@ -7,9 +7,8 @@ import {
   ProviderInstanceEnvironment,
   ProviderInstanceId,
 } from "./providerInstance.ts";
+import { ABACUS_DEFAULT_API_BASE_URL, AbacusSettings } from "./forkProviderSettings.ts";
 import {
-  ABACUS_DEFAULT_API_BASE_URL,
-  AbacusSettings,
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClaudeSettings,

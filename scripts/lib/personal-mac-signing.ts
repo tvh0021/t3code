@@ -151,3 +151,40 @@ export async function withPersonalSigningIdentity<A>(
     }
   }
 }
+
+// Local DMGs need their own macOS privacy identity. Reusing the signed
+// public app's ID makes TCC reject its saved permissions on each request.
+const LOCAL_MAC_APP_ID = "com.t3tools.t3code.personal";
+
+export function resolveStagePackageName(platform: string, signed: boolean): string {
+  // Electron uses the packaged app name for its macOS Safe Storage keychain
+  // item. Keep local Personal builds away from the public app's item.
+  return platform === "mac" && !signed ? "t3code-personal" : "t3code";
+}
+
+export function applyPersonalDesktopBuildConfig(
+  buildConfig: Record<string, unknown>,
+  options: {
+    readonly platform: string;
+    readonly signed: boolean;
+    readonly repoRoot: string;
+  },
+): Record<string, unknown> {
+  if (options.platform !== "mac" || options.signed) {
+    return buildConfig;
+  }
+  const mac =
+    typeof buildConfig.mac === "object" && buildConfig.mac !== null
+      ? (buildConfig.mac as Record<string, unknown>)
+      : {};
+  return {
+    ...buildConfig,
+    appId: LOCAL_MAC_APP_ID,
+    mac: {
+      ...mac,
+      identity: "-",
+      hardenedRuntime: false,
+      sign: NodePath.join(options.repoRoot, "scripts/sign-macos-personal.ts"),
+    },
+  };
+}

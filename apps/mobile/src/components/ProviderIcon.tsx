@@ -9,7 +9,6 @@ import {
 import { useId, useState } from "react";
 import { resolveOfficialAcpRegistryIconUrl } from "@t3tools/contracts";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
-import { AbacusIcon } from "./AbacusIcon";
 import { AppText as Text } from "./ui/AppText";
 import { cn } from "../lib/cn";
 import { getProviderClient, openRouterIcon } from "@t3tools/client-runtime/provider-clients";
@@ -75,9 +74,8 @@ export function ProviderIcon(props: ProviderIconProps) {
   const gradientId = useId();
   const size = props.size ?? 16;
   const mono = isDarkMode ? "#e5e5e5" : "#171717";
-  const normalizedProvider = props.provider?.trim().toLowerCase();
 
-  if (normalizedProvider === "antigravity") {
+  if (props.provider?.trim().toLowerCase() === "antigravity") {
     return (
       <Image
         source={require("../../assets/antigravity.png")}
@@ -88,10 +86,6 @@ export function ProviderIcon(props: ProviderIconProps) {
   }
   if (props.provider === "acpRegistry") {
     return <AcpRegistryProviderIcon color={mono} iconUrl={props.iconUrl} size={size} />;
-  }
-
-  if (normalizedProvider === "abacus" || normalizedProvider === "chatllm") {
-    return <AbacusIcon size={size} />;
   }
 
   if (props.provider === "claudeAgent") {

@@ -6,6 +6,10 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### Unreleased
+
+- Issue: ChatLLM's session cookie was saved in `settings.json` and sent unredacted to connected clients → Fix: store `sessionCookie` in the host's secret store and redact it over WebSocket
+
 ### 0.14.0 (2026-11-09)
 
 - Upstream sync: merged upstream 521ac7c218

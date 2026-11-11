@@ -358,44 +358,9 @@ const layerBase: Layer.Layer<
         });
       });
 
-    // Lineage is immutable; evicted entries can be read again.
-    const subagentThreads = new Map<ThreadId, boolean>();
-    const isSubagentThread = (
-      threadId: ThreadId,
-      events: ReadonlyArray<OrchestrationV2DomainEvent>,
-    ) => {
-      const cached = subagentThreads.get(threadId);
-      if (cached !== undefined) return Effect.succeed(cached);
-      const created = events.find(
-        (event) => event.type === "thread.created" && event.threadId === threadId,
-      );
-      const lineage =
-        created?.type === "thread.created"
-          ? Effect.succeed(created.payload.lineage)
-          : projectionStore.getThread(threadId).pipe(Effect.map((thread) => thread.lineage));
-      return lineage.pipe(
-        Effect.map((lineage) => lineage.relationshipToParent === "subagent"),
-        Effect.tap((subagent) =>
-          Effect.sync(() => {
-            subagentThreads.set(threadId, subagent);
-            if (subagentThreads.size > 1024) {
-              const oldest = subagentThreads.keys().next().value;
-              if (oldest !== undefined) subagentThreads.delete(oldest);
-            }
-          }),
-        ),
-        Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(false) }),
-      );
-    };
-
-    // Claude recovers native subagent text after its tool commits and orders it by adapter ordinal.
-    const keepsAdapterOrdinal = (
-      item: OrchestrationV2TurnItem,
-      events: ReadonlyArray<OrchestrationV2DomainEvent>,
-    ) =>
-      item.runId === null && item.nativeItemRef?.driver === "claudeAgent"
-        ? isSubagentThread(item.threadId, events)
-        : Effect.succeed(false);
+    // Every run-less Claude turn item targets a native subagent thread, where recovered text orders by adapter ordinal.
+    const keepsAdapterOrdinal = (item: OrchestrationV2TurnItem) =>
+      item.runId === null && item.nativeItemRef?.driver === "claudeAgent";
 
     const normalizeEvents = (events: ReadonlyArray<OrchestrationV2DomainEvent>) => {
       const runOrdinals = new Map(
@@ -409,18 +374,13 @@ const layerBase: Layer.Layer<
         events,
         (event): Effect.Effect<OrchestrationV2DomainEvent, unknown> =>
           event.type === "turn-item.updated"
-            ? keepsAdapterOrdinal(event.payload, events).pipe(
-                Effect.flatMap((keepOrdinal) =>
-                  turnItemPositions.normalize(event.payload, {
-                    runOrdinal:
-                      event.payload.runId === null
-                        ? undefined
-                        : runOrdinals.get(event.payload.runId),
-                    keepOrdinal,
-                  }),
-                ),
-                Effect.map((payload) => ({ ...event, payload })),
-              )
+            ? turnItemPositions
+                .normalize(event.payload, {
+                  runOrdinal:
+                    event.payload.runId === null ? undefined : runOrdinals.get(event.payload.runId),
+                  keepOrdinal: keepsAdapterOrdinal(event.payload),
+                })
+                .pipe(Effect.map((payload) => ({ ...event, payload })))
             : Effect.succeed(event),
         { concurrency: 1 },
       );

@@ -32,14 +32,8 @@ import { usageProviderKind, useProviderColors } from "./usageProviders";
 const DRIVER_LABEL: Partial<Record<string, string>> = {
   codex: "Codex",
   claudeAgent: "Claude",
-  cursor: "Cursor",
-  opencode: "OpenCode",
-  pi: "Pi",
   grok: "Grok",
-  zed: "Zed",
   antigravity: "Antigravity",
-  abacus: "ChatLLM",
-  chatllm: "ChatLLM",
 };
 const PACE_LABEL = { ahead: "Ahead of pace", on: "On pace", under: "Under pace" } as const;
 
@@ -460,11 +454,7 @@ export function UsageLimitsSection({
                   <PoolWindowCard
                     key={`${window.kind}:${window.id}`}
                     pool={window}
-                    color={
-                      pool.driver === "zed"
-                        ? "#70a5ff"
-                        : colors[usageProviderKind(pool.driver) ?? "codex"]
-                    }
+                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
                     now={now}
                     environmentIds={
                       selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]

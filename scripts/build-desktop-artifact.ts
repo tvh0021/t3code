@@ -43,6 +43,10 @@ import {
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  applyPersonalDesktopBuildConfig,
+  resolveStagePackageName,
+} from "./lib/personal-mac-signing.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -63,9 +67,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.t3tools.t3code";
-// Local DMGs need their own macOS privacy identity. Reusing the signed
-// public app's ID makes TCC reject its saved permissions on each request.
-const LOCAL_MAC_APP_ID = "com.t3tools.t3code.personal";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -2530,21 +2531,34 @@ const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
   stageResourcesDir: string,
   channel: "latest" | "nightly",
-  _verbose: boolean,
+  verbose: boolean,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  // sips cannot rasterize SVG on all macOS versions. Ship both PNG sizes so
-  // local builds and release builds use the same installer artwork.
-  for (const suffix of ["", "@2x"] as const) {
-    const sourcePath = path.join(
+  const sourcePath = path.join(stageResourcesDir, "dmg", `dmg-background-${channel}.svg`);
+  if (!(yield* fs.exists(sourcePath))) {
+    return yield* new DesktopDmgBackgroundSourceMissingError({ channel, sourcePath });
+  }
+
+  for (const output of [
+    { suffix: "", width: 640, height: 432 },
+    { suffix: "@2x", width: 1280, height: 864 },
+  ] as const) {
+    const targetPath = path.join(
       stageResourcesDir,
       "dmg",
-      `dmg-background-${channel}${suffix}.png`,
+      `dmg-background-${channel}${output.suffix}.png`,
     );
-    if (!(yield* fs.exists(sourcePath))) {
-      return yield* new DesktopDmgBackgroundSourceMissingError({ channel, sourcePath });
-    }
+    if (yield* fs.exists(targetPath)) continue;
+    yield* runCommand(
+      ChildProcess.make(
+        {},
+      )`sips -s format png -z ${output.height} ${output.width} ${sourcePath} --out ${targetPath}`,
+      {
+        label: `sips ${channel} DMG background${output.suffix || "@1x"}`,
+        verbose,
+      },
+    );
   }
 });
 
@@ -2772,7 +2786,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 ) {
   const buildConfig: Record<string, unknown> = {
     afterPack: (yield* Path.Path).join(yield* RepoRoot, "scripts/prepare-server-compile-cache.cjs"),
-    appId: platform === "mac" && !signed ? LOCAL_MAC_APP_ID : DESKTOP_APP_ID,
+    appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
     artifactName: "T3-Code-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
@@ -2823,7 +2837,6 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
-      ...(!signed ? { identity: "-", hardenedRuntime: false } : {}),
       extendInfo: {
         // macOS 26 offers Messages/Mail codes in every text field unless opted out.
         NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,
@@ -2863,10 +2876,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           role: "Viewer",
         },
       ],
-      sign: path.join(
-        repoRoot,
-        signed ? "scripts/sign-macos.ts" : "scripts/sign-macos-personal.ts",
-      ),
+      ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,
@@ -2971,7 +2981,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.win = winConfig;
   }
 
-  return buildConfig;
+  return applyPersonalDesktopBuildConfig(buildConfig, {
+    platform,
+    signed,
+    repoRoot: yield* RepoRoot,
+  });
 });
 
 const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(function* (
@@ -3864,9 +3878,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    // Electron uses the packaged app name for its macOS Safe Storage keychain
-    // item. Keep local Personal builds away from the public app's item.
-    name: options.platform === "mac" && !options.signed ? "t3code-personal" : "t3code",
+    name: resolveStagePackageName(options.platform, options.signed),
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
