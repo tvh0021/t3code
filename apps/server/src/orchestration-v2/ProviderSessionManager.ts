@@ -468,7 +468,11 @@ export const layerWithOptions = (
                 if (browserToolsAvailable) capabilities.add("preview");
                 if (deviceToolsAvailable) capabilities.add("device");
                 const subagent = yield* projectionStore.getThread(threadId).pipe(
-                  Effect.map((thread) => thread.lineage.relationshipToParent === "subagent"),
+                  Effect.map(
+                    (thread) =>
+                      thread.lineage.relationshipToParent === "subagent" ||
+                      thread.delegatedFrom !== undefined,
+                  ),
                   Effect.orElseSucceed(() => false),
                 );
                 const existing = yield* mcpSessions.read(threadId);

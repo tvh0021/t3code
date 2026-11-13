@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 export const USER_ORCHESTRATION_INSTRUCTIONS_ENV = "T3_USER_ORCHESTRATION_INSTRUCTIONS";
+export const USER_CHILD_ORCHESTRATION_INSTRUCTIONS_ENV = "T3_USER_CHILD_ORCHESTRATION_INSTRUCTIONS";
 
 /**
  * Codex cuts the middle out of any instruction entry over 4,000 bytes, so each
@@ -14,6 +15,18 @@ const SECTION_MAX_BYTES = 3_800;
 export function userOrchestrationInstructionsPath(env: NodeJS.ProcessEnv = process.env): string {
   const override = env[USER_ORCHESTRATION_INSTRUCTIONS_ENV]?.trim();
   return override ? override : NodePath.join(NodeOS.homedir(), ".agents", "ORCHESTRATION.md");
+}
+
+export function userChildOrchestrationInstructionsPath(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const override = env[USER_CHILD_ORCHESTRATION_INSTRUCTIONS_ENV]?.trim();
+  if (override) return override;
+  const parentOverride = env[USER_ORCHESTRATION_INSTRUCTIONS_ENV]?.trim();
+  if (parentOverride) {
+    return NodePath.join(NodePath.dirname(parentOverride), "ORCHESTRATION-CHILD.md");
+  }
+  return NodePath.join(NodeOS.homedir(), ".agents", "ORCHESTRATION-CHILD.md");
 }
 
 /**
@@ -32,6 +45,21 @@ export function readUserOrchestrationSections(
   if (text.length === 0) return [];
   return packSections(
     `## User orchestration rules\n\nThe user keeps these rules in \`${path}\`. They apply to every provider and model, and to work you delegate.\n\n${text}`,
+  );
+}
+
+export function readUserChildOrchestrationSections(
+  path: string = userChildOrchestrationInstructionsPath(),
+): ReadonlyArray<string> {
+  let text: string;
+  try {
+    text = NodeFS.readFileSync(path, "utf8").trim();
+  } catch {
+    return [];
+  }
+  if (text.length === 0) return [];
+  return packSections(
+    `## User orchestration rules\n\nThe user keeps these child rules in \`${path}\`. They apply to this delegated run.\n\n${text}`,
   );
 }
 

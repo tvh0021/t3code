@@ -134,6 +134,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           authorizationHeader: `Bearer ${rawToken}`,
           browserToolsAvailable: scope.capabilities.has("preview"),
           capabilities: scope.capabilities,
+          ...(scope.thread.subagent === true ? { subagent: true } : {}),
         },
       };
     },

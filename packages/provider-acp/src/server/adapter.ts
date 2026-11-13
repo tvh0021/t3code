@@ -112,6 +112,7 @@ import {
 } from "./sessionConfig.ts";
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import {
+  isDelegatedSubagentTurn,
   t3AcpPromptWithInstructions,
   type T3AcpInstructionState,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
@@ -176,6 +177,7 @@ export interface AcpAdapterV2RuntimeInput {
   readonly acpMcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly httpMcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly processEnvironment?: NodeJS.ProcessEnv;
+  readonly subagent?: boolean;
   readonly resumeSessionId?: string;
   readonly interruptPromptOnCancel?: boolean;
   readonly clientCapabilities: EffectAcpSchema.InitializeRequest["clientCapabilities"];
@@ -561,6 +563,10 @@ export interface AcpAdapterV2Flavor {
   readonly sessionCarriesPullRequestLinking?: (
     initializeResult: EffectAcpSchema.InitializeResponse,
   ) => boolean;
+  /** True when the agent reliably exposes T3's injected MCP server tools without terminal fallback. */
+  readonly exposesInjectedMcpTools?: (
+    initializeResult: EffectAcpSchema.InitializeResponse,
+  ) => boolean;
 }
 
 function acpSupportsImagePrompts(input: {
@@ -833,6 +839,7 @@ interface AcpMcpContext {
   readonly processEnvironment?: NodeJS.ProcessEnv;
   readonly endpoint?: string;
   readonly authorization?: string;
+  readonly subagent?: boolean;
 }
 
 function acpMcpContext(
@@ -871,6 +878,7 @@ function acpMcpContext(
         : [],
     endpoint: session.endpoint,
     authorization: session.authorizationHeader,
+    ...(session.subagent === true ? { subagent: true } : {}),
     processEnvironment: {
       // The thread id every process the agent starts inherits, so a tool run
       // from its shell can find its T3 thread. Claude and Codex sessions set
@@ -2366,6 +2374,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             ...(mcpContext.processEnvironment === undefined
               ? {}
               : { processEnvironment: mcpContext.processEnvironment }),
+            ...(mcpContext.subagent === true ? { subagent: true } : {}),
             ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
             interruptPromptOnCancel: flavor.interruptPromptOnCancel ?? false,
             clientCapabilities: {
@@ -7925,10 +7934,17 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         ) {
           const prompt: Array<EffectAcpSchema.ContentBlock> = [];
           const mcpSession = yield* mcpSessions.read(turnInput.threadId);
+          const currentSetup = yield* Ref.get(activeSessionSetup);
+          const subagent = isDelegatedSubagentTurn(turnInput);
+          const omitMcpFallback =
+            currentSetup !== null &&
+            flavor.exposesInjectedMcpTools?.(currentSetup.initializeResult) === true;
           const instructionState = {
             interactionMode: turnInput.runtimePolicy.interactionMode,
             hasT3Mcp: mcpSession !== undefined,
             hasDeviceTools: mcpSession?.capabilities?.has("device") === true,
+            ...(subagent ? { subagent: true } : {}),
+            ...(omitMcpFallback ? { omitMcpFallback: true } : {}),
           } satisfies T3AcpInstructionState;
           const previousInstructionState = (yield* Ref.get(promptInstructionStates)).get(sessionId);
           const compactionMarker = (yield* Ref.get(compactionMarkers)).get(sessionId);

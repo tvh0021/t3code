@@ -100,6 +100,34 @@ describe("Antigravity release gates", () => {
       expect(antigravityClientInfo(version).name).toBe(ownName ? "t3-code" : "zed");
     },
   );
+
+  it("merges conversational extraDisabledTools without duplicating run_workflow", () => {
+    const qualified = {
+      protocolVersion: 1,
+      agentInfo: { name: "antigravity", version: "1.4.5" },
+      agentCapabilities: {},
+    };
+    expect(
+      antigravitySessionMeta(qualified, "<pull_request_linking/>", ["generate_image"]),
+    ).toEqual({
+      antigravity: {
+        disabledTools: ["run_workflow", "generate_image"],
+        systemPrompt: { append: "<pull_request_linking/>" },
+      },
+    });
+    expect(
+      antigravitySessionMeta(qualified, "<pull_request_linking/>", [
+        "generate_image",
+        "ask_question",
+        "run_workflow",
+      ]),
+    ).toEqual({
+      antigravity: {
+        disabledTools: ["run_workflow", "generate_image", "ask_question"],
+        systemPrompt: { append: "<pull_request_linking/>" },
+      },
+    });
+  });
 });
 
 describe("Antigravity user rules", () => {

@@ -52,7 +52,10 @@ import {
   hasCursorSkillMention,
   rewriteCursorSkillMentions,
 } from "./skills.ts";
-import { t3OrchestrationPrompt } from "@t3tools/provider-core/server/orchestrationInstructions";
+import {
+  isDelegatedSubagentTurn,
+  t3OrchestrationPrompt,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
@@ -1003,6 +1006,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           readonly agent: string;
           readonly orchestration: boolean;
           readonly device: boolean;
+          readonly subagent?: boolean;
         } | null>(null);
         const warnedUnsupportedSandbox = yield* Ref.make(false);
         const activeTurn = yield* Ref.make<ActiveCursorTurn | null>(null);
@@ -2317,6 +2321,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             hasDeviceTools,
             orchestrationDelivered: delivered.orchestration,
             deviceInstructionsDelivered: delivered.device,
+            subagent: isDelegatedSubagentTurn(turnInput),
           });
           const images = yield* Effect.forEach(
             turnInput.message.attachments.filter(isProviderNativeImageAttachment),
@@ -2384,12 +2389,24 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             const mcpServers = cursorMcpServers(mcpSession);
             const hasDeviceTools =
               mcpServers !== undefined && mcpSession?.capabilities?.has("device") === true;
+            const subagent = isDelegatedSubagentTurn(turnInput);
             const known = yield* Ref.get(told);
             // A conversation this process has not sent to was told on its first run.
             const delivered =
               known?.agent === agent.nativeThreadId
-                ? known
-                : { orchestration: turnInput.runOrdinal > 1, device: false };
+                ? {
+                    ...known,
+                    orchestration: known.orchestration && (known.subagent === true) === subagent,
+                  }
+                : {
+                    // Run 1 of a delegated thread got child rules, so a user follow-up needs its own.
+                    orchestration:
+                      turnInput.runOrdinal > 1 &&
+                      (subagent ||
+                        (turnInput.appThread.lineage.relationshipToParent !== "subagent" &&
+                          turnInput.appThread.delegatedFrom === undefined)),
+                    device: false,
+                  };
             const message = yield* resolveUserMessage(
               turnInput,
               mcpServers,
@@ -2423,6 +2440,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               agent: agent.nativeThreadId,
               orchestration: !compacted && (delivered.orchestration || mcpServers !== undefined),
               device: !compacted && hasDeviceTools,
+              subagent,
             });
             const startedAt = yield* DateTime.now;
             const completed = yield* Deferred.make<void, never>();

@@ -34,7 +34,10 @@ import {
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import type { McpProviderSessionConfig } from "@t3tools/provider-core/server/mcpSession";
-import { t3OrchestrationInstructions } from "@t3tools/provider-core/server/orchestrationInstructions";
+import {
+  isDelegatedSubagentTurn,
+  t3OrchestrationInstructions,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 import { mcpToolResultOutput } from "@t3tools/shared/toolOutput";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
@@ -301,7 +304,7 @@ export function truncateToolOutput(output: string): string {
   return output;
 }
 
-function t3ToolsPrompt(tools: ReadonlyMap<string, T3McpTool>): string {
+function t3ToolsPrompt(tools: ReadonlyMap<string, T3McpTool>, subagent?: boolean): string {
   const direct = [...tools.keys()].filter((name) => ABACUS_DIRECT_T3_TOOLS.has(name));
   const deferred = [...tools.keys()].filter((name) => !ABACUS_DIRECT_T3_TOOLS.has(name));
   return `
@@ -310,13 +313,14 @@ function t3ToolsPrompt(tools: ReadonlyMap<string, T3McpTool>): string {
 
 You can call these T3 Code tools now: ${direct.join(", ")}. Load any other T3 Code tool with ${LOAD_T3_TOOLS} before calling it: ${deferred.join(", ")}.
 Use these tools, never the \`t3\` CLI, to start, message, read, or wait on threads.
-${t3OrchestrationInstructions()}`;
+${t3OrchestrationInstructions({ subagent })}`;
 }
 
 function buildAbacusSystemPrompt(
   workspaceDir: string,
   model: string,
   t3Tools: ReadonlyMap<string, T3McpTool> | undefined,
+  subagent?: boolean,
 ): string {
   return `You are an expert AI software engineering agent working in T3 Code on macOS.
 The active workspace directory is: ${workspaceDir}
@@ -337,7 +341,7 @@ Rules and Guidelines:
 6. When your work is complete, provide a concise summary of the changes made and any verification performed.
 
 <runtime_info>In case you're asked: you are running in T3 Code through the ChatLLM harness, as ${model}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>${
-    t3Tools === undefined || t3Tools.size === 0 ? "" : t3ToolsPrompt(t3Tools)
+    t3Tools === undefined || t3Tools.size === 0 ? "" : t3ToolsPrompt(t3Tools, subagent)
   }`;
 }
 
@@ -834,6 +838,7 @@ export const makeAbacusAdapterV2 = Effect.fn("makeAbacusAdapterV2")(function (
                 turnInput.runtimePolicy.cwd ?? process.cwd(),
                 turnInput.modelSelection.model || options.defaultModel,
                 t3?.tools,
+                isDelegatedSubagentTurn(turnInput),
               ),
             };
             yield* runTurnLoop(

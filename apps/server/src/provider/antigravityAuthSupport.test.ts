@@ -203,7 +203,9 @@ describe("Antigravity process environment", () => {
       expect(first.profile).toBe(
         "/userdata/providers/antigravity/ac0a3dfd6dddb20962cecff6ee5fe65e19d3923be20e52c5ab52ff877f7e4c32",
       );
+      expect(first.geminiHome).toBe("/userdata/ag/ac0a3dfd6ddd");
       expect(first.profile.toLowerCase()).not.toBe(second.profile.toLowerCase());
+      expect(first.geminiHome.toLowerCase()).not.toBe(second.geminiHome.toLowerCase());
       expect(first.runtimeTemp.toLowerCase()).not.toBe(second.runtimeTemp.toLowerCase());
     }).pipe(Effect.provide(Layer.mergeAll(NodeCrypto.layer, NodePath.layerPosix))),
   );
@@ -779,5 +781,30 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
         expect(yield* fs.exists(profileDirectory)).toBe(false);
       }
     }),
+  );
+
+  it.effect.skipIf(!symlinksSupported)(
+    "links a short geminiHome alias to the canonical profile on Unix while keeping canonical paths",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const temporaryDirectory = yield* fs.makeTempDirectoryScoped();
+        const profileDirectory = path.join(
+          temporaryDirectory,
+          "providers",
+          "antigravity",
+          "a".repeat(64),
+        );
+        const shortHome = path.join(temporaryDirectory, "ag", "a".repeat(12));
+        const profile = yield* prepareAntigravityProfile({
+          profileDirectory,
+          geminiHome: shortHome,
+          platform: "darwin",
+        });
+        expect(profile.geminiHome).toBe(shortHome);
+        expect(profile.acpDirectory).toBe(path.join(profileDirectory, "antigravity-acp"));
+        expect(yield* fs.realPath(shortHome)).toBe(yield* fs.realPath(profileDirectory));
+      }),
   );
 });

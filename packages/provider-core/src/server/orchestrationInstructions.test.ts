@@ -4,6 +4,7 @@ import {
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+  isDelegatedSubagentTurn,
   t3AcpPromptWithInstructions,
   t3OrchestrationPrompt,
   t3OrchestrationSystemPrompt,
@@ -81,5 +82,44 @@ describe("T3 device instructions", () => {
       "Again.",
     );
     assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## T3 Code devices");
+  });
+
+  it("distinguishes delegated subagent turns from direct user follow-ups and omits ACP fallback when gated", () => {
+    assert.isTrue(
+      isDelegatedSubagentTurn({
+        appThread: { lineage: { relationshipToParent: "subagent" } },
+        message: { createdBy: "agent" },
+      }),
+    );
+    assert.isTrue(
+      isDelegatedSubagentTurn({
+        appThread: { lineage: { relationshipToParent: null }, delegatedFrom: { taskId: "t1" } },
+        message: { createdBy: "system" },
+      }),
+    );
+    assert.isFalse(
+      isDelegatedSubagentTurn({
+        appThread: { lineage: { relationshipToParent: "subagent" } },
+        message: { createdBy: "user" },
+      }),
+    );
+
+    const childState = {
+      interactionMode: "default",
+      hasT3Mcp: true,
+      hasDeviceTools: false,
+      subagent: true,
+      omitMcpFallback: true,
+    } as const;
+    const childPrompt = t3AcpPromptWithInstructions({ prompt: "Audit.", state: childState });
+    assert.include(childPrompt, "## T3 Code child orchestration");
+    assert.notInclude(childPrompt, "ACP fallback:");
+
+    const followUp = t3AcpPromptWithInstructions({
+      prompt: "User follow-up.",
+      state: { ...childState, subagent: false },
+      previousState: childState,
+    });
+    assert.include(followUp, "## T3 Code orchestration");
   });
 });

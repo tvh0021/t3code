@@ -1,6 +1,9 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 
-import { readUserOrchestrationSections } from "./userOrchestrationInstructions.ts";
+import {
+  readUserChildOrchestrationSections,
+  readUserOrchestrationSections,
+} from "./userOrchestrationInstructions.ts";
 
 // Codex truncates entries over 4,000 bytes; keep each section self-contained and below that limit.
 export const T3_CODE_ORCHESTRATION_SECTIONS: ReadonlyArray<string> = [
@@ -26,6 +29,36 @@ Ordinary coding tasks need no T3 tools.
 - Never use \`preview_*\` unasked to verify or show your own edit. Use them when the current request asks for browser work, including recording edits, or names a page or tab. Do not repeat preview calls from an earlier turn. Public pages: web fetch or search unless browser work was asked; then preview tools only, no web fetch. Close a tab you opened before you reply, unless the user asked for it or uses it.`,
 ];
 
+export const T3_CODE_CHILD_ORCHESTRATION_SECTIONS: ReadonlyArray<string> = [
+  `## T3 Code child orchestration
+
+You are running a delegated child task. Do the work yourself and start no subagents unless your task explicitly says to.
+
+- If your task asks you to delegate, read \`~/.agents/ORCHESTRATION.md\` first when present. Use your native subagent tool when the child uses your provider, a model it offers, and no extra settings; otherwise call \`orchestrator_capabilities\` once before your first \`delegate_task\`. Follow a running delegate's \`next\`, never poll (\`task_status\`, \`sleep\`, watchers, Monitor, ScheduleWakeup), cancel unneeded runs with \`task_cancel\` rather than \`t3_thread_interrupt\`, and start a new \`delegate_task\` for each re-review rather than \`t3_thread_send\`.
+- Given a thread id, call \`t3_thread_read\` before answering about it, and mention any thread in your reply by its \`link\` verbatim.
+- For a secret only the user can give, call \`request_secret\`. T3 tools may load late; try the name once before calling it absent.
+- Show requested visuals here with \`html_preview\` then \`html_render\` without starting a server; write a \`.png\` and give its path when asked for an image to use elsewhere. Never call \`preview_*\` unasked; when browser work was asked, close any tab you opened before replying unless the user asked for it.`,
+];
+
+export interface T3OrchestrationOptions {
+  readonly subagent?: boolean | undefined;
+}
+
+/** True for delegated subagent turns, unless a human user sends a direct follow-up in the child thread. */
+export function isDelegatedSubagentTurn(turnInput: {
+  readonly appThread: {
+    readonly lineage: { readonly relationshipToParent: string | null };
+    readonly delegatedFrom?: unknown;
+  };
+  readonly message: { readonly createdBy: string };
+}): boolean {
+  return (
+    (turnInput.appThread.lineage.relationshipToParent === "subagent" ||
+      turnInput.appThread.delegatedFrom !== undefined) &&
+    turnInput.message.createdBy !== "user"
+  );
+}
+
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
 
 ${T3_CODE_ORCHESTRATION_SECTIONS.join("\n\n")}
@@ -35,12 +68,14 @@ ${T3_CODE_ORCHESTRATION_SECTIONS.join("\n\n")}
  * Built-in sections followed by the user's own orchestration rules, read fresh
  * so edits apply to the next session or turn.
  */
-export function t3OrchestrationSections(): ReadonlyArray<string> {
-  return [...T3_CODE_ORCHESTRATION_SECTIONS, ...readUserOrchestrationSections()];
+export function t3OrchestrationSections(options?: T3OrchestrationOptions): ReadonlyArray<string> {
+  return options?.subagent === true
+    ? [...T3_CODE_CHILD_ORCHESTRATION_SECTIONS, ...readUserChildOrchestrationSections()]
+    : [...T3_CODE_ORCHESTRATION_SECTIONS, ...readUserOrchestrationSections()];
 }
 
-export function t3OrchestrationInstructions(): string {
-  return `\n\n${t3OrchestrationSections().join("\n\n")}\n`;
+export function t3OrchestrationInstructions(options?: T3OrchestrationOptions): string {
+  return `\n\n${t3OrchestrationSections(options).join("\n\n")}\n`;
 }
 
 export const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
@@ -85,6 +120,8 @@ export interface T3AcpInstructionState {
   readonly interactionMode: ProviderInteractionMode;
   readonly hasT3Mcp: boolean;
   readonly hasDeviceTools: boolean;
+  readonly subagent?: boolean | undefined;
+  readonly omitMcpFallback?: boolean | undefined;
 }
 
 /** ACP lacks system/developer fields; inject context on first prompt and tool/mode changes. */
@@ -98,7 +135,9 @@ export function t3AcpPromptWithInstructions(input: {
   if (
     input.previousState?.interactionMode === input.state.interactionMode &&
     input.previousState.hasT3Mcp === input.state.hasT3Mcp &&
-    input.previousState.hasDeviceTools === input.state.hasDeviceTools
+    input.previousState.hasDeviceTools === input.state.hasDeviceTools &&
+    (input.previousState.subagent === true) === (input.state.subagent === true) &&
+    (input.previousState.omitMcpFallback === true) === (input.state.omitMcpFallback === true)
   ) {
     return input.prompt;
   }
@@ -110,18 +149,18 @@ export function t3AcpPromptWithInstructions(input: {
       ? [
           T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim(),
           ...(input.state.hasDeviceTools ? [T3_CODE_DEVICE_TOOL_INSTRUCTIONS] : []),
-          t3OrchestrationInstructions().trim(),
-          T3_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS,
+          t3OrchestrationInstructions({ subagent: input.state.subagent }).trim(),
+          ...(input.state.omitMcpFallback === true ? [] : [T3_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS]),
         ]
       : []),
   ];
   return `<t3_code_instructions>\n${instructions.join("\n\n")}\n</t3_code_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
 }
 
-const orchestrationInstructions = (hasDeviceTools: boolean) =>
+const orchestrationInstructions = (hasDeviceTools: boolean, options?: T3OrchestrationOptions) =>
   hasDeviceTools
-    ? `${t3OrchestrationInstructions()}\n${T3_CODE_DEVICE_TOOL_INSTRUCTIONS}\n`
-    : t3OrchestrationInstructions();
+    ? `${t3OrchestrationInstructions(options)}\n${T3_CODE_DEVICE_TOOL_INSTRUCTIONS}\n`
+    : t3OrchestrationInstructions(options);
 
 function prependT3OrchestrationInstructions(prompt: string, instructions: string): string {
   return `<t3_code_orchestration_instructions>${instructions.trim()}</t3_code_orchestration_instructions>\n\n<user_request>\n${prompt}\n</user_request>`;
@@ -134,12 +173,13 @@ export function t3OrchestrationPrompt(input: {
   readonly hasDeviceTools: boolean;
   readonly orchestrationDelivered: boolean;
   readonly deviceInstructionsDelivered: boolean;
+  readonly subagent?: boolean | undefined;
 }): string {
   if (!input.hasT3Mcp) return input.prompt;
   if (!input.orchestrationDelivered) {
     return prependT3OrchestrationInstructions(
       input.prompt,
-      orchestrationInstructions(input.hasDeviceTools),
+      orchestrationInstructions(input.hasDeviceTools, { subagent: input.subagent }),
     );
   }
   return input.hasDeviceTools && !input.deviceInstructionsDelivered
@@ -150,6 +190,7 @@ export function t3OrchestrationPrompt(input: {
 export function t3OrchestrationSystemPrompt(
   hasT3Mcp: boolean,
   hasDeviceTools: boolean,
+  options?: T3OrchestrationOptions,
 ): string | undefined {
-  return hasT3Mcp ? orchestrationInstructions(hasDeviceTools) : undefined;
+  return hasT3Mcp ? orchestrationInstructions(hasDeviceTools, options) : undefined;
 }

@@ -147,6 +147,8 @@ export function makeAntigravityAcpAdapterFlavor(
             ...input,
             clientFileReads: true,
             sessionSystemPromptAppend: PULL_REQUEST_LINKING_INSTRUCTIONS,
+            extraDisabledTools:
+              input.subagent === true ? ["generate_image", "ask_question"] : ["generate_image"],
             additionalDirectories: [options.host.paths.attachmentsDir],
           }),
         )
@@ -212,6 +214,7 @@ export function makeAntigravityAcpAdapterFlavor(
     // Agents that advertise HTTP MCP skip the stdio bridge process; others keep stdio.
     mcpOverHttp: true,
     sessionCarriesPullRequestLinking: antigravityAppendsSystemPrompt,
+    exposesInjectedMcpTools: antigravityAppendsSystemPrompt,
     makeRuntime,
     buildPrompt: ({
       text,

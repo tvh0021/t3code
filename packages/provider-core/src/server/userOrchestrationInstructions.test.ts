@@ -6,14 +6,18 @@ import * as NodePath from "node:path";
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  T3_CODE_CHILD_ORCHESTRATION_SECTIONS,
   T3_CODE_ORCHESTRATION_SECTIONS,
   t3OrchestrationPrompt,
   t3OrchestrationSections,
   t3OrchestrationSystemPrompt,
 } from "./orchestrationInstructions.ts";
 import {
+  readUserChildOrchestrationSections,
   readUserOrchestrationSections,
+  USER_CHILD_ORCHESTRATION_INSTRUCTIONS_ENV,
   USER_ORCHESTRATION_INSTRUCTIONS_ENV,
+  userChildOrchestrationInstructionsPath,
   userOrchestrationInstructionsPath,
 } from "./userOrchestrationInstructions.ts";
 
@@ -79,6 +83,50 @@ describe("user orchestration instructions", () => {
       });
       assert.include(prompt, "Delegate research to Sonnet.");
       assert.notInclude(prompt, "Delegate research to Opus.");
+    } finally {
+      delete process.env[USER_ORCHESTRATION_INSTRUCTIONS_ENV];
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses ORCHESTRATION-CHILD.md for subagent turns and keeps parent-override test isolation", () => {
+    assert.equal(
+      userChildOrchestrationInstructionsPath({}),
+      NodePath.join(NodeOS.homedir(), ".agents", "ORCHESTRATION-CHILD.md"),
+    );
+    assert.equal(
+      userChildOrchestrationInstructionsPath({
+        [USER_ORCHESTRATION_INSTRUCTIONS_ENV]: "/dev/null/ORCHESTRATION.md",
+      }),
+      "/dev/null/ORCHESTRATION-CHILD.md",
+    );
+    assert.equal(
+      userChildOrchestrationInstructionsPath({
+        [USER_ORCHESTRATION_INSTRUCTIONS_ENV]: "/dev/null/ORCHESTRATION.md",
+        [USER_CHILD_ORCHESTRATION_INSTRUCTIONS_ENV]: "/tmp/child-rules.md",
+      }),
+      "/tmp/child-rules.md",
+    );
+
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-child-rules-"));
+    const parentPath = NodePath.join(dir, "ORCHESTRATION.md");
+    const childPath = NodePath.join(dir, "ORCHESTRATION-CHILD.md");
+    process.env[USER_ORCHESTRATION_INSTRUCTIONS_ENV] = parentPath;
+    try {
+      assert.deepEqual(
+        t3OrchestrationSections({ subagent: true }),
+        T3_CODE_CHILD_ORCHESTRATION_SECTIONS,
+      );
+      NodeFS.writeFileSync(parentPath, "Parent-only routing matrix.");
+      NodeFS.writeFileSync(childPath, "Return unreviewed sbatch scripts.");
+      assert.include(
+        readUserChildOrchestrationSections(childPath).join("\n"),
+        "Return unreviewed sbatch scripts.",
+      );
+      const childPrompt = t3OrchestrationSystemPrompt(true, false, { subagent: true });
+      assert.include(childPrompt, "## T3 Code child orchestration");
+      assert.include(childPrompt, "Return unreviewed sbatch scripts.");
+      assert.notInclude(childPrompt, "Parent-only routing matrix.");
     } finally {
       delete process.env[USER_ORCHESTRATION_INSTRUCTIONS_ENV];
       NodeFS.rmSync(dir, { recursive: true, force: true });

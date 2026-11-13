@@ -13,6 +13,7 @@ export const CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES = 4_000;
 export interface T3CodeToolAvailability {
   readonly browser: boolean;
   readonly device: boolean;
+  readonly subagent?: boolean | undefined;
 }
 
 const normalizeAvailability = (
@@ -42,11 +43,12 @@ export function buildCodexAdditionalContext(
   runtime: CodexRuntimeInfo,
   toolsAvailable: boolean | T3CodeToolAvailability = true,
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
-  const tools = toolInstructions(toolsAvailable);
+  const availability = normalizeAvailability(toolsAvailable);
+  const tools = toolInstructions(availability);
   // Split values to fit per-entry caps; number keys because Codex emits them in key order.
   return {
     ...Object.fromEntries(
-      t3OrchestrationSections().map((section, index) => [
+      t3OrchestrationSections({ subagent: availability.subagent }).map((section, index) => [
         `t3_code_orchestration_${String(index + 1).padStart(2, "0")}`,
         { kind: "application" as const, value: section },
       ]),

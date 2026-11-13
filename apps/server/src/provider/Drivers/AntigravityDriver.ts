@@ -233,6 +233,9 @@ export const AntigravityDriver: ProviderDriver<
       );
       const profile = yield* prepareAntigravityProfile({
         profileDirectory,
+        ...(input.sessionSystemPromptAppend === undefined
+          ? {}
+          : { geminiHome: directories.geminiHome }),
         baseEnv: processEnvironment,
         auth,
         userHome,

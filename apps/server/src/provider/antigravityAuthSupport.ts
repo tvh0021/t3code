@@ -170,6 +170,8 @@ export function isAntigravitySignInRequiredError(error: unknown): boolean {
 
 export interface AntigravityInstanceDirectories {
   readonly profile: string;
+  /** Short symlink alias so Antigravity's repeated skill and artifact paths stay compact in prompts. */
+  readonly geminiHome: string;
   /** Keep beside the profile: 120-character archive members under its longer name would exceed Windows' 260-character limit. */
   readonly runtimeTemp: string;
 }
@@ -183,6 +185,7 @@ export const resolveAntigravityInstanceDirectories = Effect.fn(
   const key = Hex.encode(yield* digest.digest(Digest.sha256, new TextEncoder().encode(instanceId)));
   return {
     profile: path.join(stateDir, "providers", "antigravity", key),
+    geminiHome: path.join(stateDir, "ag", key.slice(0, 12)),
     runtimeTemp: path.join(stateDir, "antigravity-tmp", key.slice(0, 12)),
   } satisfies AntigravityInstanceDirectories;
 });
@@ -301,6 +304,7 @@ const linkAntigravityUserSkills = Effect.fn("linkAntigravityUserSkills")(functio
 
 export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(function* (input: {
   readonly profileDirectory: string;
+  readonly geminiHome?: string;
   readonly baseEnv?: NodeJS.ProcessEnv;
   readonly runtimeExecutablePath?: string;
   readonly platform?: NodeJS.Platform;
@@ -446,7 +450,50 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
       ),
     );
   yield* linkAntigravityUserSkills({ profileDirectory: geminiHome, userHome, platform });
-  return profile;
+  if (platform === "win32" || input.geminiHome === undefined) {
+    return profile;
+  }
+  const shortGeminiHome = path.resolve(input.geminiHome);
+  if (shortGeminiHome === geminiHome) {
+    return profile;
+  }
+  const linkedGeminiHome = yield* Effect.gen(function* () {
+    const parent = path.dirname(shortGeminiHome);
+    yield* fs.makeDirectory(parent, { recursive: true, mode: 0o700 });
+    yield* fs.chmod(parent, 0o700);
+    const existing = yield* fs.readLink(shortGeminiHome).pipe(
+      Effect.map((value): string | undefined => path.resolve(parent, value)),
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.undefined),
+    );
+    if (existing !== geminiHome) {
+      if (existing !== undefined) {
+        yield* fs.remove(shortGeminiHome);
+      }
+      yield* Effect.tryPromise({
+        try: () => NodeFSP.symlink(geminiHome, shortGeminiHome, "dir"),
+        catch: (cause) => new AntigravitySkillLinkError({ link: shortGeminiHome, cause }),
+      }).pipe(
+        // A parallel launch may have created the same link first.
+        Effect.catch((error) =>
+          fs.readLink(shortGeminiHome).pipe(
+            Effect.map((value) => path.resolve(parent, value)),
+            Effect.orElseSucceed(() => undefined),
+            Effect.flatMap((raced) => (raced === geminiHome ? Effect.void : Effect.fail(error))),
+          ),
+        ),
+      );
+    }
+    return shortGeminiHome;
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Antigravity short GEMINI_HOME link fell back to canonical profile.", {
+        link: shortGeminiHome,
+        target: geminiHome,
+        error,
+      }).pipe(Effect.as(geminiHome)),
+    ),
+  );
+  return { ...profile, geminiHome: linkedGeminiHome };
 });
 
 export function buildAntigravityAcpSpawnInput(input: {

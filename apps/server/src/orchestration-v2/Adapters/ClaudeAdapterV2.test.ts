@@ -592,6 +592,14 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       }),
     );
     assert.notEqual(rotatedKey, initialKey);
+    assert.notEqual(
+      ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(
+        queryPolicy,
+        ClaudeAdapterV2.claudeMcpQueryOverrides({ mcpSession, readOnlySandbox: false }),
+        true,
+      ),
+      initialKey,
+    );
   });
 
   it("matches the read-only allowlist to the orchestrator toolkit annotations", () => {
@@ -753,6 +761,26 @@ describe("ClaudeAdapterV2 device instructions", () => {
     ]);
     assert.deepEqual(await subagentContext({ mcp: true, deviceToolsAvailable: false }), []);
     assert.deepEqual(await subagentContext({ mcp: false, deviceToolsAvailable: true }), []);
+  });
+
+  it("gives subagent turns the compact child orchestration block and disallows AskUserQuestion", () => {
+    const child = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-opus-5-5",
+      },
+      nativeThreadId: "native-thread-claude-child",
+      resume: false,
+      cwd: "/workspace",
+      mcpServers: { "t3-code": { type: "http", url: "http://127.0.0.1/mcp" } },
+      subagent: true,
+      disallowedTools: ["NotebookEdit"],
+      environment: {},
+    });
+    const childAppend = (child.systemPrompt as { readonly append?: string }).append ?? "";
+    assert.include(childAppend, "## T3 Code child orchestration");
+    assert.notInclude(childAppend, "## T3 Code orchestration");
+    assert.deepEqual(child.disallowedTools, ["NotebookEdit", "AskUserQuestion"]);
   });
 });
 

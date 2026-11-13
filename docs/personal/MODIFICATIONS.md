@@ -247,7 +247,10 @@ Work rows can lead with a per-step description, but current runtimes never send
 one (see Decisions). A turn that sends
 nothing for 15 minutes ends with the last native error, when there is one.
 Conversational sessions on 1.4.5 follow the user's global rules in
-`~/.gemini/config/AGENTS.md`.
+`~/.gemini/config/AGENTS.md`, omit the terminal `ACP fallback:` prompt line,
+disable `generate_image` (plus `ask_question` on delegated subagent runs), and
+expose a short `ag/<12-hex>` `GEMINI_HOME` symlink on Unix so skill and artifact
+paths stay compact in prompts.
 
 **Decisions.**
 
@@ -362,14 +365,15 @@ things:
   commit instead of the parent's current one (`OrchestratorMcpService.ts`).
   A task in a linked environment can't use a worktree, so the server rejects
   `reviewRef` with a remote `target.environmentId`.
-- **User orchestration rules.** `~/.agents/ORCHESTRATION.md` (or the path in
-  `T3_USER_ORCHESTRATION_INSTRUCTIONS`) is appended to the orchestration
-  instructions every MCP-enabled provider receives: ChatLLM, Claude, Codex, ACP
-  (Antigravity, Gemini, Grok), Cursor and OpenCode. It is reread at each session
-  start, and on every turn for ChatLLM and Codex, so edits need no rebuild.
-  Codex gets it split into entries under its 4,000-byte cap
-  (`userOrchestrationInstructions.ts`). Pi bakes its instructions into its
-  extension at build time and doesn't get the file.
+- **User orchestration rules.** Top-level turns receive T3's full orchestration
+  sections plus `~/.agents/ORCHESTRATION.md` (or `T3_USER_ORCHESTRATION_INSTRUCTIONS`).
+  Delegated subagent turns (`isDelegatedSubagentTurn`, except direct human
+  follow-ups) receive the compact `T3_CODE_CHILD_ORCHESTRATION_SECTIONS` block
+  plus `~/.agents/ORCHESTRATION-CHILD.md` (or `T3_USER_CHILD_ORCHESTRATION_INSTRUCTIONS`),
+  and Claude subagent turns disallow `AskUserQuestion`. Both files are reread on
+  each session start, and on every turn for ChatLLM and Codex, and split under
+  Codex's 4,000-byte cap (`userOrchestrationInstructions.ts`). Pi bakes its
+  instructions into its extension at build time and doesn't get either file.
 
 The policy is checked daily but refetches models and prices only when the month
 changes or a refresh is forced from Settings > Providers. Mobile has no editor
