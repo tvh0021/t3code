@@ -6,6 +6,12 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.15.0 (2026-11-13)
+
+- New feature: delegated subagents get compact child orchestration rules plus `~/.agents/ORCHESTRATION-CHILD.md` instead of the top-level rules
+- New feature: delegated Claude and Antigravity subagents can no longer stop to ask the user a question
+- Issue: Antigravity prompts repeated long profile paths for skills and artifacts → Fix: Antigravity uses a short `GEMINI_HOME` alias on macOS and Linux
+
 ### 0.14.1 (2026-11-11)
 
 - Issue: Antigravity ignored the user's global rules in `~/.gemini/config/AGENTS.md`, so it skipped progress lines and other rules the Antigravity app follows → Fix: conversational sessions append those rules to the system prompt

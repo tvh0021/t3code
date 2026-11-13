@@ -254,6 +254,10 @@ paths stay compact in prompts.
 
 **Decisions.**
 
+- 0.15.0: the canonical profile path under `providers/antigravity/<sha256>`
+  repeated in every skill and artifact path the runtime puts in prompts.
+  `prepareAntigravityProfile` links a short `ag/<12-hex>` alias to it and falls
+  back to the canonical path on Windows or if linking fails.
 - 0.14.1: T3's private `GEMINI_HOME` hides `~/.gemini/config/AGENTS.md`, and
   the 1.4.5 runtime ignores rule files even inside its profile (probed at
   `config/AGENTS.md`, `config/rules/AGENTS.md`, and `GEMINI.md` at the root and
@@ -370,7 +374,9 @@ things:
   Delegated subagent turns (`isDelegatedSubagentTurn`, except direct human
   follow-ups) receive the compact `T3_CODE_CHILD_ORCHESTRATION_SECTIONS` block
   plus `~/.agents/ORCHESTRATION-CHILD.md` (or `T3_USER_CHILD_ORCHESTRATION_INSTRUCTIONS`),
-  and Claude subagent turns disallow `AskUserQuestion`. Both files are reread on
+  and Claude subagent turns disallow `AskUserQuestion`. Claude Code reuses a
+  session's first system prompt on resume, so a human follow-up in a Claude
+  child thread regains `AskUserQuestion` but keeps the child rules. Both files are reread on
   each session start, and on every turn for ChatLLM and Codex, and split under
   Codex's 4,000-byte cap (`userOrchestrationInstructions.ts`). Pi bakes its
   instructions into its extension at build time and doesn't get either file.
@@ -381,6 +387,13 @@ for it; the limits are server-wide, so the web or desktop screen covers every
 client.
 
 **Decisions.**
+
+- 0.15.0: children received the full top-level rules, so they re-delegated
+  and asked the user questions. `isDelegatedSubagentTurn` in
+  `orchestrationInstructions.ts` picks the child block for agent-sent turns in
+  subagent or delegated threads; a human message there counts as top-level.
+  Claude keys its live query on that state (`claudeEffectiveQueryPolicyKey`), so
+  switching reopens the process.
 
 - 0.11.0: personal routing rules lived in each provider's own instruction
   files, so ACP and Cursor agents never saw them and every file needed its own

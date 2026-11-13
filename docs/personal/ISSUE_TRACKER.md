@@ -30,6 +30,7 @@ History: offline tests, typechecks and lint pass. The branch predates 0.7.4 and 
 - **Antigravity on eduroam** (WORKFLOW-003): Antigravity sign-in times out because eduroam's IPv6 path stalls and the native client has no IPv4 fallback. Hotspot and other networks work.
 - **Zed organization billing**: Zed Limits reads personal billing only. Organization billing is not supported.
 - **Malformed Zed updates** (ZED-UPDATES-001): since the 2026-10-17 sync, the shared ACP adapter drops session updates it can't decode instead of failing the turn. Watch for Zed turns that end with missing text or tool output.
+- **Claude child threads keep child rules** (ORCH-CHILD-001): Claude Code saves a `prompt_snapshot` and reuses it on resume, so your direct messages in a delegated Claude thread get `AskUserQuestion` back but keep the child orchestration rules. Other providers switch to the top-level rules.
 - **Zed effort tests** (ZED-TEST-001): the legacy Zed tests that checked per-model effort lists and rejected unsupported effort values were removed with the pre-v2 adapter. `ZedAdapterV2.test.ts` covers only model-then-effort ordering.
 
 ## Resolved
