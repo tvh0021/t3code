@@ -2741,34 +2741,36 @@ describe("UsageService", () => {
       }),
   );
 
-  it.effect("keeps output price references consistent with official rates and custom overrides", () =>
-    Effect.gen(function* () {
-      const { settings, home } = yield* setup;
-      yield* Effect.gen(function* () {
-        const settingsService = yield* ServerSettings.ServerSettingsService;
-        const service = yield* UsageService.make;
-        const prices = yield* service.readOutputPrices;
-        assert.strictEqual(prices["claude-sonnet-5-5"], 10);
-        yield* settingsService.updateSettings({
-          usagePriceOverrides: {
-            "claude-sonnet-5-5": { inputCostPerMillionTokens: 1, outputCostPerMillionTokens: 3 },
-          },
-        });
-        const customPrices = yield* service.readOutputPrices;
-        assert.strictEqual(customPrices["claude-sonnet-5-5"], 3);
-      }).pipe(
-        Effect.provide(
-          layerService({
-            prefix: "usage-service-official-prices-test",
-            home,
-            settings,
-            ratesDocument: {
-              "claude-sonnet-5-5": { input_cost_per_token: 1, output_cost_per_token: 5 },
+  it.effect(
+    "keeps output price references consistent with official rates and custom overrides",
+    () =>
+      Effect.gen(function* () {
+        const { settings, home } = yield* setup;
+        yield* Effect.gen(function* () {
+          const settingsService = yield* ServerSettings.ServerSettingsService;
+          const service = yield* UsageService.make;
+          const prices = yield* service.readOutputPrices;
+          assert.strictEqual(prices["claude-sonnet-5-5"], 10);
+          yield* settingsService.updateSettings({
+            usagePriceOverrides: {
+              "claude-sonnet-5-5": { inputCostPerMillionTokens: 1, outputCostPerMillionTokens: 3 },
             },
-          }),
-        ),
-      );
-    }),
+          });
+          const customPrices = yield* service.readOutputPrices;
+          assert.strictEqual(customPrices["claude-sonnet-5-5"], 3);
+        }).pipe(
+          Effect.provide(
+            layerService({
+              prefix: "usage-service-official-prices-test",
+              home,
+              settings,
+              ratesDocument: {
+                "claude-sonnet-5-5": { input_cost_per_token: 1, output_cost_per_token: 5 },
+              },
+            }),
+          ),
+        );
+      }),
   );
 
   it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32" || process.getuid?.() === 0)(
@@ -3382,6 +3384,212 @@ describe("UsageService", () => {
                   input_cost_per_token_ultrafast: 0,
                   output_cost_per_token_ultrafast: 6,
                 },
+              },
+            }),
+          ),
+        );
+      }),
+  );
+
+  it.effect.each([12, 18] as const)(
+    "reparses live Codex rollouts from a warm v%s cache missing creditBalanceTimestampMs once while keeping deleted rollouts",
+    (version) =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse("2026-08-02T12:00:00Z"));
+        const { home, settings } = yield* setup;
+        const sessions = NodePath.join(home, "codex", "sessions");
+        const usage = (input: number, output: number) => ({
+          input_tokens: input,
+          output_tokens: output,
+          total_tokens: input + output,
+        });
+        const lines = (values: readonly unknown[]) =>
+          values
+            .map(
+              (value) => `${encodeUnknownJsonString(value)}
+`,
+            )
+            .join("");
+        const meta = (id: string) => ({
+          type: "session_meta",
+          timestamp: "2026-08-01T00:00:00.000Z",
+          payload: { type: "session_meta", id, model_provider: "openai" },
+        });
+        const context = (model: string, turn_id: string) => ({
+          type: "turn_context",
+          payload: { model, turn_id },
+        });
+        const request = (timestamp: string, response_id: string, last: unknown) => ({
+          type: "token_usage_record",
+          timestamp,
+          payload: { response_id, usage: last },
+        });
+        const snapshot = (timestamp: string, last: unknown, total: unknown, balance: string) => ({
+          type: "event_msg",
+          timestamp,
+          payload: {
+            type: "token_count",
+            rate_limits: { credits: { hasCredits: true, unlimited: false, balance } },
+            info: { last_token_usage: last, total_token_usage: total },
+          },
+        });
+
+        const deletedPath = NodePath.join(sessions, "00-deleted.jsonl");
+        const rolloutAPath = NodePath.join(sessions, "01-rollout-a.jsonl");
+        const rolloutBPath = NodePath.join(sessions, "02-rollout-b.jsonl");
+        yield* Effect.promise(async () => {
+          await NodeFSP.mkdir(sessions, { recursive: true });
+          await NodeFSP.writeFile(
+            deletedPath,
+            lines([
+              meta("session-deleted"),
+              context("gpt-6-deleted", "turn-del-1"),
+              request("2026-08-01T00:00:10.000Z", "resp-del-base", usage(100, 10)),
+              snapshot("2026-08-01T00:00:11.000Z", usage(100, 10), usage(100, 10), "107"),
+              context("gpt-6-deleted", "turn-del-2"),
+              request("2026-08-01T00:00:20.000Z", "resp-del-paid", usage(100, 10)),
+              snapshot("2026-08-01T00:00:21.000Z", usage(100, 10), usage(200, 20), "100"),
+            ]),
+          );
+          await NodeFSP.writeFile(
+            rolloutAPath,
+            lines([
+              meta("session-a"),
+              context("gpt-6-a", "turn-a-base"),
+              request("2026-08-01T00:00:30.000Z", "resp-a-base", usage(100, 10)),
+              snapshot("2026-08-01T00:00:31.000Z", usage(100, 10), usage(100, 10), "100"),
+              context("gpt-6-a", "turn-a-1"),
+              request("2026-08-01T00:01:00.000Z", "resp-a", usage(1_000, 100)),
+              snapshot("2026-08-01T00:01:03.000Z", usage(1_000, 100), usage(1_100, 110), "90"),
+            ]),
+          );
+          await NodeFSP.writeFile(
+            rolloutBPath,
+            lines([
+              meta("session-b"),
+              context("gpt-6-b", "turn-b-1"),
+              request("2026-08-01T00:01:01.000Z", "resp-b", usage(1_000, 100)),
+              snapshot("2026-08-01T00:01:02.000Z", usage(1_000, 100), usage(1_000, 100), "95"),
+            ]),
+          );
+        });
+
+        const creditsByModel = (summary: UsageSummary) =>
+          Object.fromEntries(
+            summary.buckets
+              .filter((bucket) => (bucket.credits ?? 0) > 0)
+              .map((bucket) => [bucket.model, bucket.credits]),
+          );
+
+        yield* Effect.gen(function* () {
+          const { stateDir } = yield* ServerConfig.ServerConfig;
+          const cachePath = NodePath.join(stateDir, SCAN_CACHE_FILE_NAME);
+          const warmCachePath =
+            version === 18
+              ? cachePath
+              : NodePath.join(stateDir, `usage-scan-cache-v${version}.json`);
+
+          const initial = yield* UsageService.make;
+          assert.deepStrictEqual(creditsByModel(yield* initial.readSummary(WINDOW)), {
+            "gpt-6-deleted": 7,
+            "gpt-6-a": 5,
+            "gpt-6-b": 5,
+          });
+          yield* initial.awaitPersisted;
+
+          const { realA, realB, undatedDocument } = yield* Effect.promise(async () => {
+            const resolvedA = await NodeFSP.realpath(rolloutAPath);
+            const resolvedB = await NodeFSP.realpath(rolloutBPath);
+            const document = decodeUnknownJsonString(await NodeFSP.readFile(cachePath, "utf8")) as {
+              files: Record<string, { r: unknown[][]; t: unknown[][] }>;
+            };
+            // Strip slot 15..16 so credit-bearing rows match v12 / pre-fix v18 undated tuples,
+            // while keeping exact file size, mtime, resume offset, guard hash, and scan state.
+            const stripSnapshotTimestamp = (rows: unknown[][]) =>
+              rows.map((row) => (row.length >= 17 ? row.slice(0, 15) : row));
+            for (const file of Object.values(document.files)) {
+              file.r = stripSnapshotTimestamp(file.r);
+              file.t = stripSnapshotTimestamp(file.t);
+            }
+            const rewritten = { ...document, version };
+            if (warmCachePath !== cachePath) await NodeFSP.rm(cachePath);
+            await NodeFSP.writeFile(warmCachePath, encodeUnknownJsonString(rewritten));
+            await NodeFSP.rm(deletedPath);
+            return { realA: resolvedA, realB: resolvedB, undatedDocument: rewritten };
+          });
+
+          const openedRollouts = () =>
+            vi
+              .mocked(NodeFSP.open)
+              .mock.calls.map(([target]) => String(target))
+              .filter((target) => target === realA || target === realB);
+
+          // (a) Live unchanged files reparse whole (fixing A=10, B=0 to A=5, B=5) while (b) deleted rollout stays retained.
+          vi.mocked(NodeFSP.open).mockClear();
+          const warm = yield* UsageService.make;
+          const repaired = yield* warm.readSummary(
+            version === 18 ? { ...WINDOW, provisional: true } : WINDOW,
+          );
+          assert.deepStrictEqual(creditsByModel(repaired), {
+            "gpt-6-deleted": 7,
+            "gpt-6-a": 5,
+            "gpt-6-b": 5,
+          });
+          assert.deepStrictEqual(new Set(openedRollouts()), new Set([realA, realB]));
+          yield* warm.awaitPersisted;
+
+          // Subsequent scans (in-memory and reloaded from the newly written v18 cache) reuse the cache without reparsing.
+          vi.mocked(NodeFSP.open).mockClear();
+          const secondScan = yield* warm.readSummary({
+            ...WINDOW,
+            sinceDay: UsageDay.make("2026-07-31"),
+          });
+          assert.deepStrictEqual(creditsByModel(secondScan), {
+            "gpt-6-deleted": 7,
+            "gpt-6-a": 5,
+            "gpt-6-b": 5,
+          });
+          assert.deepStrictEqual(openedRollouts(), []);
+
+          vi.mocked(NodeFSP.open).mockClear();
+          const reloaded = yield* UsageService.make;
+          assert.deepStrictEqual(creditsByModel(yield* reloaded.readSummary(WINDOW)), {
+            "gpt-6-deleted": 7,
+            "gpt-6-a": 5,
+            "gpt-6-b": 5,
+          });
+          assert.deepStrictEqual(openedRollouts(), []);
+          yield* reloaded.awaitPersisted;
+
+          // An incrementally grown rollout on top of a warm undated cache also reparses whole instead of retaining a stale prefix.
+          yield* Effect.promise(async () => {
+            if (warmCachePath !== cachePath) await NodeFSP.rm(cachePath, { force: true });
+            await NodeFSP.writeFile(warmCachePath, encodeUnknownJsonString(undatedDocument));
+            await NodeFSP.appendFile(
+              rolloutAPath,
+              lines([
+                context("gpt-6-a", "turn-a-2"),
+                request("2026-08-01T00:02:00.000Z", "resp-a-2", usage(200, 20)),
+                snapshot("2026-08-01T00:02:01.000Z", usage(200, 20), usage(1_300, 130), "87"),
+              ]),
+            );
+          });
+          const grown = yield* UsageService.make;
+          assert.deepStrictEqual(creditsByModel(yield* grown.readSummary(WINDOW)), {
+            "gpt-6-deleted": 7,
+            "gpt-6-a": 8,
+            "gpt-6-b": 5,
+          });
+        }).pipe(
+          Effect.provide(
+            layerService({
+              prefix: `usage-service-undated-codex-credits-v${version}`,
+              home,
+              settings,
+              ratesDocument: {
+                "gpt-6-deleted": { input_cost_per_token: 0, output_cost_per_token: 1e-5 },
+                "gpt-6-a": { input_cost_per_token: 0, output_cost_per_token: 1e-5 },
+                "gpt-6-b": { input_cost_per_token: 0, output_cost_per_token: 1e-5 },
               },
             }),
           ),

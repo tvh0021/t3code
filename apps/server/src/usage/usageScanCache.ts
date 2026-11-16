@@ -349,28 +349,37 @@ export function decodeScanCache(
     ) {
       continue;
     }
-    // Keep history for deleted rollouts, but re-parse incompatible reducer state.
-    // v13 adds Claude 1-hour cache writes; v14 uses Codex request ledgers.
-    // v15 and v18 repair skipped Codex requests; clean v14+ entries stay served while unchanged.
-    // v17 keys Grok turns by time, restoring turns previously dropped as repeats.
-    const legacy =
-      (entry.p === "claude" && version < 13) ||
-      (entry.p === "grok" && version < 17) ||
-      (format.state !== undefined &&
-        (version < 6 ||
-          (entry.p === "codex" && (version < 14 || (version < 18 && malformedRecords > 0)))));
-    // A corrupt state disqualifies the entry: resuming with it would attach
-    // appended usage to the wrong model or replay fork-copied history.
-    if (!legacy && !isValidState.get(entry.p)?.(entry.cs)) continue;
-    // Before v16 a Codex baseline can lack the time of its latest move, or carry an older one,
-    // and that time keeps a re-emitted older snapshot from billing twice. A grown file re-parses
-    // whole instead of resuming.
-    const resumable = !legacy && !(entry.p === "codex" && version < 16);
-
     const provider = entry.p;
     const records = decodeRecords(entry.r, provider);
     const tailRecords = decodeRecords(entry.t, provider);
     if (records === null || tailRecords === null) continue;
+    const hasUndatedCodexCreditBalance =
+      provider === "codex" &&
+      (records.some(
+        (record) =>
+          record.creditBalance !== undefined && record.creditBalanceTimestampMs === undefined,
+      ) ||
+        tailRecords.some(
+          (record) =>
+            record.creditBalance !== undefined && record.creditBalanceTimestampMs === undefined,
+        ));
+    // Keep deleted rollouts, but re-parse incompatible reducer state or undated Codex credit balances.
+    // v13 adds Claude 1-hour cache writes; v14 uses Codex request ledgers; v17 keys Grok turns by time.
+    // v15 and v18 repair skipped Codex requests; clean dated v14+ entries stay served while unchanged.
+    const legacy =
+      hasUndatedCodexCreditBalance ||
+      (provider === "claude" && version < 13) ||
+      (provider === "grok" && version < 17) ||
+      (format.state !== undefined &&
+        (version < 6 ||
+          (provider === "codex" && (version < 14 || (version < 18 && malformedRecords > 0)))));
+    // A corrupt state disqualifies the entry: resuming with it would attach
+    // appended usage to the wrong model or replay fork-copied history.
+    if (!legacy && !isValidState.get(provider)?.(entry.cs)) continue;
+    // Before v16 a Codex baseline can lack the time of its latest move, or carry an older one,
+    // and that time keeps a re-emitted older snapshot from billing twice. A grown file re-parses
+    // whole instead of resuming.
+    const resumable = !legacy && !(provider === "codex" && version < 16);
 
     cache.set(path, {
       size: legacy ? -1 : entry.s,

@@ -41,11 +41,11 @@ import type {
   ProviderUsageInstance,
   TranscriptUsageFormat,
   UsageRecord,
+  UsageSpeed,
 } from "@t3tools/provider-core/server/usage";
 import {
   canonicalModelFilter,
   type CreditedUsageRecord,
-  mergeUsageCopies,
   resolveModelAliases,
   UsageAggregator,
 } from "./usageAggregation.ts";
@@ -258,6 +258,13 @@ export const make = Effect.gen(function* () {
   const fileCache: ScanCache = new Map();
   // Reads from concurrent windows can still hold the original record after it is corrected.
   const resolvedRecords = new WeakMap<CreditedUsageRecord, CreditedUsageRecord>();
+  const withResolvedSpeed = (
+    record: CreditedUsageRecord,
+    speed: UsageSpeed,
+  ): CreditedUsageRecord => {
+    const { unresolvedServiceTierTurnId: _turnId, ...rest } = record;
+    return { ...rest, speed };
+  };
   const correctedRecord = (record: CreditedUsageRecord): CreditedUsageRecord =>
     resolvedRecords.get(record) ?? record;
   const correctedBatch = (
@@ -545,8 +552,21 @@ export const make = Effect.gen(function* () {
       const decoded = decodeScanCache(document, transcriptFormats);
       for (const [path, entry] of decoded) fileCache.set(path, entry);
       const saved = (document as { readonly files?: unknown }).files;
+      const savedFiles =
+        typeof saved === "object" && saved !== null
+          ? (saved as Readonly<Record<string, { readonly s?: unknown }>>)
+          : null;
+      const downgraded =
+        savedFiles !== null &&
+        [...decoded].some(
+          ([filePath, entry]) =>
+            entry.size < 0 &&
+            typeof savedFiles[filePath]?.s === "number" &&
+            (savedFiles[filePath].s as number) >= 0,
+        );
+      if (downgraded) cacheDirty = true;
       const complete =
-        typeof saved === "object" && saved !== null && Object.keys(saved).length === decoded.size;
+        savedFiles !== null && Object.keys(savedFiles).length === decoded.size && !downgraded;
       const sources = decodeCachedSources(document);
       if (Option.isSome(sources)) {
         for (const [key, source] of Object.entries(sources.value.sources))
@@ -713,7 +733,7 @@ export const make = Effect.gen(function* () {
           corrected !== undefined &&
           corrected.unresolvedServiceTierTurnId === undefined
         ) {
-          resolvedRecords.set(record, mergeUsageCopies(corrected, record));
+          resolvedRecords.set(record, withResolvedSpeed(record, corrected.speed));
         }
       }
     }
@@ -729,7 +749,7 @@ export const make = Effect.gen(function* () {
           corrected.unresolvedServiceTierTurnId === undefined &&
           identity(record) === identity(corrected)
         ) {
-          resolvedRecords.set(record, mergeUsageCopies(corrected, record));
+          resolvedRecords.set(record, withResolvedSpeed(record, corrected.speed));
         }
       }
     }
@@ -1168,8 +1188,7 @@ export const make = Effect.gen(function* () {
         .resolveServiceTiers([...pending])
         .pipe(Effect.provideContext(readerContext));
       for (const [record, speed] of resolved) {
-        const { unresolvedServiceTierTurnId: _turnId, ...rest } = record;
-        resolvedRecords.set(record, { ...rest, speed });
+        resolvedRecords.set(record, withResolvedSpeed(record, speed));
         resolvedAny = true;
       }
     }

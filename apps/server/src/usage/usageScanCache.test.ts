@@ -137,7 +137,13 @@ describe("scan cache round trip", () => {
           dedupeKey: null,
           speed: "ultrafast",
         }),
-        record({ provider: "codex", model: "gpt-6-astra", dedupeKey: null, creditBalance: 1169.5 }),
+        record({
+          provider: "codex",
+          model: "gpt-6-astra",
+          dedupeKey: null,
+          creditBalance: 1169.5,
+          creditBalanceTimestampMs: 1_786_000_001_000,
+        }),
         record({
           provider: "codex",
           model: "gpt-6-astra",
@@ -405,9 +411,15 @@ describe("scan cache round trip", () => {
     expect([...restored.keys()]).toEqual(["/good.jsonl"]);
   });
 
-  it("decodes v6-v12 credit tuples, upstream 14-slot v13-v17 rows, and v18 snapshot timestamps", () => {
+  it("decodes v6-v12 credit tuples, upstream 14-slot v13-v17 rows, and v18 snapshot timestamps while forcing whole-file reparse on undated Codex balances", () => {
     const baseRow = [1_786_000_000_000, 0, 0, 10, 0, 0, 5, 0, null, null, 0, null] as const;
-    const makeDoc = (version: number, provider: "claude" | "codex", row: readonly unknown[]) => ({
+    const savedState = { ...initialCodexScanState(), model: "gpt-6-astra", sessionId: "session-a" };
+    const makeDoc = (
+      version: number,
+      provider: "claude" | "codex",
+      row: readonly unknown[],
+      tail: readonly (readonly unknown[])[] = [],
+    ) => ({
       version,
       models: ["gpt-6-astra"],
       sessions: ["session-a"],
@@ -417,17 +429,22 @@ describe("scan cache round trip", () => {
           m: 100,
           p: provider,
           r: [row],
-          t: [],
+          t: tail,
           mr: 0,
-          o: 0,
-          gl: 0,
-          gh: 0,
-          cs: null,
+          o: 10,
+          gl: 10,
+          gh: 42,
+          cs: provider === "codex" ? savedState : null,
         },
       },
     });
+    const resetPosition = { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null };
 
     const v6 = decodeScanCache(makeDoc(6, "codex", [...baseRow, 5, 95]), TEST_FORMAT_MAP);
+    expect(v6.get("/entry.jsonl")).toMatchObject({
+      size: -1,
+      position: resetPosition,
+    });
     expect(v6.get("/entry.jsonl")?.records[0]).toMatchObject({
       credits: 5,
       creditBalance: 95,
@@ -438,8 +455,42 @@ describe("scan cache round trip", () => {
       makeDoc(12, "codex", [...baseRow, "turn-1", 5, 95]),
       TEST_FORMAT_MAP,
     );
+    expect(v12.get("/entry.jsonl")).toMatchObject({
+      size: -1,
+      position: resetPosition,
+    });
     expect(v12.get("/entry.jsonl")?.records[0]).toMatchObject({
       unresolvedServiceTierTurnId: "turn-1",
+      credits: 5,
+      creditBalance: 95,
+    });
+
+    const preFixV18 = decodeScanCache(
+      makeDoc(18, "codex", [...baseRow, "turn-1", 5, 95]),
+      TEST_FORMAT_MAP,
+    );
+    expect(preFixV18.get("/entry.jsonl")).toMatchObject({
+      size: -1,
+      position: resetPosition,
+    });
+    expect(preFixV18.get("/entry.jsonl")?.records[0]).toMatchObject({
+      unresolvedServiceTierTurnId: "turn-1",
+      credits: 5,
+      creditBalance: 95,
+    });
+    expect(preFixV18.get("/entry.jsonl")?.records[0]).not.toHaveProperty(
+      "creditBalanceTimestampMs",
+    );
+
+    const preFixV18Tail = decodeScanCache(
+      makeDoc(18, "codex", [...baseRow], [[...baseRow, null, 5, 95]]),
+      TEST_FORMAT_MAP,
+    );
+    expect(preFixV18Tail.get("/entry.jsonl")).toMatchObject({
+      size: -1,
+      position: resetPosition,
+    });
+    expect(preFixV18Tail.get("/entry.jsonl")?.tailRecords[0]).toMatchObject({
       credits: 5,
       creditBalance: 95,
     });
@@ -457,6 +508,10 @@ describe("scan cache round trip", () => {
       makeDoc(18, "codex", [...baseRow, "turn-1", 5, 95, 0, 1_786_000_003_000]),
       TEST_FORMAT_MAP,
     );
+    expect(v18WithSnapshotTs.get("/entry.jsonl")).toMatchObject({
+      size: 20,
+      position: { resumeOffset: 10, guardLength: 10, guardHash: 42, state: savedState },
+    });
     expect(v18WithSnapshotTs.get("/entry.jsonl")?.records[0]).toMatchObject({
       unresolvedServiceTierTurnId: "turn-1",
       credits: 5,
