@@ -570,7 +570,7 @@ function codexRequestRecord(
     reportedCostUsd: autoReview ? 0 : null,
     speed,
     ...(credits !== null ? { credits } : {}),
-    ...(creditBalance !== null ? { creditBalance } : {}),
+    ...(creditBalance !== null ? { creditBalance, creditBalanceTimestampMs: timestampMs } : {}),
     ...(!sawThreadSettings &&
     state.modelProvider === "openai" &&
     state.sessionId.length > 0 &&
@@ -587,6 +587,7 @@ export function reconcileCodexCreditUsage<
 >(files: ReadonlyArray<T>): ReadonlyArray<T> {
   type RecordEntry = {
     readonly record: UsageRecord;
+    readonly observationTimestampMs: number;
     readonly fileIdx: number;
     readonly recordIdx: number;
   };
@@ -605,12 +606,17 @@ export function reconcileCodexCreditUsage<
     for (let rIdx = 0; rIdx < file.records.length; rIdx++) {
       const rec = file.records[rIdx]!;
       if (rec.provider === "codex" && typeof rec.creditBalance === "number") {
-        entries.push({ record: rec, fileIdx: fIdx, recordIdx: rIdx });
+        entries.push({
+          record: rec,
+          observationTimestampMs: rec.creditBalanceTimestampMs ?? rec.timestampMs,
+          fileIdx: fIdx,
+          recordIdx: rIdx,
+        });
       }
     }
   }
 
-  entries.sort((a, b) => a.record.timestampMs - b.record.timestampMs);
+  entries.sort((a, b) => a.observationTimestampMs - b.observationTimestampMs);
 
   let runningMinBalance: number | null = null;
   const updates = new Map<string, { credits: number; reportedCostUsd: number | null }>();

@@ -138,6 +138,13 @@ describe("scan cache round trip", () => {
           speed: "ultrafast",
         }),
         record({ provider: "codex", model: "gpt-6-astra", dedupeKey: null, creditBalance: 1169.5 }),
+        record({
+          provider: "codex",
+          model: "gpt-6-astra",
+          dedupeKey: '["codex","session-c","resp-1"]',
+          creditBalance: 1159.5,
+          creditBalanceTimestampMs: 1_786_000_003_000,
+        }),
         pending,
       ],
       tailRecords: [pendingTail],
@@ -396,6 +403,75 @@ describe("scan cache round trip", () => {
 
     const restored = decodeScanCache(JSON.parse(JSON.stringify(withJunk)), TEST_FORMAT_MAP);
     expect([...restored.keys()]).toEqual(["/good.jsonl"]);
+  });
+
+  it("decodes v6-v12 credit tuples, upstream 14-slot v13-v17 rows, and v18 snapshot timestamps", () => {
+    const baseRow = [1_786_000_000_000, 0, 0, 10, 0, 0, 5, 0, null, null, 0, null] as const;
+    const makeDoc = (version: number, provider: "claude" | "codex", row: readonly unknown[]) => ({
+      version,
+      models: ["gpt-6-astra"],
+      sessions: ["session-a"],
+      files: {
+        "/entry.jsonl": {
+          s: 20,
+          m: 100,
+          p: provider,
+          r: [row],
+          t: [],
+          mr: 0,
+          o: 0,
+          gl: 0,
+          gh: 0,
+          cs: null,
+        },
+      },
+    });
+
+    const v6 = decodeScanCache(makeDoc(6, "codex", [...baseRow, 5, 95]), TEST_FORMAT_MAP);
+    expect(v6.get("/entry.jsonl")?.records[0]).toMatchObject({
+      credits: 5,
+      creditBalance: 95,
+    });
+    expect(v6.get("/entry.jsonl")?.records[0]).not.toHaveProperty("creditBalanceTimestampMs");
+
+    const v12 = decodeScanCache(
+      makeDoc(12, "codex", [...baseRow, "turn-1", 5, 95]),
+      TEST_FORMAT_MAP,
+    );
+    expect(v12.get("/entry.jsonl")?.records[0]).toMatchObject({
+      unresolvedServiceTierTurnId: "turn-1",
+      credits: 5,
+      creditBalance: 95,
+    });
+
+    const upstreamV17 = decodeScanCache(
+      makeDoc(17, "claude", [...baseRow, null, 12]),
+      TEST_FORMAT_MAP,
+    );
+    expect(upstreamV17.get("/entry.jsonl")?.records[0]).toMatchObject({
+      cacheCreation1hTokens: 12,
+    });
+    expect(upstreamV17.get("/entry.jsonl")?.records[0]).not.toHaveProperty("credits");
+
+    const v18WithSnapshotTs = decodeScanCache(
+      makeDoc(18, "codex", [...baseRow, "turn-1", 5, 95, 0, 1_786_000_003_000]),
+      TEST_FORMAT_MAP,
+    );
+    expect(v18WithSnapshotTs.get("/entry.jsonl")?.records[0]).toMatchObject({
+      unresolvedServiceTierTurnId: "turn-1",
+      credits: 5,
+      creditBalance: 95,
+      creditBalanceTimestampMs: 1_786_000_003_000,
+    });
+    expect(v18WithSnapshotTs.get("/entry.jsonl")?.records[0]).not.toHaveProperty(
+      "cacheCreation1hTokens",
+    );
+
+    const corruptV18 = decodeScanCache(
+      makeDoc(18, "codex", [...baseRow, null, 5, 95, 0, "bad-ts"]),
+      TEST_FORMAT_MAP,
+    );
+    expect(corruptV18.has("/entry.jsonl")).toBe(false);
   });
 
   it("drops the whole entry when any row is corrupt, forcing a cold re-parse", () => {

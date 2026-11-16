@@ -3,10 +3,7 @@ import type { TranscriptUsageFormat, UsageSpeed } from "@t3tools/provider-core/s
 import * as Schema from "effect/Schema";
 
 import { CLAUDE_SYNTHETIC_MODEL } from "../provider/Drivers/claudeUsage.ts";
-import {
-  type CreditedUsageRecord as UsageRecord,
-  mergeUsageCopies,
-} from "./usageAggregation.ts";
+import { type CreditedUsageRecord as UsageRecord, mergeUsageCopies } from "./usageAggregation.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
 const USAGE_SCAN_CACHE_VERSION = 18 as const;
@@ -68,6 +65,7 @@ type SerializedRecord = readonly [
   credits?: number | null,
   creditBalance?: number | null,
   cacheCreation1hTokens?: number,
+  creditBalanceTimestampMs?: number | null,
 ];
 
 interface SerializedFile {
@@ -126,22 +124,30 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     record.rateModel === undefined
       ? null
       : intern(tables.models, tables.modelIndex, record.rateModel),
-    ...(record.cacheCreation1hTokens !== undefined
+    ...(record.creditBalanceTimestampMs !== undefined
       ? ([
           record.unresolvedServiceTierTurnId ?? null,
           record.credits ?? null,
           record.creditBalance ?? null,
-          record.cacheCreation1hTokens,
+          record.cacheCreation1hTokens ?? 0,
+          record.creditBalanceTimestampMs,
         ] as const)
-      : record.credits != null || record.creditBalance != null
+      : record.cacheCreation1hTokens !== undefined
         ? ([
             record.unresolvedServiceTierTurnId ?? null,
             record.credits ?? null,
             record.creditBalance ?? null,
+            record.cacheCreation1hTokens,
           ] as const)
-      : record.unresolvedServiceTierTurnId !== undefined
-        ? ([record.unresolvedServiceTierTurnId] as const)
-        : ([] as const)),
+        : record.credits != null || record.creditBalance != null
+          ? ([
+              record.unresolvedServiceTierTurnId ?? null,
+              record.credits ?? null,
+              record.creditBalance ?? null,
+            ] as const)
+          : record.unresolvedServiceTierTurnId !== undefined
+            ? ([record.unresolvedServiceTierTurnId] as const)
+            : ([] as const)),
   ];
   return {
     s: entry.size,
@@ -235,15 +241,18 @@ export function decodeScanCache(
         slot13,
         slot14,
         slot15,
+        slot16,
       ] = row as SerializedRecord;
       // Fork v6 stored [credits, creditBalance] at 12..13; v7+ stores unresolvedServiceTierTurnId at 12,
-      // [credits, creditBalance] at 13..14, and v18+ stores cacheCreation1hTokens at 15 (upstream v13..v17 used 13).
+      // [credits, creditBalance] at 13..14, and v18+ stores cacheCreation1hTokens at 15 (upstream v13..v17 used 13)
+      // and creditBalanceTimestampMs at 16.
       const unresolvedServiceTierTurnId = version >= 7 ? slot12 : undefined;
       const isUpstreamV13ToV17 = version >= 13 && version <= 17 && row.length === 14;
       const credits = version === 6 ? slot12 : isUpstreamV13ToV17 ? undefined : slot13;
       const creditBalance = version === 6 ? slot13 : isUpstreamV13ToV17 ? undefined : slot14;
       const rawCacheCreation1h = isUpstreamV13ToV17 ? slot13 : slot15;
       const cacheCreation1h = rawCacheCreation1h === undefined ? 0 : rawCacheCreation1h;
+      const creditBalanceTimestampMs = version >= 18 ? slot16 : undefined;
       const speed = typeof speedIndex === "number" ? SPEEDS[speedIndex] : undefined;
 
       const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
@@ -255,6 +264,9 @@ export function decodeScanCache(
         (unresolvedServiceTierTurnId != null && typeof unresolvedServiceTierTurnId !== "string") ||
         typeof cacheCreation1h !== "number" ||
         !Number.isFinite(cacheCreation1h) ||
+        (creditBalanceTimestampMs != null &&
+          (typeof creditBalanceTimestampMs !== "number" ||
+            !Number.isFinite(creditBalanceTimestampMs))) ||
         (rateModelIndex != null && rateModel === undefined) ||
         !Number.isFinite(uncached) ||
         !Number.isFinite(cached) ||
@@ -293,6 +305,7 @@ export function decodeScanCache(
         ...(typeof creditBalance === "number" && Number.isFinite(creditBalance)
           ? { creditBalance }
           : {}),
+        ...(typeof creditBalanceTimestampMs === "number" ? { creditBalanceTimestampMs } : {}),
         dedupeKey:
           typeof dedupeKey !== "string"
             ? null

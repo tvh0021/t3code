@@ -70,12 +70,13 @@ interface MutableBucket {
 /**
  * Credit-billed records (ChatLLM, Codex credits) carry the credits spent.
  * Credit and subscription usage of one model land in separate buckets.
- * Codex records also carry the raw account balance, which
- * `reconcileCodexCreditUsage` turns into credits across rollouts.
+ * Codex records also carry the raw account balance and its snapshot timestamp,
+ * which `reconcileCodexCreditUsage` turns into credits across rollouts.
  */
 export type CreditedUsageRecord = UsageRecord & {
   readonly credits?: number | null;
   readonly creditBalance?: number | null;
+  readonly creditBalanceTimestampMs?: number;
 };
 
 export interface AggregateOptions {
@@ -184,14 +185,36 @@ export function mergeUsageCopies(
         : typeof copy.credits === "number"
           ? copy.credits
           : (held.credits ?? copy.credits);
-  const creditBalance =
-    typeof held.creditBalance === "number" && typeof copy.creditBalance === "number"
-      ? Math.min(held.creditBalance, copy.creditBalance)
-      : typeof held.creditBalance === "number"
-        ? held.creditBalance
-        : typeof copy.creditBalance === "number"
-          ? copy.creditBalance
-          : (held.creditBalance ?? copy.creditBalance);
+  const heldHasBalance = typeof held.creditBalance === "number";
+  const copyHasBalance = typeof copy.creditBalance === "number";
+  let creditBalance: number | null | undefined;
+  let creditBalanceTimestampMs: number | undefined;
+  if (heldHasBalance && copyHasBalance) {
+    const heldBalance = held.creditBalance as number;
+    const copyBalance = copy.creditBalance as number;
+    if (copyBalance < heldBalance) {
+      creditBalance = copyBalance;
+      creditBalanceTimestampMs = copy.creditBalanceTimestampMs ?? copy.timestampMs;
+    } else if (heldBalance < copyBalance) {
+      creditBalance = heldBalance;
+      creditBalanceTimestampMs = held.creditBalanceTimestampMs;
+    } else {
+      creditBalance = heldBalance;
+      creditBalanceTimestampMs =
+        held.creditBalanceTimestampMs !== undefined && copy.creditBalanceTimestampMs !== undefined
+          ? Math.min(held.creditBalanceTimestampMs, copy.creditBalanceTimestampMs)
+          : (held.creditBalanceTimestampMs ?? copy.creditBalanceTimestampMs);
+    }
+  } else if (heldHasBalance) {
+    creditBalance = held.creditBalance;
+    creditBalanceTimestampMs = held.creditBalanceTimestampMs;
+  } else if (copyHasBalance) {
+    creditBalance = copy.creditBalance;
+    creditBalanceTimestampMs = copy.creditBalanceTimestampMs ?? copy.timestampMs;
+  } else {
+    creditBalance = held.creditBalance ?? copy.creditBalance;
+    creditBalanceTimestampMs = undefined;
+  }
   if (
     b.uncachedInputTokens <= a.uncachedInputTokens &&
     b.cachedInputTokens <= a.cachedInputTokens &&
@@ -201,7 +224,8 @@ export function mergeUsageCopies(
     (copy.cacheCreation1hTokens ?? 0) <= (held.cacheCreation1hTokens ?? 0) &&
     reportedCostUsd === held.reportedCostUsd &&
     credits === held.credits &&
-    creditBalance === held.creditBalance
+    creditBalance === held.creditBalance &&
+    creditBalanceTimestampMs === held.creditBalanceTimestampMs
   ) {
     return held;
   }
@@ -209,11 +233,13 @@ export function mergeUsageCopies(
     held.cacheCreation1hTokens ?? 0,
     copy.cacheCreation1hTokens ?? 0,
   );
+  const { creditBalanceTimestampMs: _heldBalanceTimestampMs, ...heldRest } = held;
   return {
-    ...held,
+    ...heldRest,
     ...(cacheCreation1hTokens > 0 ? { cacheCreation1hTokens } : {}),
     ...(credits !== undefined ? { credits } : {}),
     ...(creditBalance !== undefined ? { creditBalance } : {}),
+    ...(creditBalanceTimestampMs !== undefined ? { creditBalanceTimestampMs } : {}),
     totals: {
       uncachedInputTokens: Math.max(a.uncachedInputTokens, b.uncachedInputTokens),
       cachedInputTokens: Math.max(a.cachedInputTokens, b.cachedInputTokens),

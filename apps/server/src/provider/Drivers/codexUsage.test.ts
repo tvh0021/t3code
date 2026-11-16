@@ -1006,6 +1006,109 @@ describe("parseCodexLine", () => {
     });
   });
 
+  it("orders concurrent request-ledger credit reconciliation by snapshot time while bucketing by request time", () => {
+    const request = (timestamp: string, response_id: string, usage: unknown) =>
+      JSON.stringify({
+        type: "token_usage_record",
+        timestamp,
+        payload: { response_id, usage },
+      });
+    const snapshot = (timestamp: string, last: unknown, total: unknown, balance: string) =>
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "token_count",
+          rate_limits: { credits: { hasCredits: true, unlimited: false, balance } },
+          info: { last_token_usage: last, total_token_usage: total },
+        },
+      });
+    const meta = (id: string) =>
+      JSON.stringify({
+        type: "session_meta",
+        timestamp: "2026-08-01T00:00:00.000Z",
+        payload: { type: "session_meta", id, model_provider: "openai" },
+      });
+    const parseRollout = (lines: readonly string[]) => {
+      const state = initialCodexScanState();
+      return lines.flatMap((line) => parseCodexRecords(line, state));
+    };
+
+    const rolloutA = parseRollout([
+      meta("session-a"),
+      turnContext,
+      request("2026-08-01T00:00:30.000Z", "resp-base", counters(100, 10)),
+      snapshot("2026-08-01T00:00:31.000Z", counters(100, 10), counters(100, 10), "100"),
+      turnContext,
+      // Interrupted request without a credit snapshot stays untouched between snapshots.
+      request("2026-08-01T00:00:45.000Z", "resp-uncredited", counters(50, 5)),
+      turnContext,
+      request("2026-08-01T00:01:00.000Z", "resp-a", counters(1_000, 100)),
+      snapshot("2026-08-01T00:01:03.000Z", counters(1_000, 100), counters(1_150, 115), "90"),
+    ]);
+    const rolloutB = parseRollout([
+      meta("session-b"),
+      turnContext,
+      request("2026-08-01T00:01:01.000Z", "resp-b", counters(1_000, 100)),
+      snapshot("2026-08-01T00:01:02.000Z", counters(1_000, 100), counters(1_000, 100), "95"),
+    ]);
+
+    const reconciled = reconcileCodexCreditUsage([
+      { path: "rollout-a.jsonl", records: rolloutA },
+      { path: "rollout-b.jsonl", records: rolloutB },
+    ]);
+    const [fileA, fileB] = reconciled;
+    expect(fileA?.records).toHaveLength(3);
+    expect(fileB?.records).toHaveLength(1);
+
+    const uncredited = fileA?.records[1];
+    expect(uncredited).toMatchObject({
+      timestampMs: Date.parse("2026-08-01T00:00:45.000Z"),
+      reportedCostUsd: null,
+    });
+    expect(uncredited?.credits).toBeUndefined();
+    expect(uncredited?.creditBalance).toBeUndefined();
+
+    const recordA = fileA?.records[2];
+    const recordB = fileB?.records[0];
+    expect(recordA).toMatchObject({
+      timestampMs: Date.parse("2026-08-01T00:01:00.000Z"),
+      creditBalance: 90,
+      creditBalanceTimestampMs: Date.parse("2026-08-01T00:01:03.000Z"),
+      credits: 5,
+      reportedCostUsd: expect.closeTo(0.2, 9),
+    });
+    expect(recordB).toMatchObject({
+      timestampMs: Date.parse("2026-08-01T00:01:01.000Z"),
+      creditBalance: 95,
+      creditBalanceTimestampMs: Date.parse("2026-08-01T00:01:02.000Z"),
+      credits: 5,
+      reportedCostUsd: expect.closeTo(0.2, 9),
+    });
+
+    const aggregator = new UsageAggregator({
+      timeZone: "UTC",
+      sinceDay: "2026-08-01",
+      untilDay: "2026-08-01",
+      resolution: "hour",
+      sinceTimeMs: Date.parse("2026-08-01T00:00:50.000Z"),
+      untilTimeMs: Date.parse("2026-08-01T00:01:02.000Z"),
+      rates: OFFICIAL_MODEL_RATES,
+    });
+    for (const file of reconciled) {
+      for (const rec of file.records) aggregator.add(rec, "/codex/sessions");
+    }
+    const { buckets } = aggregator.finish();
+    // Both requests remain in [00:00:50, 00:01:02) via their ledger timestamps even though A's snapshot was 00:01:03.
+    expect(buckets).toHaveLength(1);
+    expect(buckets[0]).toMatchObject({
+      records: 2,
+      credits: 10,
+      costUsd: expect.closeTo(0.4, 9),
+      costSource: "providerReported",
+    });
+  });
+
   it("reconciles one account balance across concurrent rollouts and excludes auto-review", () => {
     const makeRecord = (model: string, timestampMs: number, creditBalance: number) => ({
       provider: "codex" as const,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  mergeUsageCopies,
   resolveModelAliases,
   UsageAggregator,
   type CreditedUsageRecord,
@@ -423,6 +424,60 @@ describe("UsageAggregator", () => {
     expect(result.buckets[0]?.totals.uncachedInputTokens).toBe(1000);
     expect(result.buckets[0]?.totals.outputTokens).toBe(500);
     expect(result.buckets[0]?.records).toBe(4);
+  });
+});
+
+describe("mergeUsageCopies", () => {
+  it("pairs merged creditBalance with its snapshot timestamp instead of the ledger request time", () => {
+    const ledger = record({
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      timestampMs: Date.parse("2026-08-01T00:01:00.000Z"),
+      dedupeKey: '["codex","s1","resp-1"]',
+    });
+    const zeroTotals = {
+      uncachedInputTokens: 0,
+      cachedInputTokens: 0,
+      cacheCreationTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+    };
+    const earlierSnapshot = record({
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      timestampMs: Date.parse("2026-08-01T00:01:02.000Z"),
+      totals: zeroTotals,
+      creditBalance: 95,
+      creditBalanceTimestampMs: Date.parse("2026-08-01T00:01:02.000Z"),
+      dedupeKey: '["codex","s1","resp-1"]',
+    });
+    const laterSnapshot = record({
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      timestampMs: Date.parse("2026-08-01T00:01:03.000Z"),
+      totals: zeroTotals,
+      creditBalance: 90,
+      dedupeKey: '["codex","s1","resp-1"]',
+    });
+
+    const singleMerged = mergeUsageCopies(ledger, laterSnapshot);
+    expect(singleMerged).toMatchObject({
+      timestampMs: Date.parse("2026-08-01T00:01:00.000Z"),
+      creditBalance: 90,
+      creditBalanceTimestampMs: Date.parse("2026-08-01T00:01:03.000Z"),
+    });
+
+    for (const sequence of [
+      [ledger, earlierSnapshot, laterSnapshot],
+      [ledger, laterSnapshot, earlierSnapshot],
+    ]) {
+      const merged = sequence.reduce((acc, next) => mergeUsageCopies(acc, next));
+      expect(merged).toMatchObject({
+        timestampMs: Date.parse("2026-08-01T00:01:00.000Z"),
+        creditBalance: 90,
+        creditBalanceTimestampMs: Date.parse("2026-08-01T00:01:03.000Z"),
+      });
+    }
   });
 });
 
