@@ -10,7 +10,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   type LimitAccount,
-  displayLimitWindows,
   cursorUsageWindowDetails,
   collectProviderUsageLimits,
   sameUsageLimitCommandCoverage,

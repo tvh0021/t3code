@@ -462,7 +462,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           expect(h.launches.at(-1)?.args).toEqual([
             "acp",
             "--gemini-dir",
-            h.profileDirectory,
+            h.directories.geminiHome,
             "--app-data-dir",
             "antigravity-acp",
           ]);
@@ -542,7 +542,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         expect(snapshot.supportsTextGeneration).toBe(false);
         expect(h.acquisitions).toHaveLength(2);
         expect(h.releases).toEqual([h.first.version, h.signedOut.version]);
-        yield* h.assertClosed;
+        yield* h.assertClosed();
       }),
   );
 
@@ -559,7 +559,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
       expect(after.auth).toEqual(before.auth);
       expect(h.acquisitions).toHaveLength(2);
       expect(h.releases).toEqual([h.first.version]);
-      yield* h.assertClosed;
+      yield* h.assertClosed();
     }),
   );
 
@@ -580,7 +580,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         const after = yield* h.instance.snapshot.getSnapshot;
         expect(after.models).toEqual(before.models);
         expect(after.auth).toEqual(before.auth);
-        yield* h.assertClosed;
+        yield* h.assertClosed();
       }),
   );
 
@@ -617,7 +617,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         expect(after.models).toEqual(before.models);
         expect(after.auth).toEqual(before.auth);
         expect(JSON.stringify(after)).not.toContain("sk-secret-123");
-        yield* h.assertClosed;
+        yield* h.assertClosed();
       }),
   );
 

@@ -1378,8 +1378,8 @@ function ProviderInstanceRow({
         ) : mode === "editor" && !readOnly && driver === "zed" ? (
           <ZedDashboardSection
             connected={configuredDashboardSession(instance.config)}
-            onConnect={(dashboardSession) =>
-              actions.enableInstance(instanceId, {
+            onConnect={async (dashboardSession) => {
+              await actions.enableInstance(instanceId, {
                 ...instance,
                 config: {
                   ...(instance.config !== null && typeof instance.config === "object"
@@ -1387,8 +1387,8 @@ function ProviderInstanceRow({
                     : {}),
                   dashboardSession,
                 },
-              })
-            }
+              });
+            }}
           />
         ) : mode === "editor" &&
           !readOnly &&

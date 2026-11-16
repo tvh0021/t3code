@@ -64,7 +64,7 @@ type SerializedRecord = readonly [
   reportedCostUsd: number | null,
   speed: number,
   rateModelIndex?: number | null,
-  unresolvedServiceTierTurnId?: string | null,
+  unresolvedServiceTierTurnId?: string | number | null,
   credits?: number | null,
   creditBalance?: number | null,
   cacheCreation1hTokens?: number,
@@ -235,7 +235,7 @@ export function decodeScanCache(
         slot13,
         slot14,
         slot15,
-      ] = row as readonly unknown[];
+      ] = row as SerializedRecord;
       // Fork v6 stored [credits, creditBalance] at 12..13; v7+ stores unresolvedServiceTierTurnId at 12,
       // [credits, creditBalance] at 13..14, and v18+ stores cacheCreation1hTokens at 15 (upstream v13..v17 used 13).
       const unresolvedServiceTierTurnId = version >= 7 ? slot12 : undefined;

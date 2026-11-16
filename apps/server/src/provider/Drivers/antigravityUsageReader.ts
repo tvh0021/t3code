@@ -360,13 +360,14 @@ function usageCandidates(
   const generationModels = new Map(generations.map(({ idx, entry }) => [idx, entry]));
   // Usage without response ids (Gemini) can't merge by key. A generation then
   // repeats its step's usage, and its retry list repeats the final attempt, so
-  // identical id-less totals already read from this database are one call.
-  const unkeyedTotals = new Set<string>();
+  // each generation collapses its own duplicate and consumes one matching step.
+  const unkeyedSteps = new Map<string, number[]>();
   for (const [source, entries] of [
     ["step", steps],
     ["generation", generations],
   ] as const) {
     for (const [index, { idx, entry }] of entries.entries()) {
+      const seenInEntry = new Set<string>();
       for (const [usageIndex, usage] of entry.usages.entries()) {
         const modelId = numberAt(usage, 1) || entry.modelId;
         const generation = source === "step" ? generationModels.get(idx) : undefined;
@@ -405,8 +406,25 @@ function usageCandidates(
         });
         if (keys.length === 0) {
           const totalsKey = Object.values(totals).join(":");
-          if (source === "generation" && unkeyedTotals.has(totalsKey)) continue;
-          unkeyedTotals.add(totalsKey);
+          const entryKey = `${modelId}:${totalsKey}`;
+          if (source === "generation") {
+            if (seenInEntry.has(entryKey)) continue;
+            seenInEntry.add(entryKey);
+            const stepModels = unkeyedSteps.get(totalsKey);
+            const matchIndex =
+              stepModels?.findIndex(
+                (stepModelId) =>
+                  stepModelId === modelId || stepModelId === 0 || modelId === 0,
+              ) ?? -1;
+            if (stepModels && matchIndex !== -1) {
+              stepModels.splice(matchIndex, 1);
+              continue;
+            }
+          } else {
+            const stepModels = unkeyedSteps.get(totalsKey);
+            if (stepModels) stepModels.push(modelId);
+            else unkeyedSteps.set(totalsKey, [modelId]);
+          }
         }
         const record: UsageRecord = {
           provider: "antigravity",
