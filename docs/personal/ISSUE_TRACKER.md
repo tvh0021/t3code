@@ -35,6 +35,8 @@ History: offline tests, typechecks and lint pass. The branch predates 0.7.4 and 
 
 ## Resolved
 
+- **USAGE-009** (0.16.0): Codex credits disappeared or reached incorrect turns. Cause: lost snapshots and token-time ordering. Fix: preserve snapshots, order by snapshot time, refresh caches.
+
 - **CHAT-IMAGE-001** (0.11.1): Rewritten chat images stayed stale. Cause: mounted images retained cached URLs. Fix: workspace changes refresh local image URLs, including outside-workspace files.
 
 - **CHATLLM-CANCEL-001** (0.10.0): ChatLLM ignored Stop and stayed running after completion. Cause: inline execution blocked interrupts; completion updates were missing. Fix: fork execution and publish final status.

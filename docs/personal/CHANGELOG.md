@@ -6,6 +6,14 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.16.0 (2026-11-16)
+
+- Upstream sync: merged upstream 295a0a7332 (v0.1.10-nightly.20261115.4749)
+- New feature: Usage applies long-context prices and Claude's 1-hour cache-write rates while preserving historical launch rates
+- Issue: Codex Usage lost credit snapshots or assigned charges to the wrong turn → Fix: preserve ledger snapshots, reconcile by snapshot time, and refresh older scan caches (USAGE-009)
+- New feature: PDF links open in the built-in file viewer; HTML links keep opening in the system browser
+- New feature: Antigravity uses upstream's managed agy CLI at version 1.5.1 or newer
+
 ### 0.15.0 (2026-11-13)
 
 - New feature: delegated subagents get compact child orchestration rules plus `~/.agents/ORCHESTRATION-CHILD.md` instead of the top-level rules

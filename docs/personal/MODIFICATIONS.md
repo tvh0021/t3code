@@ -18,7 +18,7 @@ the workspace, including images at absolute paths outside the project.
 
 **Decisions.**
 
-- Unreleased: upstream moved PDF markdown links into the built-in file viewer
+- 0.16.0: upstream moved PDF markdown links into the built-in file viewer
   and removed `shouldOpenMarkdownFileLinkInBrowserByDefault`. The helper stays
   for `.html` and `.htm` links so HTML files still open in the system browser
   while PDFs follow upstream.
@@ -130,11 +130,18 @@ database. ChatLLM credits come from Abacus's daily billing ledger, read with the
 API key, so they match the Abacus dashboard and include use outside T3. Turns on
 ledger days add tokens only; hourly views and days the ledger lacks price tokens
 at published rates. Antigravity model aliases share a priced model row, and unnamed
-steps inherit the nearest named model when available.
+steps inherit the nearest named model when available. Long-context tokens and
+Claude 1-hour cache writes use their tier rates, including historical launch
+rates. Codex credits follow balance snapshot timestamps across ledger entries
+and rollouts; older cached entries missing those timestamps are reparsed.
 
 **Decisions.**
 
-- Unreleased: upstream added long-context tier pricing and 1-hour Anthropic
+- 0.16.0 (USAGE-009): ledger records lost balance snapshots, and token-time
+  ordering misplaced charges. `codexUsage.ts` preserves snapshots,
+  `usageAggregation.ts` reconciles by snapshot time, and `UsageService.ts`
+  reparses cached files missing timestamps through `usageScanCache.ts`.
+- 0.16.0: upstream added long-context tier pricing and 1-hour Anthropic
   cache-write rates in `usagePricing.ts`. Official Claude rates now include 2x
   input for 1-hour cache writes, `withTableSpeedTiers` scales LiteLLM
   long-context multiples onto official base and launch rates, Codex
@@ -142,7 +149,7 @@ steps inherit the nearest named model when available.
   with their snapshot timestamps, and `usageScanCache.ts` v18 stores fork credit
   columns, snapshot timestamps, and 1-hour cache tokens while keeping saved
   history past 92 days.
-- Unreleased: upstream added Antigravity model ID learning, rate-model
+- 0.16.0: upstream added Antigravity model ID learning, rate-model
   mapping, and model quality ranking in `antigravityUsageReader.ts`. The fork
   keeps ID 1401, `-trial` and `-n` suffix stripping, nearest-model compaction
   fallback at quality 0, and id-less duplicate suppression scoped to
@@ -271,7 +278,7 @@ paths stay compact in prompts.
 
 **Decisions.**
 
-- Unreleased: upstream replaced the managed 1.4.5 bundle pin with the managed
+- 0.16.0: upstream replaced the managed 1.4.5 bundle pin with the managed
   `agy` CLI at 1.5.1 or newer in `antigravityCliRelease.ts`, so the fork
   dropped `antigravityRelease.test.ts`.
 - 0.15.0: the canonical profile path under `providers/antigravity/<sha256>`
