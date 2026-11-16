@@ -20,10 +20,10 @@ export interface TokenRates {
 interface SpeedRates extends TokenRates {
   readonly fast: TokenRates | null;
   readonly ultrafast: TokenRates | null;
-  /** Launch pricing for standard-speed usage before `endsBeforeMs`; the base rates apply after. */
+  /** Launch pricing before `endsBeforeMs`; the permanent rates apply on and after. */
   readonly introductory?: {
     readonly endsBeforeMs: number;
-    readonly rates: TokenRates;
+    readonly rates: SpeedRates;
   };
 }
 
@@ -60,9 +60,29 @@ function ratePerMillion(
   };
 }
 
+function tokenRatesOf(rates: TokenRates): TokenRates {
+  return {
+    inputCostPerToken: rates.inputCostPerToken,
+    outputCostPerToken: rates.outputCostPerToken,
+    cacheReadCostPerToken: rates.cacheReadCostPerToken,
+    cacheCreationCostPerToken: rates.cacheCreationCostPerToken,
+    cacheCreation1hCostPerToken: rates.cacheCreation1hCostPerToken,
+  };
+}
+
 /** The standard rate, with a dated launch rate so history before the change keeps its price. */
 function introductoryUntil(standard: ModelRate, endsBefore: string, launch: ModelRate): ModelRate {
-  return { ...standard, introductory: { endsBeforeMs: Date.parse(endsBefore), rates: launch } };
+  return {
+    ...standard,
+    introductory: {
+      endsBeforeMs: Date.parse(endsBefore),
+      rates: {
+        ...tokenRatesOf(launch),
+        fast: launch.fast,
+        ultrafast: launch.ultrafast,
+      },
+    },
+  };
 }
 
 /**
@@ -333,7 +353,7 @@ function promptTokens(totals: UsageTokenTotals): number {
   return totals.uncachedInputTokens + totals.cachedInputTokens + totals.cacheCreationTokens;
 }
 
-function standardRatesAt(rate: ModelRate, timestampMs?: number): TokenRates {
+function speedRatesAt(rate: SpeedRates, timestampMs?: number): SpeedRates {
   const introductory = rate.introductory;
   return introductory !== undefined &&
     timestampMs !== undefined &&
@@ -350,9 +370,11 @@ function ratesAt(
   timestampMs?: number,
 ): TokenRates {
   const prompt = promptTokens(totals);
-  const tier = rate.contextTiers.find((tier) => prompt > tier.thresholdTokens)?.rate;
-  if (speed === "standard") return tier ?? standardRatesAt(rate, timestampMs);
-  return tier?.[speed] ?? rate[speed] ?? tier ?? standardRatesAt(rate, timestampMs);
+  const base = speedRatesAt(rate, timestampMs);
+  const matchedTier = rate.contextTiers.find((tier) => prompt > tier.thresholdTokens);
+  const tier = matchedTier === undefined ? undefined : speedRatesAt(matchedTier.rate, timestampMs);
+  if (speed === "standard") return tier ?? base;
+  return tier?.[speed] ?? base[speed] ?? tier ?? base;
 }
 
 function normalizeRateKey(model: string): string {
@@ -490,23 +512,30 @@ function scaleRelativeRates(
  */
 function withTableSpeedTiers(official: ModelRate, fromTable: ModelRate | undefined): ModelRate {
   if (fromTable === undefined || fromTable.inputCostPerToken <= 0) return official;
-  const tier = (rates: TokenRates | null) =>
-    rates === null ? null : scaleRelativeRates(official, rates, fromTable);
+  const tier = (base: TokenRates, rates: TokenRates | null) =>
+    rates === null ? null : scaleRelativeRates(base, rates, fromTable);
+  const scaleTier = (base: SpeedRates, source: SpeedRates, keepBase = false): SpeedRates => ({
+    ...(keepBase ? tokenRatesOf(base) : scaleRelativeRates(base, source, fromTable)),
+    fast: tier(base, source.fast),
+    ultrafast: tier(base, source.ultrafast),
+    ...(base.introductory === undefined
+      ? {}
+      : {
+          introductory: {
+            endsBeforeMs: base.introductory.endsBeforeMs,
+            rates: scaleTier(base.introductory.rates, source, keepBase),
+          },
+        }),
+  });
   const contextTiers =
     official.contextTiers.length > 0
       ? official.contextTiers
       : fromTable.contextTiers.map(({ thresholdTokens, rate }) => ({
           thresholdTokens,
-          rate: {
-            ...scaleRelativeRates(official, rate, fromTable),
-            fast: tier(rate.fast),
-            ultrafast: tier(rate.ultrafast),
-          },
+          rate: scaleTier(official, rate),
         }));
   return {
-    ...official,
-    fast: tier(fromTable.fast),
-    ultrafast: tier(fromTable.ultrafast),
+    ...scaleTier(official, fromTable, true),
     contextTiers,
   };
 }

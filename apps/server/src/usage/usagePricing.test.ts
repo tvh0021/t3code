@@ -359,6 +359,39 @@ describe("usage pricing", () => {
     expect(cost(272_001, "fast")).toBeCloseTo(72_001 * 4e-6 + 200_000 * 4e-7 + 1_000 * 2e-5, 12);
   });
 
+  it("applies dated introductory launch rates to long-context tiers until the launch date ends", () => {
+    const table = parseRateTable({
+      "gemini-4-argon": {
+        input_cost_per_token: 2e-6,
+        output_cost_per_token: 10e-6,
+        cache_read_input_token_cost: 0.1e-6,
+        input_cost_per_token_above_200k_tokens: 4e-6,
+        output_cost_per_token_above_200k_tokens: 20e-6,
+        cache_read_input_token_cost_above_200k_tokens: 0.2e-6,
+      },
+    });
+    const longArgon = (iso: string, cached = 0) => ({
+      model: "gemini-4-argon",
+      speed: "standard" as const,
+      reportedCostUsd: null,
+      timestampMs: Date.parse(iso),
+      totals: {
+        uncachedInputTokens: 300_000 - cached,
+        cachedInputTokens: cached,
+        cacheCreationTokens: 0,
+        outputTokens: 1_000,
+        reasoningTokens: 0,
+      },
+    });
+
+    expect(priceUsage(table, longArgon("2026-11-15T00:00:00Z")).costUsd).toBeCloseTo(1.22, 9);
+    expect(priceUsage(table, longArgon("2026-12-15T00:00:00Z")).costUsd).toBeCloseTo(2.44, 9);
+    expect(cacheSavingsUsd(table, longArgon("2026-12-01T00:00:00Z", 100_000))).toBeCloseTo(
+      2 * cacheSavingsUsd(table, longArgon("2026-11-30T23:59:59Z", 100_000)),
+      9,
+    );
+  });
+
   it("keeps the canonical Fable rate separate from DeepInfra in either order", () => {
     const canonical = ["claude-fable-5", rate(1e-5, 1e-6)] as const;
     const deepInfra = ["deepinfra/anthropic/claude-fable-5", rate(1e-5)] as const;

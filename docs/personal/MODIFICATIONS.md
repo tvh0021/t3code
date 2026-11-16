@@ -137,9 +137,10 @@ steps inherit the nearest named model when available.
 - Unreleased: upstream added long-context tier pricing and 1-hour Anthropic
   cache-write rates in `usagePricing.ts`. Official Claude rates now include 2x
   input for 1-hour cache writes, `withTableSpeedTiers` scales LiteLLM
-  long-context multiples onto official base rates, and `usageScanCache.ts` v18
-  stores both fork credit columns and 1-hour cache tokens while keeping saved
-  history past 92 days.
+  long-context multiples onto official base and launch rates, Codex
+  `token_count` credit snapshots merge onto `token_usage_record` ledger entries,
+  and `usageScanCache.ts` v18 stores both fork credit columns and 1-hour cache
+  tokens while keeping saved history past 92 days.
 - Unreleased: upstream added Antigravity model ID learning, rate-model
   mapping, and model quality ranking in `antigravityUsageReader.ts`. The fork
   keeps ID 1401, `-trial` and `-n` suffix stripping, nearest-model compaction

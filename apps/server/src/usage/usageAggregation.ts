@@ -176,6 +176,22 @@ export function mergeUsageCopies(
     held.reportedCostUsd === null || copy.reportedCostUsd === null
       ? (held.reportedCostUsd ?? copy.reportedCostUsd)
       : Math.max(held.reportedCostUsd, copy.reportedCostUsd);
+  const credits =
+    typeof held.credits === "number" && typeof copy.credits === "number"
+      ? Math.max(held.credits, copy.credits)
+      : typeof held.credits === "number"
+        ? held.credits
+        : typeof copy.credits === "number"
+          ? copy.credits
+          : (held.credits ?? copy.credits);
+  const creditBalance =
+    typeof held.creditBalance === "number" && typeof copy.creditBalance === "number"
+      ? Math.min(held.creditBalance, copy.creditBalance)
+      : typeof held.creditBalance === "number"
+        ? held.creditBalance
+        : typeof copy.creditBalance === "number"
+          ? copy.creditBalance
+          : (held.creditBalance ?? copy.creditBalance);
   if (
     b.uncachedInputTokens <= a.uncachedInputTokens &&
     b.cachedInputTokens <= a.cachedInputTokens &&
@@ -183,7 +199,9 @@ export function mergeUsageCopies(
     b.outputTokens <= a.outputTokens &&
     b.reasoningTokens <= a.reasoningTokens &&
     (copy.cacheCreation1hTokens ?? 0) <= (held.cacheCreation1hTokens ?? 0) &&
-    reportedCostUsd === held.reportedCostUsd
+    reportedCostUsd === held.reportedCostUsd &&
+    credits === held.credits &&
+    creditBalance === held.creditBalance
   ) {
     return held;
   }
@@ -194,6 +212,8 @@ export function mergeUsageCopies(
   return {
     ...held,
     ...(cacheCreation1hTokens > 0 ? { cacheCreation1hTokens } : {}),
+    ...(credits !== undefined ? { credits } : {}),
+    ...(creditBalance !== undefined ? { creditBalance } : {}),
     totals: {
       uncachedInputTokens: Math.max(a.uncachedInputTokens, b.uncachedInputTokens),
       cachedInputTokens: Math.max(a.cachedInputTokens, b.cachedInputTokens),

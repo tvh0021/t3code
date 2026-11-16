@@ -45,6 +45,7 @@ import type {
 import {
   canonicalModelFilter,
   type CreditedUsageRecord,
+  mergeUsageCopies,
   resolveModelAliases,
   UsageAggregator,
 } from "./usageAggregation.ts";
@@ -259,7 +260,9 @@ export const make = Effect.gen(function* () {
   const resolvedRecords = new WeakMap<CreditedUsageRecord, CreditedUsageRecord>();
   const correctedRecord = (record: CreditedUsageRecord): CreditedUsageRecord =>
     resolvedRecords.get(record) ?? record;
-  const correctedBatch = (records: readonly CreditedUsageRecord[]): readonly CreditedUsageRecord[] =>
+  const correctedBatch = (
+    records: readonly CreditedUsageRecord[],
+  ): readonly CreditedUsageRecord[] =>
     records.some((record) => resolvedRecords.has(record)) ? records.map(correctedRecord) : records;
   const sourceCache = new Map<string, typeof CachedSource.Type>();
   // Earliest window start a complete scan read each transcript directory from.
@@ -690,6 +693,7 @@ export const make = Effect.gen(function* () {
         record.reportedCostUsd,
         record.dedupeKey,
       ]);
+    const parsedRecords = dedupeWithinFile(parsed.records);
     if (!parsed.resumed && cached !== undefined && cached.provider === provider) {
       // A whole-file re-parse re-emits saved requests unresolved. Keep their saved tier
       // corrections, since the history that resolved them may no longer be available.
@@ -702,21 +706,21 @@ export const make = Effect.gen(function* () {
         if (occurrences === undefined) saved.set(key, [corrected]);
         else occurrences.push(corrected);
       }
-      for (const record of [...parsed.records, ...parsed.tailRecords]) {
+      for (const record of [...parsedRecords, ...parsed.tailRecords]) {
         const corrected = saved.get(identity(record))?.shift();
         if (
           record.unresolvedServiceTierTurnId !== undefined &&
           corrected !== undefined &&
           corrected.unresolvedServiceTierTurnId === undefined
         ) {
-          resolvedRecords.set(record, corrected);
+          resolvedRecords.set(record, mergeUsageCopies(corrected, record));
         }
       }
     }
     if (parsed.resumed && cached !== undefined && cached.tailRecords.length > 0) {
       // Completing a tentative line reparses it. Reuse its saved correction only when the
       // same usage is emitted again, without putting inferred tiers in the parser state.
-      const reparsed = [...parsed.records, ...parsed.tailRecords];
+      const reparsed = [...parsedRecords, ...parsed.tailRecords];
       for (const [index, previous] of cached.tailRecords.entries()) {
         const record = reparsed[index];
         const corrected = correctedRecord(previous);
@@ -725,12 +729,13 @@ export const make = Effect.gen(function* () {
           corrected.unresolvedServiceTierTurnId === undefined &&
           identity(record) === identity(corrected)
         ) {
-          resolvedRecords.set(record, corrected);
+          resolvedRecords.set(record, mergeUsageCopies(corrected, record));
         }
       }
     }
     const base = parsed.resumed && cached !== undefined ? cached.records : [];
-    const records = dedupeWithinFile([...base, ...parsed.records]);
+    const records =
+      base.length === 0 ? parsedRecords : dedupeWithinFile([...base, ...parsedRecords]);
     const tailRecords = parsed.tailRecords;
 
     return {
@@ -1277,7 +1282,6 @@ export const make = Effect.gen(function* () {
           : {}),
       });
     }
-
 
     const aggregated = aggregator.finish();
     const readAt = yield* DateTime.now;

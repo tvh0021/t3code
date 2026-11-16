@@ -16,6 +16,7 @@ import {
 } from "@t3tools/provider-core/server/usage";
 
 import type { CreditedUsageRecord as UsageRecord } from "../../usage/usageAggregation.ts";
+import { dedupeWithinFile } from "../../usage/usageScanCache.ts";
 
 import * as CodexUsageHistory from "../../usage/CodexUsageHistory.ts";
 import { resolveCodexHomeLayout } from "./CodexHomeLayout.ts";
@@ -39,6 +40,14 @@ const CodexTokenUsage = Schema.Struct({
 type CodexTokenUsage = typeof CodexTokenUsage.Type;
 const isCodexTokenUsage = Schema.is(CodexTokenUsage);
 const CODEX_USAGE_FIELDS = Object.keys(CodexTokenUsage.fields) as (keyof CodexTokenUsage)[];
+const ZERO_CODEX_USAGE: CodexTokenUsage = {
+  input_tokens: 0,
+  cached_input_tokens: 0,
+  cache_write_input_tokens: 0,
+  output_tokens: 0,
+  reasoning_output_tokens: 0,
+  total_tokens: 0,
+};
 
 function readCodexTokenUsage(value: unknown): CodexTokenUsage | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
@@ -152,6 +161,7 @@ export const CodexScanState = Schema.Struct({
     Schema.optionalKey(Schema.mutable(Schema.Array(CodexUnreportedRequest))),
   ),
   requestLedgerActive: Schema.mutableKey(Schema.optionalKey(Schema.Boolean)),
+  pendingCreditDedupeKey: Schema.mutableKey(Schema.optionalKey(Schema.String)),
   malformedRecords: Schema.mutableKey(TokenCount),
   sawSessionMeta: Schema.mutableKey(Schema.Boolean),
   modelProvider: Schema.mutableKey(Schema.String),
@@ -255,6 +265,7 @@ function parseCodexRecord(
 
   if (record["type"] === "turn_context") {
     state.requestLedgerActive = false;
+    delete state.pendingCreditDedupeKey;
     if (typeof payloadRecord["model"] === "string") state.model = payloadRecord["model"];
     // Model carry is useful for usage, but history recovery needs this context's own identity.
     state.turnId =
@@ -276,7 +287,9 @@ function parseCodexRecord(
     const responseId = payloadRecord["response_id"];
     if (typeof responseId === "string" && responseId.length > 0) {
       const pending = state.unreportedRequests ?? [];
+      const dedupeKey = JSON.stringify([provider, state.sessionId, responseId]);
       state.requestLedgerActive = true;
+      state.pendingCreditDedupeKey = dedupeKey;
       for (const request of pending) {
         state.lastCumulativeUsage = advanceCodexUsage(state.lastCumulativeUsage, request.usage);
       }
@@ -287,11 +300,12 @@ function parseCodexRecord(
         ...pending.map((request) => codexRequestRecord(state, provider, request.usage, request)),
         {
           ...codexRequestRecord(state, provider, usage, codexAttribution(state, timestampMs)),
-          dedupeKey: JSON.stringify([provider, state.sessionId, responseId]),
+          dedupeKey,
         },
       ];
     }
     state.requestLedgerActive = false;
+    delete state.pendingCreditDedupeKey;
     (state.unreportedRequests ??= []).push({ ...codexAttribution(state, timestampMs), usage });
     return [];
   }
@@ -335,7 +349,30 @@ function parseCodexRecord(
   // Context snapshots can rewind on resume and omit compaction spending; identified requests are authoritative.
   if (state.requestLedgerActive) {
     if (cumulative !== null) rebaseCodexUsage(state, cumulative, timestampMs);
-    return [];
+    const dedupeKey = state.pendingCreditDedupeKey;
+    if (
+      dedupeKey === undefined ||
+      last === null ||
+      last.input_tokens + last.output_tokens === 0 ||
+      last.total_tokens !== last.input_tokens + last.output_tokens
+    ) {
+      return [];
+    }
+    delete state.pendingCreditDedupeKey;
+    const snapshot = codexCreditSnapshot(payloadRecord, infoRecord);
+    if (snapshot.creditBalance === null && snapshot.credits === null) return [];
+    return [
+      {
+        ...codexRequestRecord(
+          state,
+          provider,
+          ZERO_CODEX_USAGE,
+          codexAttribution(state, timestampMs),
+          snapshot,
+        ),
+        dedupeKey,
+      },
+    ];
   }
 
   const previous = state.lastCumulativeUsage;
@@ -554,9 +591,17 @@ export function reconcileCodexCreditUsage<
     readonly recordIdx: number;
   };
 
+  const normalizedFiles = files.map((file) => {
+    const deduped = dedupeWithinFile(file.records);
+    return deduped.length === file.records.length &&
+      deduped.every((rec, idx) => rec === file.records[idx])
+      ? file
+      : { ...file, records: deduped };
+  });
+
   const entries: RecordEntry[] = [];
-  for (let fIdx = 0; fIdx < files.length; fIdx++) {
-    const file = files[fIdx]!;
+  for (let fIdx = 0; fIdx < normalizedFiles.length; fIdx++) {
+    const file = normalizedFiles[fIdx]!;
     for (let rIdx = 0; rIdx < file.records.length; rIdx++) {
       const rec = file.records[rIdx]!;
       if (rec.provider === "codex" && typeof rec.creditBalance === "number") {
@@ -614,7 +659,7 @@ export function reconcileCodexCreditUsage<
     }
   }
 
-  return files.map((file, fIdx) => ({
+  return normalizedFiles.map((file, fIdx) => ({
     ...file,
     records: file.records.map((rec, rIdx) => {
       const update = updates.get(`${fIdx}:${rIdx}`);

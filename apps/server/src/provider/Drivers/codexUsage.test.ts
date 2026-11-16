@@ -1,6 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import { totalTokens } from "@t3tools/provider-core/server/usage";
 
+import { UsageAggregator } from "../../usage/usageAggregation.ts";
+import { OFFICIAL_MODEL_RATES } from "../../usage/usagePricing.ts";
+import { dedupeWithinFile } from "../../usage/usageScanCache.ts";
 import {
   type CodexScanState,
   codexUsageFormat,
@@ -923,6 +926,84 @@ describe("parseCodexLine", () => {
     expect(parseCodexLine(tokenCountWithCredits(100, "100"), state)).not.toBeNull();
     expect(parseCodexLine(tokenCountWithCredits(100, "90"), state)).toBeNull();
     expect(parseCodexLine(tokenCountWithCredits(200, "80"), state)?.creditBalance).toBe(80);
+  });
+
+  it("reconciles credit balances across request-ledger turns without double-billing tokens", () => {
+    const state = initialCodexScanState();
+    const request = (timestamp: string, response_id: string, usage: unknown) =>
+      JSON.stringify({
+        type: "token_usage_record",
+        timestamp,
+        payload: { response_id, usage },
+      });
+    const snapshot = (timestamp: string, last: unknown, total: unknown, balance: string) =>
+      JSON.stringify({
+        type: "event_msg",
+        timestamp,
+        payload: {
+          type: "token_count",
+          rate_limits: { credits: { hasCredits: true, unlimited: false, balance } },
+          info: { last_token_usage: last, total_token_usage: total },
+        },
+      });
+
+    const raw = [
+      sessionMeta,
+      turnContext,
+      request("2026-08-01T05:17:45.000Z", "resp-1", counters(100, 10)),
+      snapshot("2026-08-01T05:17:45.100Z", counters(100, 10), counters(100, 10), "100"),
+      // Rate-limit refresh before the next request must not steal another rollout's spend.
+      snapshot("2026-08-01T05:17:46.000Z", counters(100, 10), counters(100, 10), "95"),
+      turnContext,
+      request("2026-08-01T05:18:00.000Z", "resp-2", counters(200, 20)),
+      snapshot("2026-08-01T05:18:00.100Z", counters(200, 20), counters(300, 30), "90"),
+    ].flatMap((line) => parseCodexRecords(line, state));
+
+    expect(raw.reduce((sum, rec) => sum + totalTokens(rec.totals), 0)).toBe(330);
+
+    const deduped = dedupeWithinFile(raw);
+    expect(deduped).toHaveLength(2);
+    expect(deduped.map((rec) => rec.creditBalance)).toEqual([100, 90]);
+
+    const [reconciled] = reconcileCodexCreditUsage([{ path: "rollout.jsonl", records: raw }]);
+    expect(reconciled?.records).toHaveLength(2);
+    expect(
+      reconciled?.records.map((rec) => ({
+        input: rec.totals.uncachedInputTokens,
+        output: rec.totals.outputTokens,
+        creditBalance: rec.creditBalance,
+        credits: rec.credits,
+        reportedCostUsd: rec.reportedCostUsd,
+      })),
+    ).toEqual([
+      { input: 100, output: 10, creditBalance: 100, credits: 0, reportedCostUsd: null },
+      {
+        input: 200,
+        output: 20,
+        creditBalance: 90,
+        credits: 10,
+        reportedCostUsd: expect.closeTo(0.4, 9),
+      },
+    ]);
+
+    const aggregator = new UsageAggregator({
+      timeZone: "UTC",
+      sinceDay: "2026-08-01",
+      untilDay: "2026-08-01",
+      rates: OFFICIAL_MODEL_RATES,
+    });
+    for (const rec of reconciled!.records) aggregator.add(rec, "/codex/sessions");
+    const { buckets, duplicatesDropped } = aggregator.finish();
+    expect(duplicatesDropped).toBe(0);
+    expect(buckets.reduce((sum, bucket) => sum + bucket.records, 0)).toBe(2);
+    expect(buckets.reduce((sum, bucket) => sum + totalTokens(bucket.totals), 0)).toBe(330);
+    const creditBucket = buckets.find((bucket) => (bucket.credits ?? 0) > 0);
+    expect(creditBucket).toMatchObject({
+      records: 1,
+      credits: 10,
+      costUsd: expect.closeTo(0.4, 9),
+      costSource: "providerReported",
+    });
   });
 
   it("reconciles one account balance across concurrent rollouts and excludes auto-review", () => {
