@@ -49,14 +49,15 @@ export function markdownFileCopyMenuItems({
 }
 
 export function shouldUseMarkdownFileBrowserPrimaryAction(input: {
-  iconPath: string;
+  iconPath?: string;
   canOpenInEditor: boolean;
   canOpenInBrowser: boolean;
   canOpenInPanel: boolean;
 }): boolean {
   return (
     input.canOpenInBrowser &&
-    (shouldOpenMarkdownFileLinkInBrowserByDefault(input.iconPath) ||
+    ((input.iconPath !== undefined &&
+      shouldOpenMarkdownFileLinkInBrowserByDefault(input.iconPath)) ||
       (!input.canOpenInEditor && !input.canOpenInPanel))
   );
 }

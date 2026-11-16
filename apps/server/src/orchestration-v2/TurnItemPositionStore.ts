@@ -24,10 +24,16 @@ export interface TurnItemPositionStoreV2Shape {
     readonly runOrdinal?: number;
     /** Kept when free and inside the item's bucket; otherwise the item appends. */
     readonly requestedOrdinal?: number;
+    // `run_start` takes the run's unused first slot, ahead of its items, and appends once it is taken.
+    readonly placement?: "append" | "run_start";
+    // Keep an existing position even when it lies outside the run's range.
+    readonly keepExisting?: boolean;
   }) => Effect.Effect<number, TurnItemPositionStoreError>;
   readonly normalize: (
     item: OrchestrationV2TurnItem,
-    options?: { readonly runOrdinal?: number | undefined; readonly keepOrdinal?: boolean },
+    options?:
+      | number
+      | { readonly runOrdinal?: number | undefined; readonly keepOrdinal?: boolean },
   ) => Effect.Effect<OrchestrationV2TurnItem, TurnItemPositionStoreError>;
 }
 
@@ -50,6 +56,8 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
           runId,
           runOrdinal: suppliedRunOrdinal,
           requestedOrdinal,
+          placement = "append",
+          keepExisting = false,
         }) {
           const existing = yield* sql<{ readonly ordinal: number }>`
           SELECT ordinal
@@ -57,10 +65,8 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
           WHERE thread_id = ${threadId} AND turn_item_id = ${turnItemId}
           LIMIT 1
         `;
-          if (existing[0] !== undefined) return existing[0].ordinal;
-
           const runRows =
-            runId === null
+            runId === null || suppliedRunOrdinal !== undefined
               ? []
               : yield* sql<{ readonly ordinal: number }>`
                 SELECT ordinal
@@ -71,33 +77,60 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
           const runOrdinal = suppliedRunOrdinal ?? runRows[0]?.ordinal ?? null;
           const lowerBound = runOrdinal === null ? 0 : runOrdinal * 1_000_000;
           const upperBound = runOrdinal === null ? 999_999 : lowerBound + 999_999;
-          if (
-            requestedOrdinal !== undefined &&
-            Number.isSafeInteger(requestedOrdinal) &&
-            requestedOrdinal >= lowerBound &&
-            requestedOrdinal <= upperBound
-          ) {
-            // Bare DO NOTHING also covers UNIQUE(thread_id, ordinal): a taken ordinal appends.
-            const kept = yield* sql<{ readonly ordinal: number }>`
-            INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
-            VALUES (${threadId}, ${turnItemId}, ${requestedOrdinal})
-            ON CONFLICT DO NOTHING
-            RETURNING ordinal
+          const current = existing[0]?.ordinal;
+          if (current !== undefined) {
+            // A steer that missed its turn starts the next run; it moves into that run's range.
+            if (
+              keepExisting ||
+              runOrdinal === null ||
+              (current >= lowerBound && current <= upperBound)
+            ) {
+              return current;
+            }
+            yield* sql`
+            UPDATE orchestration_v2_turn_item_positions
+            SET ordinal = (
+              SELECT COALESCE(MAX(ordinal), ${lowerBound}) + 1
+              FROM orchestration_v2_turn_item_positions
+              WHERE thread_id = ${threadId}
+                AND ordinal >= ${lowerBound}
+                AND ordinal <= ${upperBound}
+            )
+            WHERE thread_id = ${threadId} AND turn_item_id = ${turnItemId}
           `;
-            if (kept[0] !== undefined) return kept[0].ordinal;
+          } else {
+            if (
+              requestedOrdinal !== undefined &&
+              Number.isSafeInteger(requestedOrdinal) &&
+              requestedOrdinal >= lowerBound &&
+              requestedOrdinal <= upperBound
+            ) {
+              // Bare DO NOTHING also covers UNIQUE(thread_id, ordinal): a taken ordinal appends.
+              const kept = yield* sql<{ readonly ordinal: number }>`
+              INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
+              VALUES (${threadId}, ${turnItemId}, ${requestedOrdinal})
+              ON CONFLICT DO NOTHING
+              RETURNING ordinal
+            `;
+              if (kept[0] !== undefined) return kept[0].ordinal;
+            }
+            yield* sql`
+            INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
+            SELECT
+              ${threadId},
+              ${turnItemId},
+              ${
+                placement === "run_start"
+                  ? sql`CASE WHEN COALESCE(MIN(ordinal), ${upperBound}) > ${lowerBound} THEN ${lowerBound} ELSE MAX(ordinal) + 1 END`
+                  : sql`COALESCE(MAX(ordinal), ${lowerBound}) + 1`
+              }
+            FROM orchestration_v2_turn_item_positions
+            WHERE thread_id = ${threadId}
+              AND ordinal >= ${lowerBound}
+              AND ordinal <= ${upperBound}
+            ON CONFLICT(thread_id, turn_item_id) DO NOTHING
+          `;
           }
-          yield* sql`
-          INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
-          SELECT
-            ${threadId},
-            ${turnItemId},
-            COALESCE(MAX(ordinal), ${lowerBound}) + 1
-          FROM orchestration_v2_turn_item_positions
-          WHERE thread_id = ${threadId}
-            AND ordinal >= ${lowerBound}
-            AND ordinal <= ${upperBound}
-          ON CONFLICT(thread_id, turn_item_id) DO NOTHING
-        `;
           const rows = yield* sql<{ readonly ordinal: number }>`
           SELECT ordinal
           FROM orchestration_v2_turn_item_positions
@@ -128,12 +161,18 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
       allocate,
       // Per-event normalization shares the enclosing orchestration span.
       normalize: Effect.fnUntraced(function* (item, options) {
+        const normalizedOptions =
+          typeof options === "number" ? { runOrdinal: options } : options;
         return yield* allocate({
           threadId: item.threadId,
           turnItemId: item.id,
           runId: item.runId,
-          ...(options?.runOrdinal === undefined ? {} : { runOrdinal: options.runOrdinal }),
-          ...(options?.keepOrdinal === true ? { requestedOrdinal: item.ordinal } : {}),
+          // Queued steers keep their submission order until their run starts (see Orchestrator).
+          keepExisting: item.status === "pending",
+          ...(normalizedOptions?.runOrdinal === undefined
+            ? {}
+            : { runOrdinal: normalizedOptions.runOrdinal }),
+          ...(normalizedOptions?.keepOrdinal === true ? { requestedOrdinal: item.ordinal } : {}),
         }).pipe(Effect.map((ordinal) => (item.ordinal === ordinal ? item : { ...item, ordinal })));
       }),
     });

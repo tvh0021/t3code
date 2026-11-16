@@ -98,6 +98,7 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
       readonly loginRequired?: boolean;
       /** `data` of the agent's "Internal error" response to `session/new`. */
       readonly newSessionErrorData?: unknown;
+      readonly initialMode?: string;
     } = {},
   ) {
     const directory = path.join(root, name);
@@ -118,6 +119,9 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
           : [
               `export T3_ACP_NEW_SESSION_ERROR_DATA=${shellQuote(JSON.stringify(options.newSessionErrorData))}`,
             ]),
+        ...(options.initialMode === undefined
+          ? []
+          : [`export T3_ACP_INITIAL_MODE=${shellQuote(options.initialMode)}`]),
         `exec ${shellQuote(nodePath)} ${shellQuote(mockAgentPath)} "$@"`,
         "",
       ].join("\n"),
@@ -137,7 +141,11 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
   const first = yield* makeExecutable("runtime 'one");
   const second = yield* makeExecutable("runtime two");
   const signedOut = yield* makeExecutable("runtime signed-out", { loginRequired: true });
-  const controls = { selected: first, failResolution: false, beforeAcquire: Effect.void };
+  const controls: {
+    selected: AntigravityInstallation.AntigravityExecutable;
+    failResolution: boolean;
+    beforeAcquire: Effect.Effect<void>;
+  } = { selected: first, failResolution: false, beforeAcquire: Effect.void };
   const acquisitions: Array<{ binaryPath: string | undefined; path: string | undefined }> = [];
   const releases: Array<string | null> = [];
   const launches: Array<{
@@ -408,7 +416,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         const helper = {
           fs: { readTextFile: false, writeTextFile: false },
           terminal: false,
-          session: { notices: {} },
+          session: { notices: {}, compaction: {} },
         };
         expect(
           (yield* h.readRequests)
@@ -422,11 +430,54 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           {
             fs: { readTextFile: true, writeTextFile: false },
             terminal: false,
-            session: { notices: {} },
+            session: { notices: {}, compaction: {} },
             elicitation: { form: {} },
           },
         ]);
-      }).pipe(Effect.scoped),
+
+        // The agy CLI rejects `yolo` and `auto_edit`; it stays in `default` and T3 answers its requests.
+        h.controls.selected = {
+          ...(yield* h.makeExecutable("runtime cli", { initialMode: "auto_edit" })),
+          harnessPath: null,
+        };
+        for (const runtimeMode of ["full-access", "auto-accept-edits"] as const) {
+          const requestsBefore = (yield* h.readRequests).length;
+          const cliThreadId = ThreadId.make(`thread-antigravity-cli-${runtimeMode}`);
+          const cliPolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            runtimeMode,
+            interactionMode: "default",
+            cwd: workspace,
+          });
+          const cliSession = yield* h.instance.orchestrationAdapter.openSession({
+            threadId: cliThreadId,
+            providerSessionId: ProviderSessionId.make(`provider-session-cli-${runtimeMode}`),
+            modelSelection,
+            runtimePolicy: cliPolicy,
+          });
+          yield* cliSession.ensureThread({
+            threadId: cliThreadId,
+            modelSelection,
+            runtimePolicy: cliPolicy,
+          });
+          expect(h.launches.at(-1)?.args).toEqual([
+            "acp",
+            "--gemini-dir",
+            h.profileDirectory,
+            "--app-data-dir",
+            "antigravity-acp",
+          ]);
+          expect(
+            (yield* h.readRequests)
+              .slice(requestsBefore)
+              .filter(
+                (request) =>
+                  request.method === "session/set_config_option" &&
+                  request.params?.configId === "mode",
+              )
+              .map((request) => request.params?.value),
+          ).toEqual(["default"]);
+        }
+      }),
   );
 
   it.effect.skipIf(windowsHost)(
@@ -491,8 +542,8 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         expect(snapshot.supportsTextGeneration).toBe(false);
         expect(h.acquisitions).toHaveLength(2);
         expect(h.releases).toEqual([h.first.version, h.signedOut.version]);
-        yield* h.assertClosed();
-      }).pipe(Effect.scoped),
+        yield* h.assertClosed;
+      }),
   );
 
   it.effect.skipIf(windowsHost)("keeps the previous catalog when executable resolution fails", () =>
@@ -508,8 +559,8 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
       expect(after.auth).toEqual(before.auth);
       expect(h.acquisitions).toHaveLength(2);
       expect(h.releases).toEqual([h.first.version]);
-      yield* h.assertClosed();
-    }).pipe(Effect.scoped),
+      yield* h.assertClosed;
+    }),
   );
 
   it.effect.skipIf(windowsHost)(
@@ -529,8 +580,8 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         const after = yield* h.instance.snapshot.getSnapshot;
         expect(after.models).toEqual(before.models);
         expect(after.auth).toEqual(before.auth);
-        yield* h.assertClosed();
-      }).pipe(Effect.scoped),
+        yield* h.assertClosed;
+      }),
   );
 
   it.effect.skipIf(windowsHost)(
@@ -566,8 +617,8 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         expect(after.models).toEqual(before.models);
         expect(after.auth).toEqual(before.auth);
         expect(JSON.stringify(after)).not.toContain("sk-secret-123");
-        yield* h.assertClosed();
-      }).pipe(Effect.scoped),
+        yield* h.assertClosed;
+      }),
   );
 
   it.effect.skipIf(windowsHost)(
@@ -605,6 +656,6 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         );
         expect(yield* fs.exists(directories.runtimeTemp)).toBe(false);
         expect(yield* fs.exists(legacyRoot)).toBe(false);
-      }).pipe(Effect.scoped),
+      }),
   );
 });
