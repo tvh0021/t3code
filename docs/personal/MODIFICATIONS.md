@@ -18,6 +18,10 @@ the workspace, including images at absolute paths outside the project.
 
 **Decisions.**
 
+- Unreleased: upstream moved PDF markdown links into the built-in file viewer
+  and removed `shouldOpenMarkdownFileLinkInBrowserByDefault`. The helper stays
+  for `.html` and `.htm` links so HTML files still open in the system browser
+  while PDFs follow upstream.
 - 0.14.0 (CHAT-IMAGE-001): upstream's `WorkspaceMutationIdContext` in
   `ChatMarkdownMedia.tsx` now refreshes local images after workspace changes,
   replacing the fork's duplicate context.
@@ -130,6 +134,17 @@ steps inherit the nearest named model when available.
 
 **Decisions.**
 
+- Unreleased: upstream added long-context tier pricing and 1-hour Anthropic
+  cache-write rates in `usagePricing.ts`. Official Claude rates now include 2x
+  input for 1-hour cache writes, `withTableSpeedTiers` scales LiteLLM
+  long-context multiples onto official base rates, and `usageScanCache.ts` v18
+  stores both fork credit columns and 1-hour cache tokens while keeping saved
+  history past 92 days.
+- Unreleased: upstream added Antigravity model ID learning, rate-model
+  mapping, and model quality ranking in `antigravityUsageReader.ts`. The fork
+  keeps ID 1401, `-trial` and `-n` suffix stripping, nearest-model compaction
+  fallback at quality 0, and id-less duplicate suppression scoped to
+  within-generation duplicates and compatible step model IDs.
 - 0.6.3 (MOBILE-002): newer phone apps reject the whole Usage reply when it
   contains ChatLLM. `ForwardCompatibleArray` doesn't drop unknown entries inside
   RPC replies, so the host removes ChatLLM for every mobile client
@@ -138,7 +153,7 @@ steps inherit the nearest named model when available.
   `clientSurface` parameter, because upstream removed the stored client origin.
 - 0.3.2 (USAGE-001): price precedence is custom prices, then provider-reported
   cost, then verified official rates, then LiteLLM (`usagePricing.ts`).
-  Estimates use base-context rates and leave out Gemini cache storage.
+  Estimates leave out Gemini cache storage.
 - 0.3.2: `gemini-pro-agent` maps to Gemini 3.1 Pro and the Gemini Flash tiers
   combine, matching Antigravity's own labels. `codex-auto-review` costs nothing
   and doesn't move the credit baseline.
@@ -246,7 +261,7 @@ errors keep the native operation and error text.
 Work rows can lead with a per-step description, but current runtimes never send
 one (see Decisions). A turn that sends
 nothing for 15 minutes ends with the last native error, when there is one.
-Conversational sessions on 1.4.5 follow the user's global rules in
+Conversational sessions follow the user's global rules in
 `~/.gemini/config/AGENTS.md`, omit the terminal `ACP fallback:` prompt line,
 disable `generate_image` (plus `ask_question` on delegated subagent runs), and
 expose a short `ag/<12-hex>` `GEMINI_HOME` symlink on Unix so skill and artifact
@@ -254,6 +269,9 @@ paths stay compact in prompts.
 
 **Decisions.**
 
+- Unreleased: upstream replaced the managed 1.4.5 bundle pin with the managed
+  `agy` CLI at 1.5.1 or newer in `antigravityCliRelease.ts`, so the fork
+  dropped `antigravityRelease.test.ts`.
 - 0.15.0: the canonical profile path under `providers/antigravity/<sha256>`
   repeated in every skill and artifact path the runtime puts in prompts.
   `prepareAntigravityProfile` links a short `ag/<12-hex>` alias to it and falls
