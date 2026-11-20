@@ -9,6 +9,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import type * as EffectAcpSchema from "effect-acp/compat";
@@ -314,8 +315,17 @@ export const watchAntigravityBackgroundTaskEnds = (
         Effect.tapError(() => Effect.logWarning("Could not read the Antigravity session log.")),
         Effect.orElseSucceed((): ReadonlyArray<string> => []),
       );
-      return fileSystem.watch(located.directory).pipe(
-        Stream.filter((event) => NodePath.basename(event.path).startsWith(fileName)),
+      // Rows written between the baseline read and the watch registering get one read.
+      const ready = yield* Queue.sliding<void>(1);
+      return Stream.merge(
+        fileSystem
+          .watch(located.directory, { onReady: () => Queue.offerUnsafe(ready, undefined) })
+          .pipe(
+            Stream.filter((event) => NodePath.basename(event.path).startsWith(fileName)),
+            Stream.as(undefined),
+          ),
+        Stream.fromQueue(ready),
+      ).pipe(
         // One read after a burst of writes sees every new row.
         Stream.buffer({ capacity: 1, strategy: "sliding" }),
         Stream.mapEffect(() => readEnds),

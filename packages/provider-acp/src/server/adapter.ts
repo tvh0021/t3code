@@ -2404,6 +2404,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         // Quarantine stopped-run events so they cannot wake or attach to later runs.
         const stoppedRunQuarantine = yield* Ref.make(false);
         const backgroundTaskEndWatch = yield* FiberHandle.make<void>();
+        // Tool calls still running at a settle; a continuation's own tool map holds only replayed ones.
+        const outstandingNativeTools = yield* Ref.make<ReadonlySet<string>>(new Set());
         // Native subagents can outlive interrupts; carry lineage forward to finish their original turn items.
         const carryoverSubagents = yield* Ref.make<AcpCarryoverSubagents | null>(null);
         const handledBackgroundTaskIdsInActiveTurn = yield* Ref.make<ReadonlySet<string>>(
@@ -8021,6 +8023,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               yield* Ref.set(midTurnUnreportedCompletedTaskIds, new Set());
               yield* Ref.set(carryoverSubagents, null);
               yield* Ref.set(lastTurnRoute, null);
+              yield* Ref.set(outstandingNativeTools, new Set());
             }),
           );
           yield* FiberHandle.clear(backgroundTaskEndWatch);
@@ -8212,10 +8215,15 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             settledStatus === "completed" &&
             !directStopQuarantine &&
             rootSessionId !== null &&
-            context.tools.values().some((tool) => {
-              const status = toolStatus(tool.status);
-              return status === "pending" || status === "running";
-            })
+            (yield* Ref.updateAndGet(outstandingNativeTools, (current) => {
+              const next = new Set(current);
+              for (const [toolCallId, tool] of context.tools) {
+                const status = toolStatus(tool.status);
+                if (status === "pending" || status === "running") next.add(toolCallId);
+                else next.delete(toolCallId);
+              }
+              return next;
+            })).size > 0
           ) {
             yield* FiberHandle.run(
               backgroundTaskEndWatch,
@@ -9488,6 +9496,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                         }
                       }
                       const context = interruptContext;
+                      if (
+                        context === null &&
+                        turnInput.requestRuntimeRestart === true &&
+                        (yield* Ref.get(outstandingNativeTools)).size > 0
+                      ) {
+                        // A settled Stop must keep native work that ends later from prompting.
+                        yield* quarantineStoppedRun();
+                      }
                       if (context?.providerTurnId !== turnInput.providerTurnId) {
                         // Contain orphan runtimes on Stop; session-wide teardown must not touch another active turn.
                         const containOrphanRuntime =

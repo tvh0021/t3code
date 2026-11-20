@@ -284,11 +284,11 @@ paths stay compact in prompts.
   resumes the model natively when it ends, but sends nothing until the next
   prompt opens, so the thread stalled with the result unseen. The runtime
   only records the end as a `Task id "…" finished with result:` message step
-  in its conversation database. When a turn settles with a tool still
-  running, `watchAntigravityBackgroundTaskEnds` watches that database
+  in its conversation database. While any tool call from a settled turn
+  is still running, `watchAntigravityBackgroundTaskEnds` watches that database
   (file events, no polling) and offers one continuation through the shared
-  ACP adapter's `watchBackgroundTaskEnds`. Stop and the next turn cancel the
-  watch. A wait instruction was dropped: the 1.5.9 ACP tool set has no
+  ACP adapter's `watchBackgroundTaskEnds`. Stop, even after the turn settled,
+  and the next turn cancel the watch. A wait instruction was dropped: the 1.5.9 ACP tool set has no
   blocking wait, and `run_command` tells the model to end the turn.
 - 0.16.0: upstream replaced the managed 1.4.5 bundle pin with the managed
   `agy` CLI at 1.5.1 or newer in `antigravityCliRelease.ts`, so the fork

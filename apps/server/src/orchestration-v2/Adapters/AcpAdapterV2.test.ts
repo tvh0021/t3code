@@ -1346,18 +1346,17 @@ describe("AcpAdapterV2", () => {
   );
 
   // Antigravity resumes after a backgrounded command ends but holds its updates until a prompt opens.
-  it.live("prompts once when native background work ends after the turn, not after Stop", () =>
+  it.live("prompts once per native background end until a settled Stop", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("acp-test-native-task-end");
       const threadId = ThreadId.make("thread-acp-native-task-end");
       const taskEnds = yield* Queue.unbounded<string>();
-      // Each watch records the prompt count when it subscribes.
+      // Each watch records the prompt count when it subscribes, and again when it closes.
       const watches = yield* Queue.unbounded<number>();
+      const closedWatches = yield* Queue.unbounded<number>();
       const offered =
         yield* Queue.unbounded<ProviderContinuationRequests.ProviderContinuationRequest>();
       const prompts: Array<string> = [];
-      const thirdPromptStarted = yield* Deferred.make<void>();
-      const cancelled = yield* Deferred.make<void>();
       let notify: Parameters<
         AcpSessionRuntime.AcpSessionRuntime["Service"]["handleSessionUpdate"]
       >[0];
@@ -1368,6 +1367,7 @@ describe("AcpAdapterV2", () => {
         kind: "execute",
         title: "sleep 45; echo done",
       } as const;
+      const secondCommand = { ...command, toolCallId: "second-command", title: "sleep 90" };
       const adapter = yield* makeAcpAdapterV2({
         instanceId,
         selfInvocation: yield* resolveSelfInvocation(),
@@ -1375,15 +1375,21 @@ describe("AcpAdapterV2", () => {
         flavor: {
           driver: ACP_TEST_DRIVER,
           capabilities: AcpProviderCapabilitiesV2,
-          watchBackgroundTaskEnds: () =>
-            Stream.unwrap(
-              Queue.offer(watches, prompts.length).pipe(Effect.as(Stream.fromQueue(taskEnds))),
-            ),
+          watchBackgroundTaskEnds: () => {
+            const subscribedAt = prompts.length;
+            return Stream.unwrap(
+              Queue.offer(watches, subscribedAt).pipe(
+                Effect.as(
+                  Stream.fromQueue(taskEnds).pipe(
+                    Stream.ensuring(Queue.offer(closedWatches, subscribedAt)),
+                  ),
+                ),
+              ),
+            );
+          },
           makeRuntime: makeMockRuntime({
             childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
             mockAgentPath: yield* bundledMockAgentPath,
-            wrapCancel: (cancel) =>
-              cancel.pipe(Effect.andThen(Deferred.succeed(cancelled, undefined))),
             wrapRuntime: (runtime) => ({
               ...runtime,
               handleSessionUpdate: (handler) =>
@@ -1395,6 +1401,11 @@ describe("AcpAdapterV2", () => {
                   prompts.push(JSON.stringify(payload.prompt));
                   if (prompts.length === 1) {
                     yield* send({ sessionUpdate: "tool_call", ...command, status: "in_progress" });
+                    yield* send({
+                      sessionUpdate: "tool_call",
+                      ...secondCommand,
+                      status: "in_progress",
+                    });
                   } else if (prompts.length === 2) {
                     // The resumed response arrives only once the next prompt opens.
                     yield* send({
@@ -1407,18 +1418,8 @@ describe("AcpAdapterV2", () => {
                       sessionUpdate: "agent_message_chunk",
                       content: { type: "text", text: "The command printed done." },
                     });
-                  } else if (prompts.length === 3) {
-                    yield* send({ sessionUpdate: "tool_call", ...command, status: "in_progress" });
-                    yield* Deferred.succeed(thirdPromptStarted, undefined);
-                    yield* Deferred.await(cancelled);
-                    return { stopReason: "cancelled" as const };
                   } else if (prompts.length === 4) {
-                    yield* send({
-                      sessionUpdate: "tool_call",
-                      ...command,
-                      toolCallId: "second-command",
-                      status: "in_progress",
-                    });
+                    yield* send({ sessionUpdate: "tool_call", ...command, status: "in_progress" });
                   }
                   return { stopReason: "end_turn" as const };
                 }),
@@ -1491,22 +1492,29 @@ describe("AcpAdapterV2", () => {
         "the resumed response lands in the continuation",
       );
 
-      yield* runtime.startTurn(turnInput(3));
-      yield* Deferred.await(thirdPromptStarted);
+      // The continuation never replays the command still running, which keeps it watched.
+      assert.equal(yield* Queue.take(watches), 2);
       yield* runtime.interruptTurn({
         providerThread,
         providerTurnId: (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
           driver: ACP_TEST_DRIVER,
-          nativeTurnId: acpScopedNativeId(instanceId, "mock-session-1:turn:3"),
+          nativeTurnId: acpScopedNativeId(instanceId, "mock-session-1:turn:2"),
         }),
+        requestRuntimeRestart: true,
       });
-      assert.equal(terminalStatus(yield* untilTerminal), "interrupted");
+      assert.deepEqual(
+        [yield* Queue.take(closedWatches), yield* Queue.take(closedWatches)],
+        [1, 2],
+        "Stop after the turn settled closes the watch",
+      );
+      yield* runtime.startTurn(turnInput(3));
+      yield* untilTerminal;
       yield* runtime.startTurn(turnInput(4));
       yield* untilTerminal;
       assert.equal(
         yield* Queue.take(watches),
         4,
-        "only a turn that settles with a command still running watches; a stopped one never does",
+        "Stop forgets the command it stopped, so the next turn without one does not watch",
       );
     }).pipe(Effect.provide(layerTest)),
   );
