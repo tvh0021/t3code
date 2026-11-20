@@ -50,6 +50,15 @@ export function parseAntigravityTaskNotification(text: string, sessionId: string
   };
 }
 
+/** Antigravity 1.5.9 logs a background task's end as a trajectory message, never on the wire. */
+export function parseAntigravityTaskFinished(text: string, sessionId: string) {
+  const taskId = /Task id "([^"\s]+)" finished with result:/.exec(text)?.[1];
+  return taskId?.startsWith(`${sessionId}/task-`) &&
+    /^\d+$/.test(taskId.slice(sessionId.length + 6))
+    ? taskId
+    : undefined;
+}
+
 const NativeToolFields = Schema.Struct({
   command: Schema.optional(Schema.String),
   CommandLine: Schema.optional(Schema.String),

@@ -1344,6 +1344,172 @@ describe("AcpAdapterV2", () => {
       assert.equal(promptOrdinal, 2, "continuation turn must not dispatch session/prompt");
     }).pipe(Effect.provide(layerTest)),
   );
+
+  // Antigravity resumes after a backgrounded command ends but holds its updates until a prompt opens.
+  it.live("prompts once when native background work ends after the turn, not after Stop", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("acp-test-native-task-end");
+      const threadId = ThreadId.make("thread-acp-native-task-end");
+      const taskEnds = yield* Queue.unbounded<string>();
+      // Each watch records the prompt count when it subscribes.
+      const watches = yield* Queue.unbounded<number>();
+      const offered =
+        yield* Queue.unbounded<ProviderContinuationRequests.ProviderContinuationRequest>();
+      const prompts: Array<string> = [];
+      const thirdPromptStarted = yield* Deferred.make<void>();
+      const cancelled = yield* Deferred.make<void>();
+      let notify: Parameters<
+        AcpSessionRuntime.AcpSessionRuntime["Service"]["handleSessionUpdate"]
+      >[0];
+      const send = (update: EffectAcpSchema.SessionUpdate) =>
+        notify({ sessionId: "mock-session-1", update });
+      const command = {
+        toolCallId: "background-command",
+        kind: "execute",
+        title: "sleep 45; echo done",
+      } as const;
+      const adapter = yield* makeAcpAdapterV2({
+        instanceId,
+        selfInvocation: yield* resolveSelfInvocation(),
+        continuationRequests: { offer: (request) => Queue.offer(offered, request) },
+        flavor: {
+          driver: ACP_TEST_DRIVER,
+          capabilities: AcpProviderCapabilitiesV2,
+          watchBackgroundTaskEnds: () =>
+            Stream.unwrap(
+              Queue.offer(watches, prompts.length).pipe(Effect.as(Stream.fromQueue(taskEnds))),
+            ),
+          makeRuntime: makeMockRuntime({
+            childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
+            mockAgentPath: yield* bundledMockAgentPath,
+            wrapCancel: (cancel) =>
+              cancel.pipe(Effect.andThen(Deferred.succeed(cancelled, undefined))),
+            wrapRuntime: (runtime) => ({
+              ...runtime,
+              handleSessionUpdate: (handler) =>
+                Effect.sync(() => {
+                  notify = handler;
+                }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+              prompt: (payload) =>
+                Effect.gen(function* () {
+                  prompts.push(JSON.stringify(payload.prompt));
+                  if (prompts.length === 1) {
+                    yield* send({ sessionUpdate: "tool_call", ...command, status: "in_progress" });
+                  } else if (prompts.length === 2) {
+                    // The resumed response arrives only once the next prompt opens.
+                    yield* send({
+                      sessionUpdate: "tool_call_update",
+                      ...command,
+                      status: "completed",
+                      rawOutput: { output: "done", exit_code: 0 },
+                    });
+                    yield* send({
+                      sessionUpdate: "agent_message_chunk",
+                      content: { type: "text", text: "The command printed done." },
+                    });
+                  } else if (prompts.length === 3) {
+                    yield* send({ sessionUpdate: "tool_call", ...command, status: "in_progress" });
+                    yield* Deferred.succeed(thirdPromptStarted, undefined);
+                    yield* Deferred.await(cancelled);
+                    return { stopReason: "cancelled" as const };
+                  } else if (prompts.length === 4) {
+                    yield* send({
+                      sessionUpdate: "tool_call",
+                      ...command,
+                      toolCallId: "second-command",
+                      status: "in_progress",
+                    });
+                  }
+                  return { stopReason: "end_turn" as const };
+                }),
+            }),
+          }),
+        },
+      });
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: process.cwd(),
+      });
+      const modelSelection = { instanceId, model: "default" } as const;
+      const runtime = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("provider-session-acp-native-task-end"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* runtime.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      const turnInput = (ordinal: number, continuation = false) =>
+        makeTurnInput({
+          threadId,
+          providerThread,
+          instanceId,
+          runtimePolicy,
+          now,
+          ordinal,
+          ...(continuation
+            ? {
+                messageCreatedBy: "agent" as const,
+                messageCreationSource: "provider" as const,
+                messageText: "Background task completed.",
+              }
+            : {}),
+        });
+      const untilTerminal = runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.map((events) => Array.from(events)),
+      );
+      const terminalStatus = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>) => {
+        const last = events.at(-1);
+        return last?.type === "turn.terminal" ? last.status : null;
+      };
+
+      yield* runtime.startTurn(turnInput(1));
+      assert.equal(terminalStatus(yield* untilTerminal), "completed");
+
+      assert.equal(yield* Queue.take(watches), 1);
+      yield* Queue.offer(taskEnds, "mock-session-1/task-2");
+      const request = yield* Queue.take(offered);
+      assert.isTrue(Option.isSome(yield* request.dispatchIfCurrent!(Effect.void)));
+      yield* runtime.startTurn(turnInput(2, true));
+      const continuation = yield* untilTerminal;
+      assert.lengthOf(prompts, 2, "the continuation must open a prompt");
+      assert.include(prompts[1], "Background task completed.");
+      assert.isTrue(
+        continuation.some(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "assistant_message" &&
+            event.turnItem.text.includes("The command printed done."),
+        ),
+        "the resumed response lands in the continuation",
+      );
+
+      yield* runtime.startTurn(turnInput(3));
+      yield* Deferred.await(thirdPromptStarted);
+      yield* runtime.interruptTurn({
+        providerThread,
+        providerTurnId: (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
+          driver: ACP_TEST_DRIVER,
+          nativeTurnId: acpScopedNativeId(instanceId, "mock-session-1:turn:3"),
+        }),
+      });
+      assert.equal(terminalStatus(yield* untilTerminal), "interrupted");
+      yield* runtime.startTurn(turnInput(4));
+      yield* untilTerminal;
+      assert.equal(
+        yield* Queue.take(watches),
+        4,
+        "only a turn that settles with a command still running watches; a stopped one never does",
+      );
+    }).pipe(Effect.provide(layerTest)),
+  );
   it.live("fails an end_turn the outcome check rejects and restarts before the next turn", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("acp-test-prompt-outcome");

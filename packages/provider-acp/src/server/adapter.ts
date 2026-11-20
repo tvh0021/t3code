@@ -56,6 +56,7 @@ import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
+import * as FiberHandle from "effect/FiberHandle";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -365,6 +366,12 @@ export interface AcpAdapterV2Flavor {
     ) => Effect.Effect<OrchestrationV2ProviderFailure | undefined>;
     readonly stalled?: Effect.Effect<OrchestrationV2ProviderFailure | undefined>;
   }>;
+  /**
+   * Native background tasks of this session that end after its prompt settled. The agent
+   * resumes on its own but holds updates and requests until a prompt opens, so each end
+   * offers one continuation turn. Watched from a completed turn until the next one starts.
+   */
+  readonly watchBackgroundTaskEnds?: (sessionId: string) => Stream.Stream<string>;
   readonly requiresSignIn?: (cause: unknown) => boolean;
   /**
    * Runs before attachment paths, T3 instructions and native slash-command detection,
@@ -2396,6 +2403,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         const continuationClosed = yield* Ref.make(false);
         // Quarantine stopped-run events so they cannot wake or attach to later runs.
         const stoppedRunQuarantine = yield* Ref.make(false);
+        const backgroundTaskEndWatch = yield* FiberHandle.make<void>();
         // Native subagents can outlive interrupts; carry lineage forward to finish their original turn items.
         const carryoverSubagents = yield* Ref.make<AcpCarryoverSubagents | null>(null);
         const handledBackgroundTaskIdsInActiveTurn = yield* Ref.make<ReadonlySet<string>>(
@@ -8015,6 +8023,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               yield* Ref.set(lastTurnRoute, null);
             }),
           );
+          yield* FiberHandle.clear(backgroundTaskEndWatch);
         });
 
         const finalizeTurn = Effect.fnUntraced(function* (
@@ -8196,6 +8205,24 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           yield* Ref.set(activeTurn, null);
           if (settledStatus === "completed" && !directStopQuarantine) {
             yield* detachBackgroundCommands(context);
+          }
+          const watchBackgroundTaskEnds = flavor.watchBackgroundTaskEnds;
+          if (
+            watchBackgroundTaskEnds !== undefined &&
+            settledStatus === "completed" &&
+            !directStopQuarantine &&
+            rootSessionId !== null &&
+            context.tools.values().some((tool) => {
+              const status = toolStatus(tool.status);
+              return status === "pending" || status === "running";
+            })
+          ) {
+            yield* FiberHandle.run(
+              backgroundTaskEndWatch,
+              Stream.runForEach(watchBackgroundTaskEnds(rootSessionId), () =>
+                offerContinuationRun(rootSessionId),
+              ),
+            );
           }
           steerInjections.clear();
           if (
@@ -8587,6 +8614,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             });
             yield* Ref.set(suppressPostSettleMonitorPrompt, false);
             yield* Ref.set(handledBackgroundTaskIdsInActiveTurn, new Set());
+            yield* FiberHandle.clear(backgroundTaskEndWatch);
             // Continuations consume existing wake traffic without re-prompting ACP.
             const isContinuationTurn =
               (postSettleContinuationEnabled || followsAgentWorkState) &&

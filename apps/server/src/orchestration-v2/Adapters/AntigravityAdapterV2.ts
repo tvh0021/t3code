@@ -13,6 +13,7 @@ import * as Path from "effect/Path";
 import * as Exit from "effect/Exit";
 import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
@@ -33,7 +34,10 @@ import {
   describeAntigravitySubagentLaunches,
 } from "../../provider/acp/AntigravityChildWork.ts";
 import { readAntigravityClientTextFile } from "../../provider/acp/AntigravityClientFiles.ts";
-import { watchAntigravityPromptOutcome } from "../../provider/acp/AntigravityTurnOutcome.ts";
+import {
+  watchAntigravityBackgroundTaskEnds,
+  watchAntigravityPromptOutcome,
+} from "../../provider/acp/AntigravityTurnOutcome.ts";
 import {
   antigravityApprovalOptions,
   antigravitySubagentOutput,
@@ -314,6 +318,10 @@ export function makeAntigravityAcpAdapterFlavor(
       : {
           watchPromptOutcome: (sessionId: string) =>
             watchAntigravityPromptOutcome(profileDirectory, sessionId),
+          watchBackgroundTaskEnds: (sessionId: string) =>
+            watchAntigravityBackgroundTaskEnds(profileDirectory, sessionId).pipe(
+              Stream.provideService(FileSystem.FileSystem, options.fileSystem),
+            ),
         }),
   };
 }

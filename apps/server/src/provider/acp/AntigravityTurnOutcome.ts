@@ -7,14 +7,19 @@ import type { OrchestrationV2ProviderFailure } from "@t3tools/contracts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
 import { antigravityManagedPath, antigravityProfileRoot } from "./AntigravityProfilePaths.ts";
+import { parseAntigravityTaskFinished } from "./AntigravityProtocol.ts";
 
 // CORTEX_STEP_TYPE_ERROR_MESSAGE in the native trajectory.
 const ERROR_STEP_TYPE = 17;
+// A message another task or agent sent into the trajectory, such as a background task's end.
+const MESSAGE_STEP_TYPE = 101;
 // CORTEX_STEP_STATUS_DONE; a retry still in flight has another status.
 const DONE_STEP_STATUS = 3;
 // The harness error text leads the payload; a Go stack trace follows it.
@@ -247,3 +252,74 @@ export const watchAntigravityPromptOutcome = Effect.fn("AntigravityTurnOutcome.w
     }).pipe(Effect.withSpan("AntigravityTurnOutcome.stalled")),
   };
 });
+
+/**
+ * This session's background tasks that end from now on, each once. Antigravity logs an end
+ * as a message step and resumes the model, but holds its updates and requests until the
+ * next prompt opens. Reads follow writes to the session log; nothing polls.
+ */
+export const watchAntigravityBackgroundTaskEnds = (
+  profileDirectory: string,
+  sessionId: string,
+): Stream.Stream<string, never, FileSystem.FileSystem> =>
+  Stream.unwrap(
+    Effect.gen(function* () {
+      if (!NATIVE_SESSION_ID.test(sessionId)) return Stream.empty;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const fileName = `${sessionId}.db`;
+      const segments = [...conversationSegments, fileName];
+      const located = yield* Effect.tryPromise({
+        try: async () => {
+          const root = await antigravityProfileRoot(profileDirectory);
+          if (root === undefined) return undefined;
+          const directory = await antigravityManagedPath(root, conversationSegments, "directory");
+          return directory === undefined ? undefined : { root, directory: directory.path };
+        },
+        catch: sessionLogError,
+      }).pipe(Effect.orElseSucceed(() => undefined));
+      if (located === undefined) return Stream.empty;
+      const withLog = <A>(read: (database: NodeSqlite.DatabaseSync) => A) =>
+        Effect.tryPromise({
+          try: () => antigravityManagedPath(located.root, segments, "file"),
+          catch: sessionLogError,
+        }).pipe(
+          Effect.flatMap((file) =>
+            file === undefined ? Effect.undefined : readSteps(file.path, read),
+          ),
+        );
+      let cursor =
+        (yield* withLog(lastStepIndex).pipe(Effect.orElseSucceed(() => undefined))) ?? -1;
+      const ended = new Set<string>();
+      const readEnds = withLog((database) =>
+        database
+          .prepare(
+            "SELECT idx, step_payload AS payload FROM steps WHERE idx > ? AND step_type = ? ORDER BY idx",
+          )
+          .all(cursor, MESSAGE_STEP_TYPE),
+      ).pipe(
+        Effect.map((rows) =>
+          (rows ?? []).flatMap((row) => {
+            if (typeof row.idx === "number") cursor = Math.max(cursor, row.idx);
+            if (!(row.payload instanceof Uint8Array)) return [];
+            const taskId = parseAntigravityTaskFinished(
+              new TextDecoder().decode(row.payload),
+              sessionId,
+            );
+            if (taskId === undefined) return [];
+            if (ended.has(taskId)) return [];
+            ended.add(taskId);
+            return [taskId];
+          }),
+        ),
+        Effect.tapError(() => Effect.logWarning("Could not read the Antigravity session log.")),
+        Effect.orElseSucceed((): ReadonlyArray<string> => []),
+      );
+      return fileSystem.watch(located.directory).pipe(
+        Stream.filter((event) => NodePath.basename(event.path).startsWith(fileName)),
+        // One read after a burst of writes sees every new row.
+        Stream.buffer({ capacity: 1, strategy: "sliding" }),
+        Stream.mapEffect(() => readEnds),
+        Stream.flattenIterable,
+      );
+    }),
+  ).pipe(Stream.ignore({ log: true }));
