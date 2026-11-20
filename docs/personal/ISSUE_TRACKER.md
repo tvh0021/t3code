@@ -22,6 +22,13 @@ Cause: the monthly Zed allowance is exhausted until about 2026-11-15, so no real
 Done when: after the reset, dashboard auth works, model and category counts and raw costs match Orb invoices, accounts dedupe across environments, a real Zed turn triggers a refresh, and the Usage UI shows it. Then rebase on `main` and merge.
 History: offline tests, typechecks and lint pass. The branch predates 0.7.4 and the USAGE-002 fix; its Zed buckets carry no credits, so they count as subscription cost in day and hour totals. `main` now adds the same `UsageRecord.billingDay` field and hourly skip for the ChatLLM ledger; keep one copy when rebasing.
 
+### AG-BG-002: Resumed Antigravity reply runs two answers together
+
+Open since 2026-11-20.
+Problem: when a backgrounded command ends, the resumed turn shows two replies in one message with no separator, which can break a code fence.
+Cause: Antigravity resumes the model itself when the task ends and holds that reply until the next prompt. The wake prompt flushes it into the same assistant message as the reply to the wake. A manual nudge does the same.
+Done when: the held reply and the next reply render as separate messages, or the wake skips the duplicate answer.
+
 ## Known limitations
 
 - **ChatLLM ledger days are UTC**: Abacus bills by UTC day, so ChatLLM credits land on the UTC date even when Usage uses another time zone; turn tokens use local days.
@@ -35,6 +42,7 @@ History: offline tests, typechecks and lint pass. The branch predates 0.7.4 and 
 
 ## Resolved
 
+- **AG-BG-001** (0.16.1): Antigravity threads stalled after backgrounding a command. Cause: Antigravity holds the task's end until the next prompt. Fix: watch its database, resume once.
 - **USAGE-009** (0.16.0): Codex credits disappeared or reached incorrect turns. Cause: lost snapshots and token-time ordering. Fix: preserve snapshots, order by snapshot time, refresh caches.
 
 - **CHAT-IMAGE-001** (0.11.1): Rewritten chat images stayed stale. Cause: mounted images retained cached URLs. Fix: workspace changes refresh local image URLs, including outside-workspace files.

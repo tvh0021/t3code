@@ -280,7 +280,7 @@ paths stay compact in prompts.
 
 **Decisions.**
 
-- Unreleased: Antigravity 1.5.9 ends turns while a backgrounded command runs and
+- 0.16.1 (AG-BG-001): Antigravity 1.5.9 ends turns while a backgrounded command runs and
   resumes the model natively when it ends, but sends nothing until the next
   prompt opens, so the thread stalled with the result unseen. The runtime
   only records the end as a `Task id "…" finished with result:` message step
