@@ -2101,6 +2101,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             continuationRequests !== undefined &&
             setup.initializeResult.protocolVersion === 2;
           agentWork = null;
+          yield* Ref.set(outstandingNativeTools, new Set());
+          yield* FiberHandle.clear(backgroundTaskEndWatch);
           rootForegroundWork = undefined;
           agentRequests.clear();
           nativeChildren.clear();
@@ -8205,25 +8207,34 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               });
             }
           }
+          const watchBackgroundTaskEnds = flavor.watchBackgroundTaskEnds;
+          const watchesTaskEnds =
+            watchBackgroundTaskEnds !== undefined &&
+            settledStatus === "completed" &&
+            !directStopQuarantine &&
+            rootSessionId !== null;
+          // Recorded before the turn clears, so a Stop that finds no turn still sees the work.
+          if (watchesTaskEnds) {
+            yield* Ref.update(outstandingNativeTools, (current) => {
+              const next = new Set(current);
+              for (const [toolCallId, tool] of context.tools) {
+                const status = toolStatus(tool.status);
+                if (tool.kind === "execute" && (status === "pending" || status === "running")) {
+                  next.add(toolCallId);
+                } else next.delete(toolCallId);
+              }
+              return next;
+            });
+          }
           yield* Ref.set(activeTurn, null);
           if (settledStatus === "completed" && !directStopQuarantine) {
             yield* detachBackgroundCommands(context);
           }
-          const watchBackgroundTaskEnds = flavor.watchBackgroundTaskEnds;
           if (
+            watchesTaskEnds &&
             watchBackgroundTaskEnds !== undefined &&
-            settledStatus === "completed" &&
-            !directStopQuarantine &&
             rootSessionId !== null &&
-            (yield* Ref.updateAndGet(outstandingNativeTools, (current) => {
-              const next = new Set(current);
-              for (const [toolCallId, tool] of context.tools) {
-                const status = toolStatus(tool.status);
-                if (status === "pending" || status === "running") next.add(toolCallId);
-                else next.delete(toolCallId);
-              }
-              return next;
-            })).size > 0
+            (yield* Ref.get(outstandingNativeTools)).size > 0
           ) {
             yield* FiberHandle.run(
               backgroundTaskEndWatch,
@@ -9150,9 +9161,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     : flavor.getModelContextWindow?.(selection, session);
                 },
               }),
-          ...(postSettleContinuationEnabled || followsAgentWorkState
+          ...(postSettleContinuationEnabled ||
+          followsAgentWorkState ||
+          flavor.watchBackgroundTaskEnds !== undefined
             ? {
                 hasPendingBackgroundWork: Effect.gen(function* () {
+                  if ((yield* Ref.get(outstandingNativeTools)).size > 0) return true;
                   const rootSessionId = yield* Ref.get(activeSessionId);
                   if (
                     followsAgentWorkState &&
