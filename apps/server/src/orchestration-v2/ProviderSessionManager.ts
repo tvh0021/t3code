@@ -1486,6 +1486,11 @@ export const layerWithOptions = (
               : yield* probedRuntime.hasPendingBackgroundWork.pipe(
                   Effect.catchCause(() => Effect.succeed(false)),
                 )) ||
+            (probedRuntime.holdsIdleRelease === undefined
+              ? false
+              : yield* probedRuntime.holdsIdleRelease.pipe(
+                  Effect.catchCause(() => Effect.succeed(false)),
+                )) ||
             // Closing now would skip the archive of a child whose parent has not taken its result.
             Option.isSome(
               yield* Effect.findFirst(entry.idleThreadUnloads.keys(), (threadId) =>
@@ -2198,11 +2203,16 @@ export const layerWithOptions = (
         // Any activity during these reads bumps the generation and keeps the runtime.
         const generation = entry.idleGeneration;
         const hasPendingWork =
-          entry.runtime.hasPendingBackgroundWork === undefined
+          (entry.runtime.hasPendingBackgroundWork === undefined
             ? false
             : yield* entry.runtime.hasPendingBackgroundWork.pipe(
                 Effect.catchCause(() => Effect.succeed(true)),
-              );
+              )) ||
+          (entry.runtime.holdsIdleRelease === undefined
+            ? false
+            : yield* entry.runtime.holdsIdleRelease.pipe(
+                Effect.catchCause(() => Effect.succeed(true)),
+              ));
         if (hasPendingWork) return;
         // Checked under the request permit so a runless request mid-persist is not cancelled.
         const hasUnfinishedRecords = Effect.forEach(entry.attachedThreadIds, (threadId) =>

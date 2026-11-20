@@ -5,14 +5,20 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
-import { watchAntigravityPromptOutcome } from "./AntigravityTurnOutcome.ts";
+import {
+  watchAntigravityBackgroundTaskEnds,
+  watchAntigravityPromptOutcome,
+} from "./AntigravityTurnOutcome.ts";
 
 const USER_INPUT = 14;
 const PLANNER_RESPONSE = 15;
 const TOOL = 8;
 const ERROR_MESSAGE = 17;
+const MESSAGE = 101;
 // Step statuses: DONE, and any other value such as a retry still generating.
 const DONE = 3;
 const UNFINISHED = 0;
@@ -242,6 +248,64 @@ describe("watchAntigravityPromptOutcome", () => {
         code: "QUOTA_EXHAUSTED",
         retryable: true,
       });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+});
+
+describe("watchAntigravityBackgroundTaskEnds", () => {
+  it.effect("reads rows written before the watch is ready, then each task end once", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const profileDirectory = yield* fs.makeTempDirectoryScoped();
+      const sessionId = "e6aba774-5472-4277-b6ee-27b2e05570a7";
+      const conversations = path.join(profileDirectory, "antigravity-acp", "conversations");
+      yield* fs.makeDirectory(conversations, { recursive: true });
+      const log = path.join(conversations, `${sessionId}.db`);
+      const append = (...tasks: ReadonlyArray<number>) => {
+        const database = new NodeSqlite.DatabaseSync(log);
+        try {
+          database.exec(
+            "CREATE TABLE IF NOT EXISTS steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER NOT NULL DEFAULT 3, step_payload BLOB)",
+          );
+          const insert = database.prepare(
+            "INSERT INTO steps (step_type, step_payload) VALUES (?, ?)",
+          );
+          for (const task of tasks) {
+            const id = `${sessionId}/task-${task}`;
+            insert.run(MESSAGE, Buffer.from(`content=Task id "${id}" finished with result:\ndone`));
+          }
+        } finally {
+          database.close();
+        }
+      };
+      const events = yield* Queue.unbounded<FileSystem.WatchEvent>();
+      // The first end lands after the baseline read but before the watch reports ready.
+      const watching = FileSystem.makeNoop({
+        watch: (_directory, options) =>
+          Stream.fromQueue(events).pipe(
+            Stream.onStart(
+              Effect.sync(() => {
+                append(2);
+                options?.onReady?.();
+              }),
+            ),
+          ),
+      });
+
+      const ends = yield* watchAntigravityBackgroundTaskEnds(profileDirectory, sessionId).pipe(
+        Stream.tap((taskId) =>
+          taskId === `${sessionId}/task-2`
+            ? Effect.sync(() => append(2, 3)).pipe(
+                Effect.andThen(Queue.offer(events, { _tag: "Update", path: `${log}-wal` })),
+              )
+            : Effect.void,
+        ),
+        Stream.take(2),
+        Stream.provideService(FileSystem.FileSystem, watching),
+        Stream.runCollect,
+      );
+      assert.deepEqual(Array.from(ends), [`${sessionId}/task-2`, `${sessionId}/task-3`]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

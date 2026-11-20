@@ -8240,7 +8240,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               backgroundTaskEndWatch,
               Stream.runForEach(watchBackgroundTaskEnds(rootSessionId), () =>
                 offerContinuationRun(rootSessionId),
-              ),
+              ).pipe(Effect.andThen(Ref.set(outstandingNativeTools, new Set()))),
             );
           }
           steerInjections.clear();
@@ -9161,12 +9161,16 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     : flavor.getModelContextWindow?.(selection, session);
                 },
               }),
-          ...(postSettleContinuationEnabled ||
-          followsAgentWorkState ||
-          flavor.watchBackgroundTaskEnds !== undefined
+          ...(flavor.watchBackgroundTaskEnds === undefined
+            ? {}
+            : {
+                holdsIdleRelease: Ref.get(outstandingNativeTools).pipe(
+                  Effect.map((toolCallIds) => toolCallIds.size > 0),
+                ),
+              }),
+          ...(postSettleContinuationEnabled || followsAgentWorkState
             ? {
                 hasPendingBackgroundWork: Effect.gen(function* () {
-                  if ((yield* Ref.get(outstandingNativeTools)).size > 0) return true;
                   const rootSessionId = yield* Ref.get(activeSessionId);
                   if (
                     followsAgentWorkState &&

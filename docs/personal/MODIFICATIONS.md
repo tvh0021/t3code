@@ -287,11 +287,14 @@ paths stay compact in prompts.
   in its conversation database. While any `execute` tool call from a settled
   turn is still running, `watchAntigravityBackgroundTaskEnds` watches that
   database (file events, no polling) and offers one continuation through the
-  shared ACP adapter's `watchBackgroundTaskEnds`, and the runtime reports
-  pending background work so the bounded idle pin keeps it. The held
-  `tool_call_update` flushed at the next prompt retires the call. Stop, even
-  after the turn settled, a new native session, and the next turn cancel the
-  watch. A wait instruction was dropped: the 1.5.9 ACP tool set has no
+  shared ACP adapter's `watchBackgroundTaskEnds`. The runtime's
+  `holdsIdleRelease` keeps it loaded under the bounded idle pin without
+  vetoing handoff or detach. The held `tool_call_update` flushed at the next
+  prompt, or the watch ending, retires the call. Stop, even after the turn
+  settled, a new native session, and the next turn cancel the watch. Known
+  gap: a second task that ends during the continuation prompt is missed,
+  since the next watch starts from a fresh baseline, and costs one manual
+  nudge. A wait instruction was dropped: the 1.5.9 ACP tool set has no
   blocking wait, and `run_command` tells the model to end the turn.
 - 0.16.0: upstream replaced the managed 1.4.5 bundle pin with the managed
   `agy` CLI at 1.5.1 or newer in `antigravityCliRelease.ts`, so the fork

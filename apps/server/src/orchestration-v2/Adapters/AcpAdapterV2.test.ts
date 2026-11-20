@@ -1494,7 +1494,8 @@ describe("AcpAdapterV2", () => {
 
       // The continuation never replays the command still running, which keeps it watched.
       assert.equal(yield* Queue.take(watches), 2);
-      assert.isTrue(yield* runtime.hasPendingBackgroundWork!, "watched work keeps the runtime");
+      assert.isTrue(yield* runtime.holdsIdleRelease!, "watched work keeps the runtime");
+      assert.isUndefined(runtime.hasPendingBackgroundWork, "watched work never vetoes handoff");
       yield* Queue.offer(taskEnds, "mock-session-1/task-3");
       const stale = yield* Queue.take(offered);
       yield* runtime.interruptTurn({
@@ -1511,7 +1512,7 @@ describe("AcpAdapterV2", () => {
         "Stop after the turn settled closes the watch",
       );
       assert.isTrue(Option.isNone(yield* stale.dispatchIfCurrent!(Effect.void)));
-      assert.isFalse(yield* runtime.hasPendingBackgroundWork!);
+      assert.isFalse(yield* runtime.holdsIdleRelease!);
       yield* runtime.startTurn(turnInput(3));
       yield* untilTerminal;
       yield* runtime.startTurn(turnInput(4));
