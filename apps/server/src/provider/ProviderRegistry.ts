@@ -249,8 +249,7 @@ const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean =>
   // A cold OpenCode server can finish its probe as a warning before it lists any models.
   const isIncompleteInstalledProbe =
     provider.installed &&
-    (provider.status === "error" ||
-      ((isCodex || isOpenCode) && provider.status === "warning"));
+    (provider.status === "error" || ((isCodex || isOpenCode) && provider.status === "warning"));
   return isPendingAntigravityAuthentication || isPendingInitialProbe || isIncompleteInstalledProbe;
 };
 

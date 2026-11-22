@@ -80,14 +80,19 @@ export function CoordinationPolicySettings({
       <p className="text-sm text-muted-foreground">
         <T>
           Named defaults:{" "}
-          <Var>{Object.entries(DEFAULT_COORDINATION_LIMITS)
-          .map(([model, limit]) => `${model}: ${limit ?? "unlimited"}`)
-          .join(", ")}
-        .</Var>
+          <Var>
+            {Object.entries(DEFAULT_COORDINATION_LIMITS)
+              .map(([model, limit]) => `${model}: ${limit ?? "unlimited"}`)
+              .join(", ")}
+            .
+          </Var>
         </T>
       </p>
       <label htmlFor="coordination-model-limits" className="text-sm">
-        <T>Overrides, one model=attempts or model=unlimited per line. A blank field restores the defaults.</T>
+        <T>
+          Overrides, one model=attempts or model=unlimited per line. A blank field restores the
+          defaults.
+        </T>
       </label>
       <Textarea
         id="coordination-model-limits"

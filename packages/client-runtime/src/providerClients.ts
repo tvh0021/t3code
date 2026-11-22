@@ -61,7 +61,9 @@ export const providerClients = makeProviderClientRegistry([
     label: "ChatLLM",
     settingsSchema: AbacusSettings,
     // The server redacts the saved key; the field lets users set it per instance.
-    environmentFields: [{ name: "ABACUS_API_KEY", label: mFallback(msg("Abacus API key")), sensitive: true }],
+    environmentFields: [
+      { name: "ABACUS_API_KEY", label: mFallback(msg("Abacus API key")), sensitive: true },
+    ],
   },
   {
     driverKind: ProviderDriverKind.make("zed"),

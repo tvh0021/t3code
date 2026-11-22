@@ -13,7 +13,6 @@ import {
   makeAntigravityUserInputResponse,
   normalizeAntigravitySessionUpdate,
   normalizeAntigravityToolCall,
-  parseAntigravityTaskFinished,
   parseAntigravityTaskNotification,
   sanitizeAntigravityToolPayload,
   makeAntigravityReadRepair,
@@ -74,16 +73,6 @@ describe("native Antigravity task notifications", () => {
     ]) {
       expect(parseAntigravityTaskNotification(text, "session-1")).toBeUndefined();
     }
-  });
-
-  // The trajectory message step of a 1.5.9 task end, decoded as text around its protobuf framing.
-  it.each([
-    ["session-1", "session-1/task-2"],
-    ["other-session", undefined],
-  ])("reads the task id of a logged task end for %s", (sessionId, taskId) => {
-    const step =
-      '\u0012\u0003[Message] timestamp=2026-11-20T03:56:44Z sender=session-1/task-2 priority=MESSAGE_PRIORITY_HIGH content=Task id "session-1/task-2" finished with result:\nCommand exited with code 0.\n\nCommand output:\ndone\r\n\nLog: file:///tmp/task-2.log\u0012\u0001\n\u001ftask_notification';
-    expect(parseAntigravityTaskFinished(step, sessionId)).toBe(taskId);
   });
 });
 

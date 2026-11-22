@@ -316,7 +316,10 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   // The reconcile takes the write lock; CLI startup must not contend with the server for a no-op.
   const previewMigrations =
     includesV2 && hasPending
-      ? [...(yield* reconcileForkCoordinationMigration()), ...(yield* reconcileV2PreviewMigration())]
+      ? [
+          ...(yield* reconcileForkCoordinationMigration()),
+          ...(yield* reconcileV2PreviewMigration()),
+        ]
       : [];
   if (includesV2) {
     yield* assertV2MigrationsCanRun(toMigrationInclusive);

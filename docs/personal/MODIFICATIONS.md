@@ -277,7 +277,8 @@ nothing for 15 minutes ends with the last native error, when there is one.
 Upstream's native background-work continuation resumes backgrounded commands
 (while the fork keeps the `stalled` conversation-DB lookup). Upstream's
 `linkAntigravityUserConfig` links `~/.gemini/AGENTS.md`, `~/.gemini/GEMINI.md`,
-and `~/.gemini/config/skills.json` into the profile. Conversational sessions
+and `~/.gemini/config/skills.json` into the profile (it does not link
+`~/.gemini/config/AGENTS.md`). Conversational sessions
 omit the terminal `ACP fallback:` prompt line, disable `generate_image` (plus
 `ask_question` on delegated subagent runs), and expose a short `ag/<12-hex>`
 `GEMINI_HOME` symlink on Unix so skill and artifact paths stay compact in
@@ -288,8 +289,10 @@ prompts.
 - 2026-11-21 sync: dropped the fork's `<user_rules>` /
   `~/.gemini/config/AGENTS.md` prompt injection (`AntigravityDriver.ts`,
   `readAntigravityUserRules`, `withAntigravityUserRules`) in favor of
-  upstream's `linkAntigravityUserConfig` (`~/.gemini/AGENTS.md`,
-  `~/.gemini/GEMINI.md`, `~/.gemini/config/skills.json`).
+  upstream's `linkAntigravityUserConfig`. Path change: upstream links
+  `~/.gemini/AGENTS.md`, `~/.gemini/GEMINI.md`, and `~/.gemini/config/skills.json`,
+  never `~/.gemini/config/AGENTS.md`; move or symlink `config/AGENTS.md` to
+  `~/.gemini/AGENTS.md` and verify agy 1.5.x loads it.
 - 2026-11-21 sync: replaced the fork's AG-BG-001 background-task watcher with
   upstream's native background-work continuation, keeping the fork's `stalled`
   native conversation-DB error lookup.
@@ -316,7 +319,7 @@ prompts.
   repeated in every skill and artifact path the runtime puts in prompts.
   `prepareAntigravityProfile` links a short `ag/<12-hex>` alias to it and falls
   back to the canonical path on Windows or if linking fails.
-- 0.14.1: T3's private `GEMINI_HOME` hides `~/.gemini/config/AGENTS.md`, and
+- 0.14.1 (superseded by 2026-11-21 sync): T3's private `GEMINI_HOME` hides `~/.gemini/config/AGENTS.md`, and
   the 1.4.5 runtime ignores rule files even inside its profile (probed at
   `config/AGENTS.md`, `config/rules/AGENTS.md`, and `GEMINI.md` at the root and
   in `config/`). The driver reads the real file at each runtime start and puts
