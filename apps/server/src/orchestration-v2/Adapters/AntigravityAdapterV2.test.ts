@@ -1044,7 +1044,7 @@ describe("AntigravityAdapterV2 html_render pages", () => {
       );
       for (const name of ["failed-retry", "error-retry", "agy-1.5.8"]) {
         assert.deepEqual(tool(name), {
-          intent: undefined,
+          intent: name === "agy-1.5.8" ? "Render telemetry" : undefined,
           status: "completed",
           toolName: "t3-code.html_render",
           page: page(name),

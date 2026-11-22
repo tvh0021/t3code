@@ -340,7 +340,6 @@ const readDatabase = Effect.fn("readDatabase")(function* (
   }).pipe(sql.withTransaction);
 });
 
-
 /**
  * Some steps, such as context compaction, report usage without naming a
  * model. They run on the conversation's model, so they take the nearest named
@@ -420,8 +419,7 @@ function usageCandidates(
             const stepModels = unkeyedSteps.get(totalsKey);
             const matchIndex =
               stepModels?.findIndex(
-                (stepModelId) =>
-                  stepModelId === modelId || stepModelId === 0 || modelId === 0,
+                (stepModelId) => stepModelId === modelId || stepModelId === 0 || modelId === 0,
               ) ?? -1;
             if (stepModels && matchIndex !== -1) {
               stepModels.splice(matchIndex, 1);

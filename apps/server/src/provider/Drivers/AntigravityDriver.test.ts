@@ -645,7 +645,6 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         expect(methods).not.toContain("session/new");
         yield* h.assertClosed();
       }),
-
   );
 
   it.effect.skipIf(windowsHost)(

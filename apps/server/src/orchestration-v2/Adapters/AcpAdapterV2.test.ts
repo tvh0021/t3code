@@ -1368,7 +1368,6 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-
   it.live("fails an end_turn the outcome check rejects and restarts before the next turn", () =>
     Effect.gen(function* () {
       const checking = yield* Deferred.make<void>();

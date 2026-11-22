@@ -6,6 +6,10 @@ User-visible changes per release, newest first. Current behavior is in
 
 ---
 
+### 0.16.2 (2026-11-21)
+
+- Upstream sync: merged upstream 1a9a858d45 (v0.1.12-nightly.20261121.5064)
+
 ### 0.16.1 (2026-11-20)
 
 - Issue: Antigravity threads stalled after the model put a command in the background and ended its turn, until you sent a message → Fix: when the command ends, the thread resumes once by itself (AG-BG-001)

@@ -42,7 +42,7 @@ Done when: the held reply and the next reply render as separate messages, or the
 
 ## Resolved
 
-- **AG-BG-001** (0.16.1): Antigravity threads stalled after backgrounding a command. Cause: Antigravity holds the task's end until the next prompt. Fix: watch its database, resume once. Superseded in the 2026-11-21 sync by upstream's native background-work continuation (keeping the `stalled` DB lookup).
+- **AG-BG-001** (0.16.1): Antigravity threads stalled after backgrounding a command. Cause: Antigravity holds the task's end until the next prompt. Fix: watch its database, resume once. Superseded in 0.16.2 by upstream's native background-work continuation (keeping the `stalled` DB lookup).
 - **USAGE-009** (0.16.0): Codex credits disappeared or reached incorrect turns. Cause: lost snapshots and token-time ordering. Fix: preserve snapshots, order by snapshot time, refresh caches.
 
 - **CHAT-IMAGE-001** (0.11.1): Rewritten chat images stayed stale. Cause: mounted images retained cached URLs. Fix: workspace changes refresh local image URLs, including outside-workspace files.

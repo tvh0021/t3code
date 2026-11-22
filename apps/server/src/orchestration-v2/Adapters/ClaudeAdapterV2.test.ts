@@ -20587,7 +20587,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
-
   it.effect.each([
     { delivery: "transcript-first", groupedTranscript: false, singleBlock: false },
     { delivery: "sdk-first", groupedTranscript: false, singleBlock: false },

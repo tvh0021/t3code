@@ -137,7 +137,7 @@ and rollouts; older cached entries missing those timestamps are reparsed.
 
 **Decisions.**
 
-- 2026-11-21 sync: adopted upstream's `usageHistoryRetentionDays` setting and
+- 0.16.2: adopted upstream's `usageHistoryRetentionDays` setting and
   scan-cache pruning (`pruneScanCache`, `retentionCutoffMs`) in
   `UsageService.ts` while keeping the fork's `"unlimited"` default in
   `packages/contracts/src/settings.ts`.
@@ -286,14 +286,14 @@ prompts.
 
 **Decisions.**
 
-- 2026-11-21 sync: dropped the fork's `<user_rules>` /
+- 0.16.2: dropped the fork's `<user_rules>` /
   `~/.gemini/config/AGENTS.md` prompt injection (`AntigravityDriver.ts`,
   `readAntigravityUserRules`, `withAntigravityUserRules`) in favor of
   upstream's `linkAntigravityUserConfig`. Path change: upstream links
   `~/.gemini/AGENTS.md`, `~/.gemini/GEMINI.md`, and `~/.gemini/config/skills.json`,
   never `~/.gemini/config/AGENTS.md`; move or symlink `config/AGENTS.md` to
   `~/.gemini/AGENTS.md` and verify agy 1.5.x loads it.
-- 2026-11-21 sync: replaced the fork's AG-BG-001 background-task watcher with
+- 0.16.2: replaced the fork's AG-BG-001 background-task watcher with
   upstream's native background-work continuation, keeping the fork's `stalled`
   native conversation-DB error lookup.
 - 0.16.1 (AG-BG-001): Antigravity 1.5.9 ends turns while a backgrounded command runs and
@@ -319,7 +319,7 @@ prompts.
   repeated in every skill and artifact path the runtime puts in prompts.
   `prepareAntigravityProfile` links a short `ag/<12-hex>` alias to it and falls
   back to the canonical path on Windows or if linking fails.
-- 0.14.1 (superseded by 2026-11-21 sync): T3's private `GEMINI_HOME` hides `~/.gemini/config/AGENTS.md`, and
+- 0.14.1 (superseded by 0.16.2): T3's private `GEMINI_HOME` hides `~/.gemini/config/AGENTS.md`, and
   the 1.4.5 runtime ignores rule files even inside its profile (probed at
   `config/AGENTS.md`, `config/rules/AGENTS.md`, and `GEMINI.md` at the root and
   in `config/`). The driver reads the real file at each runtime start and puts
@@ -371,7 +371,7 @@ shows Zed's reason, and running out of credits shows as a usage limit.
 
 **Decisions.**
 
-- 2026-11-21 sync: replaced the fork's `isZed` special-case in
+- 0.16.2: replaced the fork's `isZed` special-case in
   `ProviderRegistry.ts` with upstream's generic `isIncompleteInstalledProbe`
   check, which preserves the cached catalog on incomplete installed probes.
 - 0.7.2 (ZED-RESUME-001): the bridge lacks load and resume support.

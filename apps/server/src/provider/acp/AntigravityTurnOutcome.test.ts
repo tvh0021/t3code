@@ -308,4 +308,3 @@ describe("watchAntigravityPromptOutcome", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });
-

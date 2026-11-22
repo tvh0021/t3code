@@ -395,9 +395,7 @@ export interface AcpAdapterV2Flavor {
    * Runs before `session/prompt`; reports failures hidden by a clean stop, restarts the runtime,
    * and marks `broken` threads for a fresh session. Optional `stalled` names inactivity errors.
    */
-  readonly watchPromptOutcome?: (
-    sessionId: string,
-  ) => Effect.Effect<
+  readonly watchPromptOutcome?: (sessionId: string) => Effect.Effect<
     ((
       result: EffectAcpSchema.PromptResponse,
     ) => Effect.Effect<AcpPromptOutcomeFailure | undefined>) & {

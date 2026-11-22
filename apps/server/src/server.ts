@@ -781,7 +781,9 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(ProviderRegistry.layer),
   Layer.provideMerge(
     ProviderInstanceRegistryHydration.layer.pipe(
-      Layer.provide(ProjectionStoreV2.layer.pipe(Layer.provideMerge(SqlitePersistence.layerConfig))),
+      Layer.provide(
+        ProjectionStoreV2.layer.pipe(Layer.provideMerge(SqlitePersistence.layerConfig)),
+      ),
     ),
   ),
   // One gate for the server, below hydration so the Claude adapter sees it: layers memoize by
