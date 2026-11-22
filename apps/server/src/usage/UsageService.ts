@@ -74,6 +74,7 @@ import {
   dedupeWithinFile,
   LEGACY_SCAN_CACHE_FILE_NAMES,
   makeScanCacheWriter,
+  pruneScanCache,
   SCAN_CACHE_FILE_NAME,
   type CachedFile,
   type ScanCache,
@@ -454,6 +455,7 @@ export const make = Effect.gen(function* () {
 
   const resolveTranscriptDirs = Effect.fn("UsageService.resolveTranscriptDirs")(function* (
     settings: ServerSettingsValue,
+    retentionCutoffMs: number,
     awaitRefresh: boolean,
   ) {
     const dirs: Array<TranscriptSource> = [];
@@ -484,6 +486,7 @@ export const make = Effect.gen(function* () {
         .some(
           ([filePath, entry]) =>
             entry.provider === provider &&
+            entry.mtimeMs >= retentionCutoffMs &&
             (entry.records.length + entry.tailRecords.length > 0 || entry.malformedRecords > 0) &&
             isWithinDirectory(filePath, dir),
         );
@@ -1008,7 +1011,7 @@ export const make = Effect.gen(function* () {
 
     const awaitRefresh = input.awaitRefresh === true;
     const collect = Effect.gen(function* () {
-      const resolved = yield* resolveTranscriptDirs(settings, awaitRefresh).pipe(
+      const resolved = yield* resolveTranscriptDirs(settings, retentionCutoffMs, awaitRefresh).pipe(
         Effect.provideContext(readerContext),
       );
       // A window no complete scan has read would show partial totals, so every directory must cover it.
@@ -1047,6 +1050,7 @@ export const make = Effect.gen(function* () {
     const sources: UsageSource[] = [];
 
     // Deleted transcripts' saved usage still aggregates and deduplicates normally.
+    const retainedSinceMs = Math.max(windowStartMs, retentionCutoffMs);
     // Saved paths are files below a scanned root, so their folder decides; folders repeat thousands of times.
     const withinDir = (dir: string) => {
       const foldersWithin = new Map<string, boolean>();
@@ -1071,7 +1075,7 @@ export const make = Effect.gen(function* () {
       for (const [filePath, entry] of fileCache) {
         if (
           entry.provider !== provider ||
-          entry.mtimeMs < windowStartMs ||
+          entry.mtimeMs < retainedSinceMs ||
           livePaths.has(filePath) ||
           !isRetained(filePath)
         )

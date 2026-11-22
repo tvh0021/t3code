@@ -416,6 +416,17 @@ function makeStateValidators(
   );
 }
 
+export function pruneScanCache(cache: ScanCache, retentionCutoffMs: number): number {
+  let removed = 0;
+  for (const [path, entry] of cache) {
+    if (entry.mtimeMs < retentionCutoffMs) {
+      cache.delete(path);
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
 /** Pass only newline-terminated records: an unterminated tail can still change, so the aggregator merges it per scan. */
 export function dedupeWithinFile(records: readonly UsageRecord[]): readonly UsageRecord[] {
   const kept: UsageRecord[] = [];

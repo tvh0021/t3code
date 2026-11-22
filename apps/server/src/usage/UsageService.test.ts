@@ -1888,7 +1888,8 @@ describe("UsageService", () => {
   );
 
   it.effect.each([
-    { label: "default", retention: undefined, cutoff: CURSOR_NOW - 92 * 24 * HOUR_MS },
+    { label: "default", retention: undefined, cutoff: 0 },
+    { label: "92 days", retention: 92, cutoff: CURSOR_NOW - 92 * 24 * HOUR_MS },
     { label: "unlimited", retention: "unlimited" as const, cutoff: 0 },
     { label: "36500 days", retention: 36500, cutoff: 0 },
   ])(
@@ -2147,7 +2148,7 @@ describe("UsageService", () => {
           layerService({
             prefix: "usage-service-cursor-large-account",
             home,
-            settings,
+            settings: { ...settings, usageHistoryRetentionDays: 92 },
             platform: "darwin",
             environment: {},
             secretStore: {
@@ -3948,8 +3949,8 @@ describe("UsageService", () => {
   );
 
   it.effect.each([
-    { label: "the default 92 days", retention: undefined, expected: 1 },
-    { label: "unlimited", retention: "unlimited" as const, expected: 15 },
+    { label: "92 days", retention: 92, expected: 1 },
+    { label: "the default unlimited", retention: undefined, expected: 15 },
   ])(
     "retains deleted transcripts according to $label across restart and settings changes",
     ({ retention, expected }) =>
