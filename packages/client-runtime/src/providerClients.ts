@@ -17,6 +17,7 @@ import { kiroClient } from "@t3tools/provider-kiro/client";
 import { museClient } from "@t3tools/provider-muse/client";
 import { openCodeClient } from "@t3tools/provider-opencode/client";
 import { piClient } from "@t3tools/provider-pi/client";
+import { mFallback, msg } from "gt-i18n";
 
 // OpenRouter's Ink and Cloud glyphs from https://openrouter.ai/brand.
 export const openRouterIcon: ProviderIcon = {
@@ -60,12 +61,13 @@ export const providerClients = makeProviderClientRegistry([
     label: "ChatLLM",
     settingsSchema: AbacusSettings,
     // The server redacts the saved key; the field lets users set it per instance.
-    environmentFields: [{ name: "ABACUS_API_KEY", label: "Abacus API key", sensitive: true }],
+    environmentFields: [{ name: "ABACUS_API_KEY", label: mFallback(msg("Abacus API key")), sensitive: true }],
   },
   {
     driverKind: ProviderDriverKind.make("zed"),
+    // oxlint-disable-next-line t3code/no-untranslated-copy -- provider brand name
     label: "Zed",
-    badgeLabel: "Early Access",
+    badgeLabel: mFallback(msg("Early Access")),
     settingsSchema: ZedSettings,
   },
   kiroClient,

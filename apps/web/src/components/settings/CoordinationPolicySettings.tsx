@@ -3,6 +3,7 @@ import {
   buildCoordinationPolicyPatch,
 } from "@t3tools/client-runtime/state/threads";
 import { DEFAULT_COORDINATION_LIMITS, type EnvironmentId } from "@t3tools/contracts";
+import { T, useGT, Var } from "gt-react";
 import { useState } from "react";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
@@ -17,6 +18,7 @@ export function CoordinationPolicySettings({
   environmentId: EnvironmentId;
   readOnly: boolean;
 }) {
+  const gt = useGT();
   const settings = useEnvironmentSettings(environmentId);
   const persist = useAtomCommand(serverEnvironment.updateSettings);
   const refresh = useAtomCommand(serverEnvironment.refreshProviders);
@@ -36,12 +38,12 @@ export function CoordinationPolicySettings({
       });
       setMessage(
         result._tag === "Success"
-          ? "Saved. New delegated tasks use these limits."
-          : "Could not save limits. Reconnect and retry.",
+          ? gt("Saved. New delegated tasks use these limits.")
+          : gt("Could not save limits. Reconnect and retry."),
       );
       if (result._tag === "Success") setDraft(null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Invalid model limits.");
+      setMessage(error instanceof Error ? error.message : gt("Invalid model limits."));
     }
     setPending(false);
   };
@@ -54,35 +56,38 @@ export function CoordinationPolicySettings({
       });
       setMessage(
         result._tag === "Success"
-          ? "Models and pricing refreshed. New delegated tasks use the updated policy."
-          : "Could not refresh model policy. The previous policy remains available.",
+          ? gt("Models and pricing refreshed. New delegated tasks use the updated policy.")
+          : gt("Could not refresh model policy. The previous policy remains available."),
       );
     } catch {
-      setMessage("Could not refresh model policy. The previous policy remains available.");
+      setMessage(gt("Could not refresh model policy. The previous policy remains available."));
     }
     setPending(false);
   };
   return (
     <section className="flex flex-col gap-3 px-4 py-5" aria-labelledby="coordination-policy-title">
       <h2 id="coordination-policy-title" className="text-sm font-medium">
-        Delegated task limits
+        <T>Delegated task limits</T>
       </h2>
       <p className="text-sm text-muted-foreground">
-        A thread may delegate the same task once to a model above $10 per million output tokens and
-        four times to a model from $1 through $10, so a stuck task is not resubmitted forever.
-        Different tasks have separate limits. Models below $1 are unlimited. Maintenance refreshes
-        models and pricing monthly while the server is running.
+        <T>
+          A thread may delegate the same task once to a model above $10 per million output tokens
+          and four times to a model from $1 through $10, so a stuck task is not resubmitted forever.
+          Different tasks have separate limits. Models below $1 are unlimited. Maintenance refreshes
+          models and pricing monthly while the server is running.
+        </T>
       </p>
       <p className="text-sm text-muted-foreground">
-        Named defaults:{" "}
-        {Object.entries(DEFAULT_COORDINATION_LIMITS)
+        <T>
+          Named defaults:{" "}
+          <Var>{Object.entries(DEFAULT_COORDINATION_LIMITS)
           .map(([model, limit]) => `${model}: ${limit ?? "unlimited"}`)
           .join(", ")}
-        .
+        .</Var>
+        </T>
       </p>
       <label htmlFor="coordination-model-limits" className="text-sm">
-        Overrides, one model=attempts or model=unlimited per line. A blank field restores the
-        defaults.
+        <T>Overrides, one model=attempts or model=unlimited per line. A blank field restores the defaults.</T>
       </label>
       <Textarea
         id="coordination-model-limits"
@@ -99,7 +104,7 @@ export function CoordinationPolicySettings({
           disabled={readOnly || pending}
           onClick={() => void save()}
         >
-          Save limits
+          <T>Save limits</T>
         </Button>
         <Button
           size="sm"
@@ -107,7 +112,7 @@ export function CoordinationPolicySettings({
           disabled={readOnly || pending}
           onClick={() => void maintain()}
         >
-          Refresh model policy
+          <T>Refresh model policy</T>
         </Button>
       </div>
       {message && (

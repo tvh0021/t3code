@@ -5,20 +5,15 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import * as Queue from "effect/Queue";
-import * as Stream from "effect/Stream";
 import type * as EffectAcpSchema from "effect-acp/compat";
+import type { OrchestrationV2ProviderFailure } from "@t3tools/contracts";
 
-import {
-  watchAntigravityBackgroundTaskEnds,
-  watchAntigravityPromptOutcome,
-} from "./AntigravityTurnOutcome.ts";
+import { watchAntigravityPromptOutcome } from "./AntigravityTurnOutcome.ts";
 
 const USER_INPUT = 14;
 const PLANNER_RESPONSE = 15;
 const TOOL = 8;
 const ERROR_MESSAGE = 17;
-const MESSAGE = 101;
 // Step statuses: DONE, and any other value such as a retry still generating.
 const DONE = 3;
 const UNFINISHED = 0;
@@ -44,10 +39,29 @@ const BAD_GATEWAY_ERROR = errorPayload(
 const INVALID_ARGUMENT_ERROR = errorPayload(
   "Error 400, Message: Request contains an invalid argument., Status: INVALID_ARGUMENT, Details: []",
 );
+// Vertex Claude rejects a resumed history whose saved thinking block lost its signature.
+const MISSING_SIGNATURE_ERROR = errorPayload(
+  'Error 400, Message: {"type":"error","error":{"type":"invalid_request_error","message":"messages.1.content.0.thinking.signature: Field required"},"request_id":"req_vrtx_test"}, Status: INVALID_ARGUMENT, Details: []',
+);
+const INVALID_SIGNATURE_ERROR = errorPayload(
+  'Error 400, Message: {"type":"error","error":{"type":"invalid_request_error","message":"messages.3.content.0: Invalid `signature` in `thinking` block"}}, Status: INVALID_ARGUMENT, Details: []',
+);
+const NOT_FOUND_ERROR = errorPayload(
+  "Error 404, Message: Requested entity was not found., Status: NOT_FOUND, Details: []",
+);
+// Antigravity 1.5 with a Google account writes "STATUS (code NNN): message", then the HTTP body.
+const STATUS_NOT_FOUND_ERROR = Buffer.concat([
+  Buffer.from([0x12, 0x37]),
+  Buffer.from(
+    'NOT_FOUND (code 404): Requested entity was not found.\u001a\u0080\u0001HTTP 404 Not Found\n\n{"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}',
+  ),
+]);
 // The model's reply quoting the agent's quota notice is an ordinary planner response.
 const QUOTED_NOTICE = Buffer.from(
   "Usage Limit Reached\n\nYou have reached your current quota for this period. Your limit will reset in 1 hour.",
 );
+const reusable = (failure: OrchestrationV2ProviderFailure) =>
+  ({ failure, threadDisposition: "reusable" }) as const;
 
 describe("watchAntigravityPromptOutcome", () => {
   it.effect("fails only turns whose own steps end in an upstream error", () =>
@@ -84,7 +98,7 @@ describe("watchAntigravityPromptOutcome", () => {
         Effect.gen(function* () {
           const check = yield* watchAntigravityPromptOutcome(profileDirectory, sessionId);
           appendSteps(steps);
-          return yield* check.settled(result);
+          return yield* check(result);
         });
       const input = Buffer.from("Run the fixture.");
       const reply = Buffer.from("FIXTURE_OK");
@@ -101,13 +115,13 @@ describe("watchAntigravityPromptOutcome", () => {
           [USER_INPUT, input],
           [ERROR_MESSAGE, QUOTA_ERROR],
         ]),
-        {
+        reusable({
           class: "usage_limit",
           message: "You have reached your Antigravity quota for this period.",
           code: "RESOURCE_EXHAUSTED",
           retryable: true,
           resetAt: "1970-01-01T01:00:00.000Z",
-        },
+        }),
       );
       // The earlier error step is outside this turn.
       assert.isUndefined(
@@ -127,26 +141,63 @@ describe("watchAntigravityPromptOutcome", () => {
           [USER_INPUT, input],
           [ERROR_MESSAGE, RATE_LIMIT_ERROR],
         ]),
-        {
+        reusable({
           class: "usage_limit",
           message: "Resource has been exhausted (e.g. check quota).",
           code: "RESOURCE_EXHAUSTED",
           retryable: true,
           resetAt: "1970-01-01T00:00:42.000Z",
-        },
+        }),
       );
       assert.deepEqual(
         yield* turn([
           [USER_INPUT, input],
           [ERROR_MESSAGE, INVALID_ARGUMENT_ERROR],
         ]),
-        {
+        reusable({
           class: "provider_error",
           message: "Request contains an invalid argument.",
           code: "INVALID_ARGUMENT",
           retryable: false,
-        },
+        }),
       );
+      // A 404 after the turn already reached the model is a transient edge error, not a bad model.
+      for (const error of [NOT_FOUND_ERROR, STATUS_NOT_FOUND_ERROR]) {
+        assert.deepEqual(
+          yield* turn([
+            [USER_INPUT, input],
+            [PLANNER_RESPONSE, reply],
+            [TOOL, reply],
+            [ERROR_MESSAGE, error],
+          ]),
+          {
+            ...reusable({
+              class: "provider_error",
+              message: "Requested entity was not found.",
+              code: "NOT_FOUND",
+              retryable: true,
+            }),
+            resumeWith: "continue",
+          },
+        );
+      }
+      // A 404 before the model answered is an unknown or unentitled model.
+      assert.equal(
+        (yield* turn([
+          [USER_INPUT, input],
+          [ERROR_MESSAGE, STATUS_NOT_FOUND_ERROR],
+        ]))?.failure.retryable,
+        false,
+      );
+      // A saved thinking block without a valid signature fails every later prompt.
+      for (const error of [MISSING_SIGNATURE_ERROR, INVALID_SIGNATURE_ERROR]) {
+        const outcome = yield* turn([
+          [USER_INPUT, input],
+          [ERROR_MESSAGE, error],
+        ]);
+        assert.equal(outcome?.failure.code, "INVALID_THINKING_SIGNATURE");
+        assert.equal(outcome?.threadDisposition, "broken");
+      }
       // A completed tool keeps its usage, and the turn still fails.
       assert.equal(
         (yield* turn(
@@ -160,7 +211,7 @@ describe("watchAntigravityPromptOutcome", () => {
             stopReason: "end_turn",
             usage: { inputTokens: 40, outputTokens: 5, totalTokens: 45 },
           },
-        ))?.class,
+        ))?.failure.class,
         "usage_limit",
       );
       assert.isUndefined(
@@ -193,12 +244,15 @@ describe("watchAntigravityPromptOutcome", () => {
       ]);
       assert.isUndefined(yield* recovered.stalled);
       // The agent maps the SDK's QUOTA_EXHAUSTED stop reason to `refusal`.
-      assert.deepEqual(yield* turn([], { stopReason: "refusal" }), {
-        class: "usage_limit",
-        message: "You have reached your Antigravity quota for this period.",
-        code: "QUOTA_EXHAUSTED",
-        retryable: true,
-      });
+      assert.deepEqual(
+        yield* turn([], { stopReason: "refusal" }),
+        reusable({
+          class: "usage_limit",
+          message: "You have reached your Antigravity quota for this period.",
+          code: "QUOTA_EXHAUSTED",
+          retryable: true,
+        }),
+      );
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -233,79 +287,25 @@ describe("watchAntigravityPromptOutcome", () => {
       );
       const linked = yield* watchAntigravityPromptOutcome(profileDirectory, own);
       append(peer, ERROR_MESSAGE, QUOTA_ERROR);
-      assert.isUndefined(yield* linked.settled({ stopReason: "end_turn" }));
+      assert.isUndefined(yield* linked({ stopReason: "end_turn" }));
       assert.isUndefined(yield* linked.stalled);
-      assert.equal((yield* linked.settled({ stopReason: "refusal" }))?.class, "usage_limit");
+      assert.equal((yield* linked({ stopReason: "refusal" }))?.failure.class, "usage_limit");
 
       // An unreadable log gives no evidence, but the agent's typed refusal still fails the turn.
       yield* fs.remove(path.join(conversations, `${own}.db`));
       yield* fs.writeFileString(path.join(conversations, `${own}.db`), "not a database");
       const corrupt = yield* watchAntigravityPromptOutcome(profileDirectory, own);
-      assert.isUndefined(yield* corrupt.settled({ stopReason: "end_turn" }));
-      assert.deepEqual(yield* corrupt.settled({ stopReason: "refusal" }), {
-        class: "usage_limit",
-        message: "You have reached your Antigravity quota for this period.",
-        code: "QUOTA_EXHAUSTED",
-        retryable: true,
-      });
-    }).pipe(Effect.provide(NodeServices.layer)),
-  );
-});
-
-describe("watchAntigravityBackgroundTaskEnds", () => {
-  it.effect("reads rows written before the watch is ready, then each task end once", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const profileDirectory = yield* fs.makeTempDirectoryScoped();
-      const sessionId = "e6aba774-5472-4277-b6ee-27b2e05570a7";
-      const conversations = path.join(profileDirectory, "antigravity-acp", "conversations");
-      yield* fs.makeDirectory(conversations, { recursive: true });
-      const log = path.join(conversations, `${sessionId}.db`);
-      const append = (...tasks: ReadonlyArray<number>) => {
-        const database = new NodeSqlite.DatabaseSync(log);
-        try {
-          database.exec(
-            "CREATE TABLE IF NOT EXISTS steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER NOT NULL DEFAULT 3, step_payload BLOB)",
-          );
-          const insert = database.prepare(
-            "INSERT INTO steps (step_type, step_payload) VALUES (?, ?)",
-          );
-          for (const task of tasks) {
-            const id = `${sessionId}/task-${task}`;
-            insert.run(MESSAGE, Buffer.from(`content=Task id "${id}" finished with result:\ndone`));
-          }
-        } finally {
-          database.close();
-        }
-      };
-      const events = yield* Queue.unbounded<FileSystem.WatchEvent>();
-      // The first end lands after the baseline read but before the watch reports ready.
-      const watching = FileSystem.makeNoop({
-        watch: (_directory, options) =>
-          Stream.fromQueue(events).pipe(
-            Stream.onStart(
-              Effect.sync(() => {
-                append(2);
-                options?.onReady?.();
-              }),
-            ),
-          ),
-      });
-
-      const ends = yield* watchAntigravityBackgroundTaskEnds(profileDirectory, sessionId).pipe(
-        Stream.tap((taskId) =>
-          taskId === `${sessionId}/task-2`
-            ? Effect.sync(() => append(2, 3)).pipe(
-                Effect.andThen(Queue.offer(events, { _tag: "Update", path: `${log}-wal` })),
-              )
-            : Effect.void,
-        ),
-        Stream.take(2),
-        Stream.provideService(FileSystem.FileSystem, watching),
-        Stream.runCollect,
+      assert.isUndefined(yield* corrupt({ stopReason: "end_turn" }));
+      assert.deepEqual(
+        yield* corrupt({ stopReason: "refusal" }),
+        reusable({
+          class: "usage_limit",
+          message: "You have reached your Antigravity quota for this period.",
+          code: "QUOTA_EXHAUSTED",
+          retryable: true,
+        }),
       );
-      assert.deepEqual(Array.from(ends), [`${sessionId}/task-2`, `${sessionId}/task-3`]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });
+

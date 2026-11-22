@@ -1,3 +1,4 @@
+import { useGT } from "gt-react";
 import { useState } from "react";
 
 import { Button } from "../ui/button";
@@ -14,16 +15,17 @@ export function ZedDashboardSection({
   readonly connected: boolean;
   readonly onConnect: (dashboardSession: string) => Promise<void>;
 }) {
+  const gt = useGT();
   const connect = window.desktopBridge?.connectZedDashboard;
   const [busy, setBusy] = useState(false);
   if (!connect) return null;
   return (
     <SettingsRow
-      title="Zed dashboard"
+      title={gt("Zed dashboard")}
       description={
         connected
-          ? "Connected. Account spend refreshes after each Zed turn."
-          : "Sign in to show your Zed account spend in Limits."
+          ? gt("Connected. Account spend refreshes after each Zed turn.")
+          : gt("Sign in to show your Zed account spend in Limits.")
       }
       control={
         <Button
@@ -37,7 +39,7 @@ export function ZedDashboardSection({
               .finally(() => setBusy(false));
           }}
         >
-          {connected ? "Reconnect" : "Connect"}
+          {connected ? gt("Reconnect") : gt("Connect")}
         </Button>
       }
     />
