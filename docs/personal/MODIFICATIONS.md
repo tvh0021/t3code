@@ -137,6 +137,10 @@ and rollouts; older cached entries missing those timestamps are reparsed.
 
 **Decisions.**
 
+- 2026-11-21 sync: adopted upstream's `usageHistoryRetentionDays` setting and
+  scan-cache pruning (`pruneScanCache`, `retentionCutoffMs`) in
+  `UsageService.ts` while keeping the fork's `"unlimited"` default in
+  `packages/contracts/src/settings.ts`.
 - 0.16.0 (USAGE-009): ledger records lost balance snapshots, and token-time
   ordering misplaced charges. `codexUsage.ts` preserves snapshots,
   `usageAggregation.ts` reconciles by snapshot time, and `UsageService.ts`
@@ -270,16 +274,25 @@ errors keep the native operation and error text.
 Work rows can lead with a per-step description, but current runtimes never send
 one (see Decisions). A turn that sends
 nothing for 15 minutes ends with the last native error, when there is one.
-A command still running when a turn ends gets a "Background task completed."
-turn when it finishes, so the work Antigravity did after it shows up.
-Conversational sessions follow the user's global rules in
-`~/.gemini/config/AGENTS.md`, omit the terminal `ACP fallback:` prompt line,
-disable `generate_image` (plus `ask_question` on delegated subagent runs), and
-expose a short `ag/<12-hex>` `GEMINI_HOME` symlink on Unix so skill and artifact
-paths stay compact in prompts.
+Upstream's native background-work continuation resumes backgrounded commands
+(while the fork keeps the `stalled` conversation-DB lookup). Upstream's
+`linkAntigravityUserConfig` links `~/.gemini/AGENTS.md`, `~/.gemini/GEMINI.md`,
+and `~/.gemini/config/skills.json` into the profile. Conversational sessions
+omit the terminal `ACP fallback:` prompt line, disable `generate_image` (plus
+`ask_question` on delegated subagent runs), and expose a short `ag/<12-hex>`
+`GEMINI_HOME` symlink on Unix so skill and artifact paths stay compact in
+prompts.
 
 **Decisions.**
 
+- 2026-11-21 sync: dropped the fork's `<user_rules>` /
+  `~/.gemini/config/AGENTS.md` prompt injection (`AntigravityDriver.ts`,
+  `readAntigravityUserRules`, `withAntigravityUserRules`) in favor of
+  upstream's `linkAntigravityUserConfig` (`~/.gemini/AGENTS.md`,
+  `~/.gemini/GEMINI.md`, `~/.gemini/config/skills.json`).
+- 2026-11-21 sync: replaced the fork's AG-BG-001 background-task watcher with
+  upstream's native background-work continuation, keeping the fork's `stalled`
+  native conversation-DB error lookup.
 - 0.16.1 (AG-BG-001): Antigravity 1.5.9 ends turns while a backgrounded command runs and
   resumes the model natively when it ends, but sends nothing until the next
   prompt opens, so the thread stalled with the result unseen. The runtime
@@ -355,6 +368,9 @@ shows Zed's reason, and running out of credits shows as a usage limit.
 
 **Decisions.**
 
+- 2026-11-21 sync: replaced the fork's `isZed` special-case in
+  `ProviderRegistry.ts` with upstream's generic `isIncompleteInstalledProbe`
+  check, which preserves the cached catalog on incomplete installed probes.
 - 0.7.2 (ZED-RESUME-001): the bridge lacks load and resume support.
   `AcpSessionRuntime` now identifies the unsupported restore method so the
   existing ACP adapter fallback can start a fresh session and carry context
