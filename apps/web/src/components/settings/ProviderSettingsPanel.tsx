@@ -1,4 +1,3 @@
-import { CoordinationPolicySettings } from "./CoordinationPolicySettings";
 import { SettingsGroup } from "./SettingsGroup";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
@@ -1155,7 +1154,6 @@ export function EnvironmentProviderSettings({
             )}
           </div>
         </SettingsGroup>
-        <CoordinationPolicySettings environmentId={environmentId} readOnly={readOnly} />
       </SettingsSection>
 
       <UsageProviderSettings

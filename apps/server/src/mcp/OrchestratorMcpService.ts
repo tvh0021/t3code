@@ -88,7 +88,6 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { DelegationGuards } from "../orchestration-v2/delegationGuards.ts";
 
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import {
@@ -1323,8 +1322,6 @@ const make = Effect.gen(function* () {
   const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  // Personal fork: the server always provides these; upstream's tests do not.
-  const delegationGuards = yield* Effect.serviceOption(DelegationGuards);
   const remoteDelegation = yield* RemoteDelegation.RemoteDelegation;
 
   const requireProject = (projectId: ProjectId) =>
@@ -2896,21 +2893,6 @@ const make = Effect.gen(function* () {
         parent.thread.interactionMode,
         input.interactionMode,
       );
-      // Personal fork: per-model attempts at one task. Retries of an
-      // accepted delegation were already counted.
-      if (!isRetryOfAcceptedDelegation && Option.isSome(delegationGuards)) {
-        // The parent projection omits tasks, so the guard reads them only when it applies.
-        const { subagents } = yield* threadManagement
-          .getThreadRecords(parent.thread.id, ["subagents"])
-          .pipe(Effect.mapError(threadManagementFailure));
-        yield* delegationGuards.value
-          .checkTaskAttempts(subagents, {
-            model: target.modelSelection.model,
-            title: input.title ?? null,
-            prompt: taskPrompt(input),
-          })
-          .pipe(Effect.mapError((message) => failure("invalid_request", message)));
-      }
       let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
       // Personal fork: `reviewRef` isolates the child on that commit instead of HEAD.
       const baseRevision = input.reviewRef ?? (input.isolation === "worktree" ? "HEAD" : null);

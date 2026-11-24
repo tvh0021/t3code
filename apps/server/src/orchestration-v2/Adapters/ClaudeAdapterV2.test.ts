@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- workflow fixtures use files and the fake Claude CLI uses Node streams
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeStream from "node:stream";
 
@@ -87,7 +88,11 @@ import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
 import * as ServerConfig from "../../config.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
-import { T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH } from "@t3tools/provider-core/server/orchestrationInstructions";
+import {
+  T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
+  t3OrchestrationInstructions,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
+import { USER_CHILD_ORCHESTRATION_INSTRUCTIONS_ENV } from "@t3tools/provider-core/server/userOrchestrationInstructions";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import { PreviewControlsToolkit } from "../../mcp/toolkits/previewControls/tools.ts";
 import { HtmlToolkit } from "../../mcp/toolkits/html/tools.ts";
@@ -945,40 +950,85 @@ describe("ClaudeAdapterV2 device instructions", () => {
     assert.notInclude(append({ mcp: false, deviceToolsAvailable: true }), "## T3 Code devices");
   });
 
-  it("gives native subagents the device block only in a session with device access", async () => {
+  it("gives native subagents child orchestration with T3 MCP and the device block only with device access", async () => {
     // Subagents start from their task prompt, not the parent's system prompt.
-    const subagentContext = (input: {
-      readonly mcp: boolean;
-      readonly deviceToolsAvailable: boolean;
-    }) =>
-      Promise.all(
-        (options(input).hooks?.SubagentStart ?? []).flatMap((matcher) =>
-          matcher.hooks.map((hook) =>
-            hook(
-              {
-                hook_event_name: "SubagentStart",
-                agent_id: "agent-1",
-                agent_type: "general-purpose",
-                session_id: "native-thread-claude-devices",
-                transcript_path: "/transcript.jsonl",
-                cwd: "/workspace",
-              },
-              undefined,
-              { signal: new AbortController().signal },
+    const previousChildRules = process.env[USER_CHILD_ORCHESTRATION_INSTRUCTIONS_ENV];
+    const dir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-claude-subagent-rules-"));
+    const childRulesPath = NodePath.join(dir, "ORCHESTRATION-CHILD.md");
+    process.env[USER_CHILD_ORCHESTRATION_INSTRUCTIONS_ENV] = childRulesPath;
+    try {
+      const invokeSubagentStart = (queryOptions: ReturnType<typeof options>) =>
+        Promise.all(
+          (queryOptions.hooks?.SubagentStart ?? []).flatMap((matcher) =>
+            matcher.hooks.map((hook) =>
+              hook(
+                {
+                  hook_event_name: "SubagentStart",
+                  agent_id: "agent-1",
+                  agent_type: "general-purpose",
+                  session_id: "native-thread-claude-devices",
+                  transcript_path: "/transcript.jsonl",
+                  cwd: "/workspace",
+                },
+                undefined,
+                { signal: new AbortController().signal },
+              ),
             ),
           ),
-        ),
-      );
-    assert.deepEqual(await subagentContext({ mcp: true, deviceToolsAvailable: true }), [
-      {
-        hookSpecificOutput: {
-          hookEventName: "SubagentStart",
-          additionalContext: T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
+        );
+      const subagentContext = (input: {
+        readonly mcp: boolean;
+        readonly deviceToolsAvailable: boolean;
+      }) => invokeSubagentStart(options(input));
+
+      const expectedChildInstructions = t3OrchestrationInstructions({ subagent: true }).trim();
+      const withDevices = await subagentContext({ mcp: true, deviceToolsAvailable: true });
+      assert.deepEqual(withDevices, [
+        {
+          hookSpecificOutput: {
+            hookEventName: "SubagentStart",
+            additionalContext: expectedChildInstructions,
+          },
         },
-      },
-    ]);
-    assert.deepEqual(await subagentContext({ mcp: true, deviceToolsAvailable: false }), []);
-    assert.deepEqual(await subagentContext({ mcp: false, deviceToolsAvailable: true }), []);
+        {
+          hookSpecificOutput: {
+            hookEventName: "SubagentStart",
+            additionalContext: T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
+          },
+        },
+      ]);
+      assert.include(expectedChildInstructions, "## T3 Code child orchestration");
+      assert.include(
+        expectedChildInstructions,
+        "keep your nested fan-out small (<=2-3 concurrent)",
+      );
+
+      const withoutDevicesOptions = options({ mcp: true, deviceToolsAvailable: false });
+      const withoutDevices = await invokeSubagentStart(withoutDevicesOptions);
+      assert.deepEqual(withoutDevices, [
+        {
+          hookSpecificOutput: {
+            hookEventName: "SubagentStart",
+            additionalContext: expectedChildInstructions,
+          },
+        },
+      ]);
+      assert.notInclude(JSON.stringify(withoutDevices), "## T3 Code devices");
+
+      // Re-reads ORCHESTRATION-CHILD.md inside the hook callback without rebuilding query options.
+      NodeFS.writeFileSync(childRulesPath, "Live-reloaded child rule.");
+      const reloaded = await invokeSubagentStart(withoutDevicesOptions);
+      assert.include(JSON.stringify(reloaded), "Live-reloaded child rule.");
+
+      assert.deepEqual(await subagentContext({ mcp: false, deviceToolsAvailable: true }), []);
+    } finally {
+      if (previousChildRules === undefined) {
+        delete process.env[USER_CHILD_ORCHESTRATION_INSTRUCTIONS_ENV];
+      } else {
+        process.env[USER_CHILD_ORCHESTRATION_INSTRUCTIONS_ENV] = previousChildRules;
+      }
+      NodeFS.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("gives subagent turns the compact child orchestration block and disallows AskUserQuestion", () => {

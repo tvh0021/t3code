@@ -1,9 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  T3_CODE_CHILD_ORCHESTRATION_SECTIONS,
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+  T3_CODE_ORCHESTRATION_SECTIONS,
   isDelegatedSubagentTurn,
   t3AcpPromptWithInstructions,
   t3OrchestrationPrompt,
@@ -128,6 +130,9 @@ describe("T3 device instructions", () => {
     } as const;
     const childPrompt = t3AcpPromptWithInstructions({ prompt: "Audit.", state: childState });
     assert.include(childPrompt, "## T3 Code child orchestration");
+    assert.include(childPrompt, "rather than passing the whole task off unchanged");
+    assert.include(childPrompt, "keep your nested fan-out small (<=2-3 concurrent)");
+    assert.notInclude(childPrompt, "start no subagents unless");
     assert.notInclude(childPrompt, "ACP fallback:");
 
     const followUp = t3AcpPromptWithInstructions({
@@ -136,5 +141,17 @@ describe("T3 device instructions", () => {
       previousState: childState,
     });
     assert.include(followUp, "## T3 Code orchestration");
+    assert.include(
+      followUp,
+      "complete the work you were assigned instead of passing it off unchanged",
+    );
+    assert.notInclude(followUp, "Start no subagents unless");
+
+    for (const section of [
+      ...T3_CODE_ORCHESTRATION_SECTIONS,
+      ...T3_CODE_CHILD_ORCHESTRATION_SECTIONS,
+    ]) {
+      assert.isAtMost(Buffer.byteLength(section, "utf8"), 4_000);
+    }
   });
 });

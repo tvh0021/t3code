@@ -217,7 +217,6 @@ export class UsageService extends Context.Service<
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
-    readonly readOutputPrices: Effect.Effect<Readonly<Record<string, number>>, UsageReadError>;
   }
 >()("t3/usage/UsageService") {}
 
@@ -1409,20 +1408,7 @@ export const make = Effect.gen(function* () {
     return yield* Deferred.await(deferred);
   });
 
-  const readOutputPrices = Effect.gen(function* () {
-    yield* ensureRates(false);
-    const settings = yield* readSettings;
-    return Object.fromEntries(
-      [
-        ...OFFICIAL_MODEL_RATES,
-        ...STATIC_FALLBACK_RATES,
-        ...rates,
-        ...OFFICIAL_MODEL_RATES,
-        ...createOverrideRateTable(settings.usagePriceOverrides),
-      ].map(([model, rate]) => [model, rate.outputCostPerToken * 1_000_000]),
-    );
-  });
-  return { readSummary, refreshRates, readOutputPrices, awaitPersisted } as const;
+  return { readSummary, refreshRates, awaitPersisted } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

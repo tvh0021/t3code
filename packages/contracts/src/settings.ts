@@ -1374,12 +1374,6 @@ export const CloudSpeechCredentials = Schema.Struct({
 });
 
 export const ServerSettings = Schema.Struct({
-  coordinationModelLimits: Schema.optionalKey(
-    Schema.Record(
-      TrimmedNonEmptyString,
-      Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-    ),
-  ),
   // Null means unmigrated; empty is authoritative and must not resurrect cleared preferences.
   favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   providerModelPreferences: Schema.NullOr(ProviderModelPreferences).pipe(
@@ -1821,12 +1815,6 @@ const ModelSelectionPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
-  coordinationModelLimits: Schema.optionalKey(
-    Schema.Record(
-      TrimmedNonEmptyString,
-      Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-    ),
-  ),
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
   ),

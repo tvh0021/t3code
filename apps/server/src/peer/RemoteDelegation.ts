@@ -42,7 +42,6 @@ import {
 } from "../mcp/delegatedTaskModes.ts";
 import { followUpOwnerRun } from "../orchestration-v2/CommandPolicy.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
-import { DelegationGuards } from "../orchestration-v2/delegationGuards.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -162,8 +161,6 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const random = yield* SecureRandom.SecureRandom;
-  // Personal fork: the server always provides this; upstream's tests do not.
-  const delegationGuards = yield* Effect.serviceOption(DelegationGuards);
   const hereId = yield* ServerEnvironment.ServerEnvironment.pipe(
     Effect.flatMap((environment) => environment.getEnvironmentId),
   );
@@ -349,28 +346,6 @@ const make = Effect.gen(function* () {
       const commandId = CommandId.make(
         `command:mcp:${encodeURIComponent(scope.requestNamespace)}:remote-delegate:${encodeURIComponent(key)}`,
       );
-      // Personal fork: per-model attempts at one task, counted with local ones.
-      // Retries of an accepted delegation were already counted.
-      if (Option.isSome(delegationGuards) && !(yield* threads.hasReceipt(commandId))) {
-        const { subagents } = yield* threads
-          .getThreadRecords(scope.thread.threadId, ["subagents"])
-          .pipe(
-            Effect.mapError(
-              () =>
-                new OrchestratorMcpFailure({
-                  code: "thread_not_found",
-                  message: "The calling thread was not found.",
-                }),
-            ),
-          );
-        yield* delegationGuards.value
-          .checkTaskAttempts(subagents, { model, title: input.title ?? null, prompt: task })
-          .pipe(
-            Effect.mapError(
-              (message) => new OrchestratorMcpFailure({ code: "invalid_request", message }),
-            ),
-          );
-      }
       const title = input.title ?? parent.thread.title;
       const launched = yield* forwarding.call(
         scope,

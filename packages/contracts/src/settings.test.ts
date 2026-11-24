@@ -584,4 +584,13 @@ describe("server model preferences", () => {
     expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
     expect(decodeServerSettingsPatch(input)).toEqual(input);
   });
+
+  it("ignores retired coordinationModelLimits keys when decoding existing settings", () => {
+    const decoded = decodeServerSettings({
+      coordinationModelLimits: { "gpt-sol": 2, "glm-flash": null },
+      worktreesDirectory: "/work",
+    });
+    expect(decoded.worktreesDirectory).toBe("/work");
+    expect(decoded).not.toHaveProperty("coordinationModelLimits");
+  });
 });

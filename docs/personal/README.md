@@ -13,8 +13,9 @@ was October 25, 2026 (upstream `1a13127c15`).
   history including compressed and archived sessions.
 - **More in Limits.** Both Antigravity pools (Gemini, and Claude & GPT),
   ChatLLM compute points, and Zed account spend.
-- **Delegation limits.** Per-model limits on how many times an agent may
-  resubmit the same child task, and delegated reviews of a chosen commit.
+- **Delegated review worktrees and shared rules.** Delegated reviews of a
+  chosen commit (`reviewRef`), plus user orchestration rules shared across
+  providers.
 - **LaTeX math and larger default fonts.**
 
 ## Install

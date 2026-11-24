@@ -135,16 +135,6 @@ describe("serverSettings helpers", () => {
     });
   });
 
-  it("replaces delegated task limit overrides so a blank field restores defaults", () => {
-    const custom = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      coordinationModelLimits: { "gpt-6-luna": 3 },
-    });
-    expect(custom.coordinationModelLimits).toEqual({ "gpt-6-luna": 3 });
-    expect(
-      applyServerSettingsPatch(custom, { coordinationModelLimits: {} }).coordinationModelLimits,
-    ).toEqual({});
-  });
-
   it("keeps a source control host's saved tokens when a patch sets another host's token", () => {
     const reference = { provider: "vault", reference: "github/token" };
     const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {

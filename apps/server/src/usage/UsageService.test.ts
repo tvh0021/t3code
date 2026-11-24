@@ -2891,38 +2891,6 @@ describe("UsageService", () => {
       }),
   );
 
-  it.effect(
-    "keeps output price references consistent with official rates and custom overrides",
-    () =>
-      Effect.gen(function* () {
-        const { settings, home } = yield* setup;
-        yield* Effect.gen(function* () {
-          const settingsService = yield* ServerSettings.ServerSettingsService;
-          const service = yield* UsageService.make;
-          const prices = yield* service.readOutputPrices;
-          assert.strictEqual(prices["claude-sonnet-5-5"], 10);
-          yield* settingsService.updateSettings({
-            usagePriceOverrides: {
-              "claude-sonnet-5-5": { inputCostPerMillionTokens: 1, outputCostPerMillionTokens: 3 },
-            },
-          });
-          const customPrices = yield* service.readOutputPrices;
-          assert.strictEqual(customPrices["claude-sonnet-5-5"], 3);
-        }).pipe(
-          Effect.provide(
-            layerService({
-              prefix: "usage-service-official-prices-test",
-              home,
-              settings,
-              ratesDocument: {
-                "claude-sonnet-5-5": { input_cost_per_token: 1, output_cost_per_token: 5 },
-              },
-            }),
-          ),
-        );
-      }),
-  );
-
   it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32" || process.getuid?.() === 0)(
     "reports unreadable transcripts as partial and recovers once they can be read",
     () =>

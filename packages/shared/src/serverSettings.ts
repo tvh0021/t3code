@@ -407,8 +407,6 @@ export function applyServerSettingsPatch(
     sourceControlHosts: sourceControlHostsPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
     usageModelAliases: usageModelAliasesPatch,
-    // Users edit this complete model map in one settings field.
-    coordinationModelLimits: coordinationModelLimitsPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesPatch,
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
@@ -508,9 +506,6 @@ export function applyServerSettingsPatch(
     ...next,
     favorites,
     providerModelPreferences: nextModelPreferences,
-    ...(coordinationModelLimitsPatch === undefined
-      ? {}
-      : { coordinationModelLimits: coordinationModelLimitsPatch }),
     ...(worktreeCleanupPatch === undefined
       ? {}
       : {

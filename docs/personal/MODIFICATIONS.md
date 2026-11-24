@@ -410,24 +410,9 @@ shows Zed's reason, and running out of credits shows as a usage limit.
 
 ## Delegated tasks
 
-**Now.** Agents delegate through upstream's `delegate_task`. The fork adds three
+**Now.** Agents delegate through upstream's `delegate_task`. The fork adds two
 things:
 
-- **Per-task attempt limits.** A parent may delegate the same task to one
-  model family a limited number of times. A family spans generations, aliases,
-  and instances, so 6.1 Sol, 6 Sol, and 5.6 Sol are all `gpt-sol` and an agent
-  can't get around the limit by retrying on an older generation. The limit
-  stops a parent from resubmitting a task that is going nowhere; it is not a
-  cap on how many tasks a thread delegates. A task is its title, or its prompt
-  when untitled, since review rounds resend the title with new findings.
-  Finished attempts still count. Provider-native subagents don't count.
-  Tasks delegated to a linked environment count with local ones, and this
-  server checks them before it launches anything there. A retry with the same
-  `clientRequestId` is the same attempt. Named defaults and overrides beat
-  price bands: above $10 per million output tokens gets one attempt, $1 to $10
-  gets four, below $1 is unlimited. Unpriced models need an override. Settings
-  shows the live policy. The check lives in `delegationGuards.ts`, called from
-  `OrchestratorMcpService.ts` and `RemoteDelegation.ts`.
 - **Review worktrees.** A `reviewRef` is resolved to a commit and passed to
   upstream's `isolation: "worktree"` as its base, so the child reviews that
   commit instead of the parent's current one (`OrchestratorMcpService.ts`).
@@ -438,22 +423,29 @@ things:
   Delegated subagent turns (`isDelegatedSubagentTurn`, except direct human
   follow-ups) receive the compact `T3_CODE_CHILD_ORCHESTRATION_SECTIONS` block
   plus `~/.agents/ORCHESTRATION-CHILD.md` (or `T3_USER_CHILD_ORCHESTRATION_INSTRUCTIONS`),
-  and Claude subagent turns disallow `AskUserQuestion`. Claude Code reuses a
-  session's first system prompt on resume, so a human follow-up in a Claude
-  child thread regains `AskUserQuestion` but keeps the child rules. Both files are reread on
-  each session start, and on every turn for ChatLLM and Codex, and split under
-  Codex's 4,000-byte cap (`userOrchestrationInstructions.ts`). Pi bakes its
-  instructions into its extension at build time and doesn't get either file.
-
-The policy is checked daily but refetches models and prices only when the month
-changes or a refresh is forced from Settings > Providers. Mobile has no editor
-for it; the limits are server-wide, so the web or desktop screen covers every
-client.
+  following an anti-pass-through rule that lets children fan out independent
+  parallel sub-work or specialists/reviewers with small nested fan-out (<=2-3
+  concurrent) instead of passing the whole task off unchanged, while still
+  disallowing `AskUserQuestion` (Claude) and `ask_question` (Antigravity).
+  Claude Code reuses a session's first system prompt on resume, so a human
+  follow-up in a Claude child thread regains `AskUserQuestion` but keeps the
+  child rules; when T3 MCP is configured, native Claude subagents also receive
+  the child orchestration block via Claude's `SubagentStart` hook, which rereads
+  the child rules at each native subagent start even within an existing session.
+  Both files are reread on each session start, and on every turn for ChatLLM and
+  Codex, and split under Codex's 4,000-byte cap
+  (`userOrchestrationInstructions.ts`). Pi bakes its instructions into its
+  extension at build time and doesn't get either file.
 
 **Decisions.**
 
+- Unreleased: replaced the blanket child-delegation ban in
+  `orchestrationInstructions.ts` with an anti-pass-through rule so delegated
+  children can fan out independent parallel pieces or specialists/reviewers with
+  small nested fan-out while still keeping `AskUserQuestion` / `ask_question`
+  disabled.
 - 0.15.0: children received the full top-level rules, so they re-delegated
-  and asked the user questions. `isDelegatedSubagentTurn` in
+  unnecessarily and asked the user questions. `isDelegatedSubagentTurn` in
   `orchestrationInstructions.ts` picks the child block for agent-sent turns in
   subagent or delegated threads; a human message there counts as top-level.
   Claude keys its live query on that state (`claudeEffectiveQueryPolicyKey`), so
@@ -465,19 +457,18 @@ client.
   appends one shared file after the built-in orchestration sections, and reads
   it on each call so an edit reaches the next session without a rebuild.
 
-- 0.7.3: thread-wide budgets blocked unrelated tasks. `taskAttemptsExceeded` in
-  `delegationGuards.ts` counts attempts at the same task; `coordinationModelKey`
-  groups generations so retrying on an older model consumes the same limit.
-
-- 0.4.0: upstream's `delegate_task` replaced the fork's orchestration layers;
-  the fork kept only its limits and review isolation, as guards on it.
-- 0.4.0: clearing limit overrides deep-merged an empty map and kept the old
-  values; cleared overrides are now removed.
+- 0.4.0: upstream's `delegate_task` replaced the fork's orchestration layers.
 - 0.6.5: upstream added worktree isolation for delegated tasks, so the fork's
   clone snapshots and their cleanup were dropped in favor of it. The fork's
   remaining change is one revision argument, which keeps weekly syncs small.
 
-**Removed.** In the 0.4.0 sync: orchestration layers, their UI and coordination
+**Removed.** Per-task attempt limits (`DelegationGuards`, `CoordinationPolicy`,
+`CoordinationPolicySettings`, `coordinationModelLimits`) were removed because
+they conflicted with multi-round review/retry workflows and relied on stale
+model pricing and family tables; user rules in `ORCHESTRATION.md` govern
+retries and caps instead. The legacy SQLite migration shim
+(`reconcileForkCoordinationMigration.ts`) stays for older personal databases.
+In the 0.4.0 sync: orchestration layers, their UI and coordination
 state, thread handoff MCP tools, and worker restrictions (0.0.42.2 to 0.1.1).
 Threads from old layers import as ordinary threads. In 0.10.0: the mobile
 limits editor, which duplicated the web screen for a server-wide setting on a
@@ -517,7 +508,7 @@ Run the `blast-radius` skill before merging (see `AGENTS.md`). Then:
 - After resolving, diff each conflicted file against that tag. Syncs
   have silently undone upstream work before: the provider badge helpers
   (`providerInstanceDisplay.ts`) and the Runbooks section of `docs/README.md`.
-- Fork-only services (`DelegationGuards`, the recovery worker's
+- Fork-only services (such as the recovery worker's
   `ProviderRegistry`) are read with `Effect.serviceOption`, so upstream tests
   need no edits. Put new fork dependencies behind the same kind of optional
   seam.

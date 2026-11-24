@@ -2285,6 +2285,14 @@ Text you write before a tool call may reach the user only as a one-line summary.
 `;
 
 // Native subagents start from their task, not this session's system prompt.
+const subagentChildOrchestrationInstructions: HookCallback = () =>
+  Promise.resolve({
+    hookSpecificOutput: {
+      hookEventName: "SubagentStart",
+      additionalContext: t3OrchestrationInstructions({ subagent: true }).trim(),
+    },
+  });
+
 const subagentDeviceInstructions: HookCallback = () =>
   Promise.resolve({
     hookSpecificOutput: {
@@ -2492,11 +2500,20 @@ export function makeClaudeQueryOptions(input: {
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },
-    ...(deviceInstructions || input.onStop !== undefined
+    ...(input.mcpServers !== undefined || input.onStop !== undefined
       ? {
           hooks: {
-            ...(deviceInstructions
-              ? { SubagentStart: [{ hooks: [subagentDeviceInstructions] }] }
+            ...(input.mcpServers !== undefined
+              ? {
+                  SubagentStart: [
+                    {
+                      hooks: [
+                        subagentChildOrchestrationInstructions,
+                        ...(deviceInstructions ? [subagentDeviceInstructions] : []),
+                      ],
+                    },
+                  ],
+                }
               : {}),
             ...(input.onStop === undefined ? {} : { Stop: [{ hooks: [input.onStop] }] }),
           },

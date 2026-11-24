@@ -1263,6 +1263,4 @@ export * from "./threadFamilies.ts";
 export * from "./olderSettledThreads.ts";
 export * from "./threadShell.ts";
 export * from "./threadState.ts";
-
-export { buildCoordinationPolicyPatch, formatCoordinationLimits } from "./coordinationLimits.ts";
 export * from "./threadTagFilter.ts";

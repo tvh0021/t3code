@@ -64,8 +64,6 @@ import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
-import { CoordinationPolicy } from "../orchestration-v2/CoordinationPolicy.ts";
-import * as DelegationGuards from "../orchestration-v2/delegationGuards.ts";
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as PeerForwarding from "./PeerForwarding.ts";
@@ -676,8 +674,6 @@ const makeLaptop = (
   kept?: Context.Context<Layer.Success<ReturnType<typeof layerLinkingEnvironment>>>,
   /** Runs as each follow attempt here starts, on its follower's fiber. */
   beforeFollow: Effect.Effect<void, Orchestrator.OrchestratorV2Error> = Effect.void,
-  /** Personal fork: per-task attempt limits, which the server always provides. */
-  layerGuards: Layer.Layer<DelegationGuards.DelegationGuards> | undefined = undefined,
 ) =>
   Effect.gen(function* () {
     const linking = kept ?? (yield* layerLinkingEnvironment(laptop).pipe(Layer.build));
@@ -754,7 +750,6 @@ const makeLaptop = (
       Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
       Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
       Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
-      Layer.provide(layerGuards ?? Layer.empty),
       Layer.fresh,
     );
     const here = yield* Layer.build(layerHere);
@@ -1103,54 +1098,6 @@ it.effect("a task delegated to the box wakes the laptop's parent when it ends th
         state: "acknowledged",
         observedByRunId: parentRunId,
       });
-    }),
-  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
-);
-
-it.effect("a task there counts toward its per-model attempt limit, and a retry does not", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const thread = yield* makeBoxThread;
-      const b = yield* serveBox(thread);
-      const offers = yield* SubscriptionRef.make<
-        ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
-      >([]);
-      const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
-      const layerGuards = DelegationGuards.layer.pipe(
-        Layer.provide(
-          Layer.mock(CoordinationPolicy)({
-            read: () =>
-              Effect.succeed({
-                updatedAt: "2026-11-01T00:00:00.000Z",
-                budgets: [{ model: "gpt-5.4", limit: 1, used: 0 }],
-              }),
-          }),
-        ),
-      );
-      const a = yield* makeLaptop(database, offers, undefined, undefined, layerGuards);
-      yield* linkTo(a.links, b, "full-access");
-      yield* seedParent(a);
-
-      const delegated = yield* delegateToBox(a);
-      const launched = yield* Ref.get(thread.launched);
-      const retried = yield* delegateToBox(a);
-      expect(retried.taskId).toBe(delegated.taskId);
-
-      const resubmitted = yield* a.call("delegate_task", {
-        task: "Run the full suite on the box.",
-        target: {
-          environmentId: box.environmentId,
-          providerInstanceId: instanceId,
-          model: "gpt-5.4",
-        },
-        mode: "async",
-        clientRequestId: "suite-on-box-again",
-      });
-      expect(resubmitted.isError).toBe(true);
-      expect(JSON.stringify(resubmitted.content)).toContain("already ran 1 of 1 times on gpt-5.4");
-      // Refused before launching anything there or recording anything here.
-      expect(yield* Ref.get(thread.launched)).toBe(launched);
-      expect((yield* a.orchestrator.getThreadProjection(parentThreadId)).subagents).toHaveLength(1);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

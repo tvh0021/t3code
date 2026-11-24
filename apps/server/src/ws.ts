@@ -100,7 +100,6 @@ import {
   PersistChatAttachmentsError,
   RpcClientId,
   EnvironmentAuthorizationError,
-  ProviderInstanceId,
   ThreadId,
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
@@ -124,7 +123,6 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
 import * as ThreadViewers from "./orchestration-v2/ThreadViewers.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
-import * as CoordinationPolicy from "./orchestration-v2/CoordinationPolicy.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as McpSignIn from "./mcpApps/McpSignIn.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
@@ -1552,7 +1550,6 @@ export const layerWsRpc = (
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-      const coordinationPolicy = yield* Effect.serviceOption(CoordinationPolicy.CoordinationPolicy);
       const acpRegistryCatalog = yield* AcpRegistrySupport.AcpRegistryCatalog;
       const acpRegistryRuntimeCoordinator =
         yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
@@ -2560,19 +2557,6 @@ export const layerWsRpc = (
                 providers = yield* providerRegistry.refreshInstance(instance.instanceId);
               }
             }
-            // Settings' model budget refresh; prices and catalogs were just reloaded above.
-            if (input.refreshCoordinationPolicy && Option.isSome(coordinationPolicy))
-              yield* coordinationPolicy.value.read(true, !input.refreshModels).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ProviderSetupError({
-                      instanceId: ProviderInstanceId.make("coordination"),
-                      operation: "configure",
-                      detail: cause.message,
-                      cause,
-                    }),
-                ),
-              );
             const { instanceId, cwd } = input;
             if (input.omitProviders === true && (instanceId === undefined || cwd === undefined)) {
               return { providers: [] };
